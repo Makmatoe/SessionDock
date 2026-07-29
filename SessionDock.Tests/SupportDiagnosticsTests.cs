@@ -39,8 +39,15 @@ public sealed class SupportDiagnosticsTests
     [Fact]
     public void Capture_DiscardsSensitiveProbePathsAndExceptionDetails()
     {
-        var sensitivePath =
-            $@"C:\Users\{SensitiveUser}\AppData\Local\Roblox\{SensitiveToken}\RobloxPlayerBeta.exe";
+        var sensitivePath = Path.Combine(
+            "C:" + Path.DirectorySeparatorChar,
+            "Users",
+            SensitiveUser,
+            "AppData",
+            "Local",
+            "Roblox",
+            SensitiveToken,
+            "RobloxPlayerBeta.exe");
         var context = new SupportDiagnosticsContext(
             new Version(2, 6, 2),
             CanSelfUpdate: true,
