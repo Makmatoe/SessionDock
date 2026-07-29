@@ -2717,6 +2717,7 @@ public partial class MainWindow : Window
         ThemeToggleButton.IsEnabled = !busy;
         SoundSettingsButton.IsEnabled = !busy;
         IntegrationsButton.IsEnabled = !busy;
+        AboutDiagnosticsButton.IsEnabled = !busy;
         ReleaseNotesButton.IsEnabled = !busy;
         InstallUpdateButton.IsEnabled = !busy;
         RefreshLaunchAvailability();

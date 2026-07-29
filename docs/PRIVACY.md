@@ -32,6 +32,23 @@ Roblox Player logs, server IP addresses, HandleScope bearer tokens, or raw
 handle values. Never send the `%LOCALAPPDATA%\SessionDock` directory in a public
 bug report because its WebView2 profiles may contain authenticated cookies.
 
+## Privacy-safe support diagnostics
+
+The **About and diagnostics** panel builds a small, read-only support summary
+from an explicit allowlist. It can include the SessionDock, Windows, .NET, and
+WebView2 versions; architecture; whether a Windows-verified Roblox Player was
+found; install/update capability; bounded aggregate counts; theme; and the
+interface-sound setting. Roblox Player discovery is reduced immediately to an
+availability/trust state, so its path is never retained in the report model.
+
+The preview is exactly what the Copy and Export actions use. Export writes only
+that preview to a user-chosen text file. The panel never reads or attaches
+settings files, logs, browser profiles, or integration configuration, and it
+omits user and computer names, local paths, account names/labels/IDs/keys,
+destinations, place/server/private-server details, cookies, tokens, URLs, and
+exception details. SessionDock does not send the summary automatically. Users
+should still review the complete preview before sharing it.
+
 When upgrading from the historic Roblox One package identity, SessionDock may
 copy recognized settings, browser profiles, sounds, and local integration
 configuration from `%LOCALAPPDATA%\RobloxOne` into

@@ -163,6 +163,19 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1" Orientation="Horizontal"
                             VerticalAlignment="Center">
+                    <Button x:Name="AboutDiagnosticsButton"
+                            Style="{StaticResource IconOnlyButton}"
+                            Width="34" Height="34" Padding="8"
+                            Margin="0,0,6,0"
+                            Background="{DynamicResource UtilitySurfaceBrush}" Foreground="{DynamicResource UtilityTextBrush}"
+                            Click="AboutDiagnosticsButton_Click"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            AutomationProperties.Name="About SessionDock and diagnostics"
+                            AutomationProperties.HelpText="Review and copy privacy-safe support information"
+                            ToolTip="About SessionDock and privacy-safe diagnostics">
+                        <Path Style="{StaticResource ButtonIcon}"
+                              Data="{StaticResource IconActivity}"/>
+                    </Button>
                     <Button x:Name="ReleaseNotesButton"
                             Style="{StaticResource IconOnlyButton}"
                             Width="34" Height="34" Padding="8"

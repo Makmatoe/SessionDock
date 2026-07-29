@@ -81,6 +81,10 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   whether multiple Players may run.
 - Closes all visible and background Roblox Player processes on request.
 - Provides optional interface sounds and a user-selected startup sound.
+- Provides an **About and diagnostics** panel with an exact, reviewable support
+  summary that can be copied or exported as text. The summary contains bounded
+  counts and system/component states, never settings files, logs, paths,
+  account details, destinations, browser data, cookies, or tokens.
 
 ## Local by design
 
@@ -122,6 +126,11 @@ while keeping each Roblox account in its own isolated local browser profile.
 
 Read [Privacy](docs/PRIVACY.md) for the complete data/network summary and
 [Security](SECURITY.md) before reporting a security issue.
+
+For troubleshooting, open **About and diagnostics** from the top of the main
+window. The preview is the exact text used by both Copy and Export. SessionDock
+does not send it automatically, and the export is a small text-only summary;
+it does not gather a support archive from local application data.
 
 ## Updates
 

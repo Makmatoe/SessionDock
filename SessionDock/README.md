@@ -47,6 +47,8 @@ Roblox pages and are not read or stored by SessionDock.
 - `Services/RobloxWebSessionService.cs` manages isolated browser sessions.
 - `Services/RobloxClientService.cs` discovers, verifies, launches, and closes
   Roblox Player processes.
+- `Services/SupportDiagnosticsService.cs` creates the bounded allowlisted text
+  shown, copied, and exported by the About and diagnostics panel.
 - `Services/SessionDockUpdateService.cs` coordinates the manual Velopack updater and
   requires a descriptor authorized by the pinned release key.
 - `SystemProcesses/` contains optional, loopback-only post-launch connectors.
