@@ -38,7 +38,7 @@
     <sys:String x:Key="Main.UpdateName">Check for signed updates</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">Check GitHub for a signed SessionDock update</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Check for signed updates (current {0})</sys:String>
-    <sys:String x:Key="Main.Local">LOCAL</sys:String>
+    <sys:String x:Key="Main.Local">LOCAL DATA</sys:String>
     <sys:String x:Key="Main.Account">ACCOUNT</sys:String>
     <sys:String x:Key="Main.DragToReorder">Drag to reorder</sys:String>
     <sys:String x:Key="Main.ReorderPaused">Reorder paused</sys:String>

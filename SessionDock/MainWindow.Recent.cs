@@ -22,18 +22,8 @@ public partial class MainWindow
     {
         LaunchTabPanel.Visibility = Visibility.Collapsed;
         RecentTabPanel.Visibility = Visibility.Visible;
-        LaunchTabButton.Background = Brushes.Transparent;
-        LaunchTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "MutedBrush");
-        RecentTabButton.SetResourceReference(
-            Control.BackgroundProperty,
-            "SelectedControlSurfaceBrush");
-        RecentTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "SelectedControlTextBrush");
-        AutomationProperties.SetItemStatus(LaunchTabButton, "Not selected");
-        AutomationProperties.SetItemStatus(RecentTabButton, "Selected");
+        LaunchTabButton.IsChecked = false;
+        RecentTabButton.IsChecked = true;
         RenderRecentExperiences();
     }
 
@@ -41,18 +31,8 @@ public partial class MainWindow
     {
         LaunchTabPanel.Visibility = Visibility.Visible;
         RecentTabPanel.Visibility = Visibility.Collapsed;
-        LaunchTabButton.SetResourceReference(
-            Control.BackgroundProperty,
-            "SelectedControlSurfaceBrush");
-        LaunchTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "SelectedControlTextBrush");
-        RecentTabButton.Background = Brushes.Transparent;
-        RecentTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "MutedBrush");
-        AutomationProperties.SetItemStatus(LaunchTabButton, "Selected");
-        AutomationProperties.SetItemStatus(RecentTabButton, "Not selected");
+        RecentTabButton.IsChecked = false;
+        LaunchTabButton.IsChecked = true;
     }
 
     private void RenderRecentExperiences()
@@ -170,7 +150,7 @@ public partial class MainWindow
         var sectionTitle = new TextBlock
         {
             Text = title,
-            FontSize = 10,
+            FontSize = 11,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(2, 4, 0, 8)
         };
@@ -240,7 +220,7 @@ public partial class MainWindow
         var metadataText = new TextBlock
         {
             Text = $"{type}  •  {account}  •  {timestamp}",
-            FontSize = 10,
+            FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -254,7 +234,7 @@ public partial class MainWindow
             {
                 Text = $"Tracked server {serverJobId[..8]}…",
                 ToolTip = $"Roblox server JobId\n{serverJobId}",
-                FontSize = 10,
+                FontSize = 11,
                 Margin = new Thickness(0, 3, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -804,31 +784,10 @@ public partial class MainWindow
     private void SetRecentTypeFilter(RecentTypeFilter filter)
     {
         _recentTypeFilter = filter;
-        SetFilterButtonState(AllTypeFilterButton, filter == RecentTypeFilter.All);
-        SetFilterButtonState(PublicFilterButton, filter == RecentTypeFilter.Public);
-        SetFilterButtonState(PrivateFilterButton, filter == RecentTypeFilter.Private);
+        AllTypeFilterButton.IsChecked = filter == RecentTypeFilter.All;
+        PublicFilterButton.IsChecked = filter == RecentTypeFilter.Public;
+        PrivateFilterButton.IsChecked = filter == RecentTypeFilter.Private;
         RenderRecentExperiences();
-    }
-
-    private static void SetFilterButtonState(Button button, bool active)
-    {
-        if (active)
-        {
-            button.SetResourceReference(
-                Control.BackgroundProperty,
-                "SelectedControlSurfaceBrush");
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "SelectedControlTextBrush");
-        }
-        else
-        {
-            button.Background = Brushes.Transparent;
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "MutedBrush");
-        }
-        AutomationProperties.SetItemStatus(button, active ? "Selected" : "Not selected");
     }
 
     private enum RecentTypeFilter

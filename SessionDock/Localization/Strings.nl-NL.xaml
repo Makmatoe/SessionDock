@@ -38,7 +38,7 @@
     <sys:String x:Key="Main.UpdateName">Controleren op ondertekende updates</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">GitHub controleren op een ondertekende SessionDock-update</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Controleren op ondertekende updates (huidig {0})</sys:String>
-    <sys:String x:Key="Main.Local">LOKAAL</sys:String>
+    <sys:String x:Key="Main.Local">LOKALE DATA</sys:String>
     <sys:String x:Key="Main.Account">ACCOUNT</sys:String>
     <sys:String x:Key="Main.DragToReorder">Sleep om te ordenen</sys:String>
     <sys:String x:Key="Main.ReorderPaused">Ordenen gepauzeerd</sys:String>

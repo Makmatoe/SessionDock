@@ -124,8 +124,8 @@ public partial class MainWindow : Window
         ChangeDestinationMode(joinUser: true);
         if (!_joinUserMode ||
             LaunchButtonLabel.Text != Localize("Main.JoinUserButton") ||
-            AutomationProperties.GetItemStatus(UserDestinationModeButton) !=
-            Localize("Main.SelectedStatus") ||
+            UserDestinationModeButton.IsChecked != true ||
+            ExperienceDestinationModeButton.IsChecked == true ||
             AutomationProperties.GetName(PlaceIdBox) !=
             Localize("Main.JoinUserInputName"))
         {
@@ -136,8 +136,8 @@ public partial class MainWindow : Window
         ChangeDestinationMode(joinUser: false);
         if (_joinUserMode ||
             LaunchButtonLabel.Text != Localize("Main.Launch") ||
-            AutomationProperties.GetItemStatus(ExperienceDestinationModeButton) !=
-            Localize("Main.SelectedStatus") ||
+            ExperienceDestinationModeButton.IsChecked != true ||
+            UserDestinationModeButton.IsChecked == true ||
             AutomationProperties.GetName(PlaceIdBox) !=
             Localize("Main.DestinationInputName"))
         {
@@ -1133,7 +1133,7 @@ public partial class MainWindow : Window
                         "Main.AccountIdentity",
                         account.Username,
                         account.UserId),
-            FontSize = 10,
+            FontSize = 11,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
         subtitle.SetResourceReference(
@@ -2298,12 +2298,8 @@ public partial class MainWindow : Window
 
     private void UpdateDestinationModePresentation()
     {
-        SetDestinationModeButtonState(
-            ExperienceDestinationModeButton,
-            !_joinUserMode);
-        SetDestinationModeButtonState(
-            UserDestinationModeButton,
-            _joinUserMode);
+        ExperienceDestinationModeButton.IsChecked = !_joinUserMode;
+        UserDestinationModeButton.IsChecked = _joinUserMode;
         DestinationHelpText.Text = _joinUserMode
             ? Localize("Main.JoinUserHelp")
             : Localize("Main.DestinationHelp");
@@ -2335,34 +2331,6 @@ public partial class MainWindow : Window
                 ? Localize("Main.JoinUserButton")
                 : Localize("Main.Launch");
         }
-    }
-
-    private void SetDestinationModeButtonState(
-        Button button,
-        bool selected)
-    {
-        if (selected)
-        {
-            button.SetResourceReference(
-                Control.BackgroundProperty,
-                "SelectedControlSurfaceBrush");
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "SelectedControlTextBrush");
-        }
-        else
-        {
-            button.Background = Brushes.Transparent;
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "MutedBrush");
-        }
-
-        AutomationProperties.SetItemStatus(
-            button,
-            selected
-                ? Localize("Main.SelectedStatus")
-                : Localize("Main.NotSelectedStatus"));
     }
 
     private async void PlaceIdBox_LostKeyboardFocus(
