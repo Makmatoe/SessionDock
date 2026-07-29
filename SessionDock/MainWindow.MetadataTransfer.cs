@@ -25,8 +25,8 @@ public partial class MainWindow
         if (dialog.ShowDialog() != true || dialog.ImportPlan is not { } plan)
         {
             SetStatus(
-                "Safe metadata transfer closed",
-                "Nothing was imported. A file was exported only if you selected Export reviewed JSON and chose a destination.",
+                Localize("Main.MetadataTransferClosedTitle"),
+                Localize("Main.MetadataTransferClosedDetail"),
                 "LOCAL ONLY");
             return;
         }
@@ -37,9 +37,9 @@ public partial class MainWindow
         {
             if (!await TryCommitSettingsMutationAsync(
                     () => plan.Apply(_settings),
-                    "Metadata could not be imported",
+                    Localize("Main.MetadataImportFailureTitle"),
                     "IMPORT ROLLED BACK",
-                    "SessionDock could not confirm the settings update, so every imported change was rolled back. Check that %LOCALAPPDATA%\\SessionDock is writable, then retry.",
+                    Localize("Main.MetadataImportFailureDetail"),
                     onCommitted: () =>
                     {
                         RenderAccountList();
@@ -49,9 +49,32 @@ public partial class MainWindow
                 return;
             }
 
+            var accountSummary = plan.AccountUpdateCount == 1
+                ? Localize("Main.MetadataImportedAccountOne")
+                : Localize(
+                    "Main.MetadataImportedAccountMany",
+                    plan.AccountUpdateCount);
+            var orderSummary = plan.OrderWillChange
+                ? Localize("Main.MetadataImportedOrder")
+                : string.Empty;
+            var addedSummary = plan.FavoritesToAdd == 1
+                ? Localize("Main.MetadataImportedFavoriteAddOne")
+                : Localize(
+                    "Main.MetadataImportedFavoriteAddMany",
+                    plan.FavoritesToAdd);
+            var updatedSummary = plan.FavoritesToUpdate == 1
+                ? Localize("Main.MetadataImportedFavoriteUpdateOne")
+                : Localize(
+                    "Main.MetadataImportedFavoriteUpdateMany",
+                    plan.FavoritesToUpdate);
             SetStatus(
-                "Safe metadata imported",
-                $"Updated {plan.AccountUpdateCount} account appearance entr{(plan.AccountUpdateCount == 1 ? "y" : "ies")}{(plan.OrderWillChange ? " and the matched account order" : string.Empty)}, added {plan.FavoritesToAdd} public favorite{(plan.FavoritesToAdd == 1 ? string.Empty : "s")}, and updated {plan.FavoritesToUpdate}. Sign-ins and private destinations were untouched.",
+                Localize("Main.MetadataImportedTitle"),
+                Localize(
+                    "Main.MetadataImportedDetail",
+                    accountSummary,
+                    orderSummary,
+                    addedSummary,
+                    updatedSummary),
                 "IMPORTED");
         }
         finally

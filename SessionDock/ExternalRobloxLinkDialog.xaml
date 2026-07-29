@@ -1,7 +1,7 @@
 <Window x:Class="SessionDock.ExternalRobloxLinkDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Open Roblox link with SessionDock" Width="580" Height="500"
+        Title="{DynamicResource ExternalLink.Title}" Width="580" Height="500"
         MinWidth="460" MinHeight="410" ResizeMode="CanResizeWithGrip"
         WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
         Background="{DynamicResource BackgroundBrush}"
@@ -12,10 +12,10 @@
                       HorizontalScrollBarVisibility="Disabled">
             <Border Style="{StaticResource DialogShell}">
                 <StackPanel>
-                    <TextBlock Text="Review Roblox link"
+                    <TextBlock Text="{DynamicResource ExternalLink.Heading}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="24" FontWeight="SemiBold"/>
-                    <TextBlock Text="Nothing launches until you choose an account and confirm again."
+                    <TextBlock Text="{DynamicResource ExternalLink.Detail}"
                                Foreground="{DynamicResource MutedBrush}"
                                FontSize="13" Margin="0,6,0,0"
                                TextWrapping="Wrap"/>
@@ -24,7 +24,7 @@
                             Background="{DynamicResource InsetSurfaceBrush}"
                             BorderBrush="{DynamicResource StrokeBrush}"
                             BorderThickness="1" CornerRadius="10"
-                            AutomationProperties.Name="Parsed Roblox destination preview">
+                            AutomationProperties.Name="{DynamicResource ExternalLink.PreviewName}">
                         <StackPanel>
                             <TextBlock x:Name="PreviewTitleText"
                                        Foreground="{DynamicResource TextBrush}"
@@ -36,7 +36,7 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock Text="ACCOUNT"
+                    <TextBlock Text="{DynamicResource ExternalLink.Account}"
                                Foreground="{DynamicResource SubtleBrush}"
                                FontSize="11" FontWeight="Bold"
                                Margin="0,20,0,7"/>
@@ -44,14 +44,14 @@
                               DisplayMemberPath="DisplayName"
                               MinHeight="42"
                               SelectionChanged="AccountComboBox_SelectionChanged"
-                              AutomationProperties.Name="Account for external Roblox link"
-                              AutomationProperties.HelpText="Choose which saved SessionDock account will open this destination"/>
+                              AutomationProperties.Name="{DynamicResource ExternalLink.AccountName}"
+                              AutomationProperties.HelpText="{DynamicResource ExternalLink.AccountHelp}"/>
 
                     <Border x:Name="PrivateNoticePanel" Margin="0,14,0,0"
                             Padding="14" Visibility="Collapsed"
                             Background="{DynamicResource PrivacySurfaceBrush}"
                             CornerRadius="10">
-                        <TextBlock Text="Private-server protection: the code is hidden here and will not be written to the account's saved destination, Recent, or Favorites."
+                        <TextBlock Text="{DynamicResource ExternalLink.PrivateNotice}"
                                    Foreground="{DynamicResource PrivacyIconBrush}"
                                    FontSize="11" TextWrapping="Wrap"/>
                     </Border>
@@ -61,16 +61,16 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Button Content="Cancel" IsCancel="True"
+                        <Button Content="{DynamicResource Common.Cancel}" IsCancel="True"
                                 Click="CancelButton_Click"
                                 HorizontalAlignment="Left" Padding="20,10"
                                 Background="{DynamicResource ControlSurfaceBrush}"
                                 Foreground="{DynamicResource ControlTextBrush}"/>
                         <Button x:Name="ReviewButton" Grid.Column="1"
-                                Content="Review launch" IsDefault="True"
+                                Content="{DynamicResource ExternalLink.Review}" IsDefault="True"
                                 Click="ReviewButton_Click" Padding="20,10"
-                                AutomationProperties.Name="Review launch for selected account"
-                                AutomationProperties.HelpText="Continue to a final confirmation; this button does not launch Roblox"/>
+                                AutomationProperties.Name="{DynamicResource ExternalLink.ReviewName}"
+                                AutomationProperties.HelpText="{DynamicResource ExternalLink.ReviewHelp}"/>
                     </Grid>
                 </StackPanel>
             </Border>

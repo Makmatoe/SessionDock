@@ -18,8 +18,8 @@ public partial class RobloxLinkIntegrationDialog : Window
     {
         var confirmation = MessageBox.Show(
             this,
-            "Enable Open with SessionDock for this Windows user?\n\nWindows will receive a small per-user registration under HKCU\\Software\\Classes. Roblox's default handler will not be replaced. Every accepted link still requires an account choice and a separate launch confirmation.",
-            "Enable Open with SessionDock",
+            Localize("LinkIntegration.EnableConfirm"),
+            Localize("LinkIntegration.EnableConfirmTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Question,
             MessageBoxResult.No);
@@ -29,16 +29,16 @@ public partial class RobloxLinkIntegrationDialog : Window
         var status = _registration.Enable();
         RenderStatus(status);
         ActionStatusText.Text = status.State == RobloxLinkRegistrationState.Enabled
-            ? "Open with SessionDock was enabled for this Windows user."
-            : status.Description;
+            ? Localize("LinkIntegration.EnabledAction")
+            : LocalizeDescription(status.State);
     }
 
     private void DisableButton_Click(object sender, RoutedEventArgs e)
     {
         var confirmation = MessageBox.Show(
             this,
-            "Disable Open with SessionDock and remove only SessionDock's owned per-user registration?",
-            "Disable Open with SessionDock",
+            Localize("LinkIntegration.DisableConfirm"),
+            Localize("LinkIntegration.DisableConfirmTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Question,
             MessageBoxResult.No);
@@ -48,14 +48,14 @@ public partial class RobloxLinkIntegrationDialog : Window
         var status = _registration.Disable();
         RenderStatus(status);
         ActionStatusText.Text = status.State == RobloxLinkRegistrationState.Disabled
-            ? "SessionDock's owned link-handler registration was removed."
-            : status.Description;
+            ? Localize("LinkIntegration.DisabledAction")
+            : LocalizeDescription(status.State);
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         RefreshStatus();
-        ActionStatusText.Text = "Windows registration status refreshed locally.";
+        ActionStatusText.Text = Localize("LinkIntegration.RefreshedAction");
     }
 
     private void RefreshStatus() => RenderStatus(_registration.Inspect());
@@ -64,29 +64,53 @@ public partial class RobloxLinkIntegrationDialog : Window
     {
         StateTitleText.Text = status.State switch
         {
-            RobloxLinkRegistrationState.Enabled => "Enabled for this user",
-            RobloxLinkRegistrationState.Disabled => "Disabled",
+            RobloxLinkRegistrationState.Enabled =>
+                Localize("LinkIntegration.StateEnabled"),
+            RobloxLinkRegistrationState.Disabled =>
+                Localize("LinkIntegration.StateDisabled"),
             RobloxLinkRegistrationState.UpdateRequired =>
-                "Owned registration needs repair",
+                Localize("LinkIntegration.StateRepair"),
             RobloxLinkRegistrationState.Conflict =>
-                "Foreign registration preserved",
+                Localize("LinkIntegration.StateConflict"),
             RobloxLinkRegistrationState.Unavailable =>
-                "Windows registration unavailable",
+                Localize("LinkIntegration.StateUnavailable"),
             _ => throw new InvalidOperationException(
                 "Unexpected link-handler registration state.")
         };
-        StateDescriptionText.Text = status.Description;
+        StateDescriptionText.Text = LocalizeDescription(status.State);
         EnableButton.IsEnabled = status.State is
             RobloxLinkRegistrationState.Disabled or
             RobloxLinkRegistrationState.UpdateRequired;
         EnableButton.Content = status.State ==
             RobloxLinkRegistrationState.UpdateRequired
-                ? "Repair owned registration"
-                : "Enable for this user";
+                ? Localize("LinkIntegration.Repair")
+                : Localize("LinkIntegration.Enable");
         DisableButton.IsEnabled = status.State is
             RobloxLinkRegistrationState.Enabled or
             RobloxLinkRegistrationState.UpdateRequired;
     }
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string LocalizeDescription(RobloxLinkRegistrationState state) =>
+        state switch
+        {
+            RobloxLinkRegistrationState.Enabled =>
+                Localize("LinkIntegration.DescriptionEnabled"),
+            RobloxLinkRegistrationState.Disabled =>
+                Localize("LinkIntegration.DescriptionDisabled"),
+            RobloxLinkRegistrationState.UpdateRequired =>
+                Localize("LinkIntegration.DescriptionRepair"),
+            RobloxLinkRegistrationState.Conflict =>
+                Localize("LinkIntegration.DescriptionConflict"),
+            RobloxLinkRegistrationState.Unavailable =>
+                Localize("LinkIntegration.DescriptionUnavailable"),
+            _ => throw new InvalidOperationException(
+                "Unexpected link-handler registration state.")
+        };
 }

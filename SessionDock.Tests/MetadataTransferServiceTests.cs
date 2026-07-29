@@ -614,11 +614,22 @@ public sealed class MetadataTransferServiceTests
             root,
             "SessionDock",
             "MetadataTransferDialog.xaml.cs"));
+        var english = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "Localization",
+            "Strings.en-US.xaml"));
 
         Assert.Contains("x:Name=\"MetadataTransferButton\"", mainWindow);
         Assert.Contains(
-            "AutomationProperties.Name=\"Export or import safe metadata\"",
+            "AutomationProperties.Name=\"{DynamicResource Main.MetadataTransfer}\"",
             mainWindow);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{DynamicResource Metadata.AutomationName}\"",
+            dialog);
+        Assert.Contains(
+            "Export or import privacy-safe SessionDock metadata",
+            english);
         Assert.Contains("x:Name=\"ExportPreviewBox\"", dialog);
         Assert.Contains("x:Name=\"ImportPreviewBox\"", dialog);
         Assert.Contains("x:Name=\"ImportConfirmationCheckBox\"", dialog);
@@ -627,6 +638,13 @@ public sealed class MetadataTransferServiceTests
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", dialog);
         Assert.Contains("ExportPreviewBox.Text = exportPackage.Json", dialogCode);
         Assert.Contains("ImportConfirmationCheckBox.IsChecked == true", dialogCode);
+        Assert.Contains(
+            "Localize(\"Metadata.InvalidDetail\")",
+            dialogCode);
+        Assert.DoesNotContain(
+            "SetImportStatus(exception.Message",
+            dialogCode,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("settings.json", dialogCode, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("WebView", dialogCode, StringComparison.OrdinalIgnoreCase);
     }

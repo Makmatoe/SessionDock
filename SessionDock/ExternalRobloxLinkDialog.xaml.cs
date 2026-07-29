@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using SessionDock.Models;
@@ -16,8 +17,9 @@ public partial class ExternalRobloxLinkDialog : Window
         ArgumentNullException.ThrowIfNull(accounts);
         InitializeComponent();
         WindowLayoutService.FitToWorkArea(this);
-        PreviewTitleText.Text = link.PreviewTitle;
-        PreviewDetailText.Text = link.PreviewDetail;
+        var preview = CreatePreview(link);
+        PreviewTitleText.Text = preview.Title;
+        PreviewDetailText.Text = preview.Detail;
         PrivateNoticePanel.Visibility = link.IsPrivateServer
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -56,6 +58,32 @@ public partial class ExternalRobloxLinkDialog : Window
 
     private void CancelButton_Click(object sender, RoutedEventArgs e) =>
         DialogResult = false;
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
+
+    private (string Title, string Detail) CreatePreview(
+        ExternalRobloxLink link)
+    {
+        var title = Localize(
+            link.IsPrivateServer
+                ? "ExternalLink.PrivateTitle"
+                : "ExternalLink.PublicTitle");
+        var placeDetail = link.Target.PlaceId > 0
+            ? Localize(
+                "ExternalLink.PlaceDetail",
+                link.Target.PlaceId.ToString(CultureInfo.InvariantCulture))
+            : Localize("ExternalLink.ResolveDetail");
+        var detail = link.IsPrivateServer
+            ? Localize("ExternalLink.PrivateDetail", placeDetail)
+            : placeDetail;
+        return (title, detail);
+    }
 
     private sealed record ExternalLinkAccountOption(
         string Key,

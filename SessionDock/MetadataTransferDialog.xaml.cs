@@ -24,8 +24,9 @@ public partial class MetadataTransferDialog : Window
         _exportPackage = exportPackage;
         _settings = settings;
         ExportPreviewBox.Text = exportPackage.Json;
-        ExportSummaryText.Text =
-            $"Review the exact file below: {exportPackage.AccountCount} account appearance entr{(exportPackage.AccountCount == 1 ? "y" : "ies")} and {exportPackage.PublicFavoriteCount} pinned public favorite{(exportPackage.PublicFavoriteCount == 1 ? string.Empty : "s")}.";
+        ExportSummaryText.Text = CreateExportSummary(
+            exportPackage.AccountCount,
+            exportPackage.PublicFavoriteCount);
         Loaded += MetadataTransferDialog_Loaded;
     }
 
@@ -47,31 +48,31 @@ public partial class MetadataTransferDialog : Window
             CheckPathExists = true,
             DefaultExt = ".json",
             FileName = MetadataExportPackage.SuggestedFileName,
-            Filter = "JSON document (*.json)|*.json",
+            Filter = Localize("Metadata.JsonFilter"),
             OverwritePrompt = true,
-            Title = "Export privacy-safe SessionDock metadata"
+            Title = Localize("Metadata.ExportPickerTitle")
         };
         if (saveDialog.ShowDialog(this) != true)
         {
-            SetExportStatus("Export cancelled. No file was written.", null);
+            SetExportStatus(Localize("Metadata.ExportCancelled"), null);
             return;
         }
 
         SetButtonsEnabled(false);
-        SetExportStatus("Saving the reviewed safe metadata...", null);
+        SetExportStatus(Localize("Metadata.Saving"), null);
         try
         {
             await MetadataTransferService.ExportAsync(
                 saveDialog.FileName,
                 _exportPackage);
             SetExportStatus(
-                "Saved exactly the reviewed JSON. Nothing else was included.",
+                Localize("Metadata.Saved"),
                 true);
         }
         catch (Exception exception) when (IsExpectedTransferFailure(exception))
         {
             SetExportStatus(
-                "The metadata file could not be saved there. Choose another folder and try again.",
+                Localize("Metadata.SaveFailed"),
                 false);
         }
         finally
@@ -88,13 +89,13 @@ public partial class MetadataTransferDialog : Window
         {
             CheckFileExists = true,
             CheckPathExists = true,
-            Filter = "SessionDock metadata (*.json)|*.json",
+            Filter = Localize("Metadata.ImportFilter"),
             Multiselect = false,
-            Title = "Choose SessionDock metadata to preview"
+            Title = Localize("Metadata.ImportPickerTitle")
         };
         if (openDialog.ShowDialog(this) != true)
         {
-            SetImportStatus("Import selection cancelled. Nothing changed.", null);
+            SetImportStatus(Localize("Metadata.ImportCancelled"), null);
             return;
         }
 
@@ -102,9 +103,9 @@ public partial class MetadataTransferDialog : Window
         ImportConfirmationCheckBox.IsChecked = false;
         ImportConfirmationCheckBox.IsEnabled = false;
         ConfirmImportButton.IsEnabled = false;
-        ImportPreviewBox.Text = "Validating the selected file...";
+        ImportPreviewBox.Text = Localize("Metadata.ValidatingFile");
         SetButtonsEnabled(false);
-        SetImportStatus("Validating the selected file locally...", null);
+        SetImportStatus(Localize("Metadata.ValidatingLocal"), null);
         try
         {
             _importPlan = await MetadataTransferService.ReadImportAsync(
@@ -114,22 +115,20 @@ public partial class MetadataTransferDialog : Window
             ImportConfirmationCheckBox.IsEnabled = _importPlan.HasChanges;
             SetImportStatus(
                 _importPlan.HasChanges
-                    ? "Review the complete plan, then check the confirmation box to enable import."
-                    : "The file is valid, but it has no changes that apply to this SessionDock.",
+                    ? Localize("Metadata.ReviewToEnable")
+                    : Localize("Metadata.NoApplicableChanges"),
                 _importPlan.HasChanges ? null : true);
         }
-        catch (InvalidDataException exception)
+        catch (InvalidDataException)
         {
-            ImportPreviewBox.Text =
-                "The selected file was rejected. Nothing was changed.";
-            SetImportStatus(exception.Message, false);
+            ImportPreviewBox.Text = Localize("Metadata.Rejected");
+            SetImportStatus(Localize("Metadata.InvalidDetail"), false);
         }
         catch (Exception exception) when (IsExpectedTransferFailure(exception))
         {
-            ImportPreviewBox.Text =
-                "The selected file could not be read safely. Nothing was changed.";
+            ImportPreviewBox.Text = Localize("Metadata.ReadFailed");
             SetImportStatus(
-                "Choose a regular local JSON file that you can read, then try again.",
+                Localize("Metadata.ReadFailedDetail"),
                 false);
         }
         finally
@@ -198,4 +197,30 @@ public partial class MetadataTransferDialog : Window
     internal static bool IsExpectedTransferFailure(Exception exception) =>
         exception is IOException or UnauthorizedAccessException or
             SecurityException or ArgumentException or NotSupportedException;
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
+
+    private string CreateExportSummary(
+        int accountCount,
+        int favoriteCount) =>
+        (accountCount == 1, favoriteCount == 1) switch
+        {
+            (true, true) => Localize("Metadata.ExportSummaryOneOne"),
+            (true, false) => Localize(
+                "Metadata.ExportSummaryOneMany",
+                favoriteCount),
+            (false, true) => Localize(
+                "Metadata.ExportSummaryManyOne",
+                accountCount),
+            _ => Localize(
+                "Metadata.ExportSummaryManyMany",
+                accountCount,
+                favoriteCount)
+        };
 }

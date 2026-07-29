@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
@@ -64,8 +65,8 @@ public partial class MainWindow
         {
             MessageBox.Show(
                 this,
-                error,
-                "SessionDock refused the external link",
+                LocalizeExternalLinkError(error),
+                Localize("ExternalLink.RefusedTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
@@ -75,8 +76,8 @@ public partial class MainWindow
         {
             MessageBox.Show(
                 this,
-                "SessionDock is busy with another account operation. No account was launched. Try the link again when the current operation finishes.",
-                "SessionDock is busy",
+                Localize("ExternalLink.BusyDetail"),
+                Localize("ExternalLink.BusyTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             return;
@@ -85,8 +86,8 @@ public partial class MainWindow
         {
             MessageBox.Show(
                 this,
-                "Add and sign in to a SessionDock account before opening a Roblox link.",
-                "No saved account",
+                Localize("ExternalLink.NoAccountDetail"),
+                Localize("ExternalLink.NoAccountTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             return;
@@ -113,8 +114,8 @@ public partial class MainWindow
         {
             MessageBox.Show(
                 this,
-                "That saved account is no longer available. No account was launched.",
-                "Account unavailable",
+                Localize("ExternalLink.AccountUnavailableDetail"),
+                Localize("ExternalLink.AccountUnavailableTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
@@ -123,10 +124,15 @@ public partial class MainWindow
         var displayAccount = string.IsNullOrWhiteSpace(selectedAccount.Label)
             ? $"@{selectedAccount.Username}"
             : $"{selectedAccount.Label} (@{selectedAccount.Username})";
+        var preview = CreateLocalizedExternalLinkPreview(link!);
         var confirmation = MessageBox.Show(
             this,
-            $"Open {link!.PreviewTitle.ToLowerInvariant()} as {displayAccount}?\n\n{link.PreviewDetail}\n\nSessionDock will request a fresh launch ticket from the selected account only after you confirm.",
-            "Confirm Roblox launch",
+            Localize(
+                "ExternalLink.ConfirmPrompt",
+                preview.Title,
+                displayAccount,
+                preview.Detail),
+            Localize("ExternalLink.ConfirmTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Question,
             MessageBoxResult.No);
@@ -149,15 +155,15 @@ public partial class MainWindow
         {
             MessageBox.Show(
                 this,
-                "SessionDock could not switch to the selected account. No account was launched.",
-                "Account switch incomplete",
+                Localize("ExternalLink.SwitchIncompleteDetail"),
+                Localize("ExternalLink.SwitchIncompleteTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             return;
         }
 
         await LaunchExternalRobloxLinkAsync(
-            link,
+            link!,
             _operationLifetime.Token);
     }
 
@@ -177,9 +183,61 @@ public partial class MainWindow
             _launchInProgress = false;
             if (!_operationLifetime.IsShuttingDown)
             {
-                LaunchButtonLabel.Text = _joinUserMode ? "Join user" : "Launch";
+                LaunchButtonLabel.Text = _joinUserMode
+                    ? Localize("Main.JoinUserButton")
+                    : Localize("Main.Launch");
                 SetOperationBusy(false);
             }
         }
     }
+
+    private (string Title, string Detail) CreateLocalizedExternalLinkPreview(
+        ExternalRobloxLink link)
+    {
+        var title = Localize(
+            link.IsPrivateServer
+                ? "ExternalLink.PrivateTitle"
+                : "ExternalLink.PublicTitle");
+        var placeDetail = link.Target.PlaceId > 0
+            ? Localize(
+                "ExternalLink.PlaceDetail",
+                link.Target.PlaceId.ToString(CultureInfo.InvariantCulture))
+            : Localize("ExternalLink.ResolveDetail");
+        var detail = link.IsPrivateServer
+            ? Localize("ExternalLink.PrivateDetail", placeDetail)
+            : placeDetail;
+        return (title, detail);
+    }
+
+    private string LocalizeExternalLinkError(string error) =>
+        error switch
+        {
+            "The external link is empty, too long, or contains unsafe characters." =>
+                Localize("ExternalLink.ErrorEmptyUnsafe"),
+            "Only complete official Roblox links can be opened externally." =>
+                Localize("ExternalLink.ErrorCompleteOfficial"),
+            "Only unambiguous official roblox.com HTTPS links and safe roblox: links are accepted." =>
+                Localize("ExternalLink.ErrorOfficialOnly"),
+            "The external link contains invalid escaping." =>
+                Localize("ExternalLink.ErrorInvalidEscape"),
+            "A private share code is accepted only in an official Roblox share link." =>
+                Localize("ExternalLink.ErrorPrivateShareOnly"),
+            "An external experience link must use the official /games/PlaceId path." =>
+                Localize("ExternalLink.ErrorGamesPath"),
+            "The external link contains conflicting destination parameters." =>
+                Localize("ExternalLink.ErrorConflicting"),
+            "The SessionDock link wrapper is invalid." =>
+                Localize("ExternalLink.ErrorWrapper"),
+            "Authentication tickets, cookies, tokens, and server JobIds are never accepted from external links." =>
+                Localize("ExternalLink.ErrorSensitive"),
+            "The external link contains unsupported or ambiguous launch parameters." =>
+                Localize("ExternalLink.ErrorUnsupported"),
+            "The external link repeats a launch parameter and was refused." =>
+                Localize("ExternalLink.ErrorRepeated"),
+            "Only Roblox server share links can be opened externally." =>
+                Localize("ExternalLink.ErrorServerOnly"),
+            "The external link contains an empty launch parameter." =>
+                Localize("ExternalLink.ErrorEmptyParameter"),
+            _ => Localize("ExternalLink.ErrorDefault")
+        };
 }

@@ -386,6 +386,10 @@ public sealed class ExternalRobloxLinkTests
             root,
             "SessionDock",
             "ExternalRobloxLinkDialog.xaml"));
+        var chooserCode = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "ExternalRobloxLinkDialog.xaml.cs"));
         var mainCode = File.ReadAllText(Path.Combine(
             root,
             "SessionDock",
@@ -399,19 +403,47 @@ public sealed class ExternalRobloxLinkTests
             "SessionDock",
             "Services",
             "RobloxLinkRegistrationService.cs"));
+        var english = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "Localization",
+            "Strings.en-US.xaml"));
 
         Assert.Contains(
-            "AutomationProperties.Name=\"Parsed Roblox destination preview\"",
+            "AutomationProperties.Name=\"{DynamicResource ExternalLink.PreviewName}\"",
             chooser,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"Account for external Roblox link\"",
+            "AutomationProperties.Name=\"{DynamicResource ExternalLink.AccountName}\"",
             chooser,
             StringComparison.Ordinal);
-        Assert.Contains("Review launch", chooser, StringComparison.Ordinal);
-        Assert.Contains("Confirm Roblox launch", mainCode, StringComparison.Ordinal);
+        Assert.Contains(
+            "Content=\"{DynamicResource ExternalLink.Review}\"",
+            chooser,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Localize(\"ExternalLink.ConfirmTitle\")",
+            mainCode,
+            StringComparison.Ordinal);
+        Assert.Contains("link.Target.PlaceId", chooserCode, StringComparison.Ordinal);
+        Assert.Contains("link.Target.PlaceId", mainCode, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "link.PreviewDetail",
+            chooserCode,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "link.PreviewDetail",
+            mainCode,
+            StringComparison.Ordinal);
         Assert.Contains("MessageBoxButton.YesNo", mainCode, StringComparison.Ordinal);
-        Assert.Contains("never launches Roblox by itself", settings, StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{DynamicResource LinkIntegration.Detail}\"",
+            settings,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "never launches Roblox by itself",
+            english,
+            StringComparison.Ordinal);
         Assert.Contains("Registry.CurrentUser", registration, StringComparison.Ordinal);
         Assert.DoesNotContain("Registry.ClassesRoot", registration, StringComparison.Ordinal);
         Assert.DoesNotContain("Process.Start", registration, StringComparison.Ordinal);
