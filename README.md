@@ -100,6 +100,13 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   validated preview and confirmation, matches Roblox user IDs only to accounts
   that already exist locally, and never moves sign-ins, account-slot keys,
   usernames, destinations, private-server details, JobIds, or local paths.
+- Provides an optional **Open with SessionDock** Windows link handler. Enabling
+  it is an explicit per-user action under **Integrations** and does not replace
+  Roblox's default handler. Every accepted link opens a parsed preview and
+  account chooser followed by a separate confirmation; it never launches an
+  account merely because a link arrived. Authentication-bearing or ambiguous
+  launch URLs are rejected, and private-server links received this way are not
+  saved to account defaults, Recent, or Favorites.
 
 ## Local by design
 
@@ -127,7 +134,19 @@ trusting it. HandleScope is unsigned, so this trust comes from the canonical
 immutable GitHub release rather than a certificate-backed publisher.
 
 To use the optional connector, select **Integrations** in the SessionDock
-sidebar. Installation starts the API immediately and enables HandleScope's
+sidebar. That panel also manages the separate **Open with SessionDock** link
+handler. The link handler is off by default and writes only owned per-user
+entries under `HKCU\Software\Classes`: a SessionDock URL ProgID, the private
+`sessiondock-roblox:` forwarding protocol, and an Open With hint for safe
+`roblox:` links. It does not claim all HTTPS links, change the default Roblox
+handler, or elevate. Received links are forwarded over bounded same-user,
+same-Windows-session IPC to the existing SessionDock process and are validated
+again before any UI is shown. The link exists transiently in the Windows
+command line and in-memory IPC while it is handed off; private codes are hidden
+from the preview and not persisted, but this is not a boundary against another
+process already running as the same Windows user.
+
+HandleScope installation starts the API immediately and enables HandleScope's
 limited per-user task so it starts automatically at future Windows sign-ins;
 it does not change SessionDock's integration opt-in. The HandleScope panel can
 separately enable the fixed per-user Roblox policy, explicitly start the API at

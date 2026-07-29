@@ -19,7 +19,9 @@ SessionDock stores application settings and isolated browser profiles under
 - shared Recent/Favorite metadata, timestamps, experience names, public/private
   classification, and a server JobId when a best-effort local match succeeds;
 - private-server codes only when the user explicitly saves or launches such a
-  destination;
+  destination through the normal launcher. A private-server link received by
+  the optional Windows link handler is used in memory for that confirmed launch
+  and is not written to account defaults, Recent, or Favorites;
 - sound preferences, generated built-in sound files, and a local copy under the
   `Sounds` folder of any startup sound the user explicitly imports;
 - the selected display-language preference (`system`, `en-US`, or `nl-NL`);
@@ -148,6 +150,34 @@ persistent configuration. Installation starts the API and enables HandleScope's
 limited per-user autostart task for future Windows sign-ins, but does not change
 SessionDock's integration setting. The connection test does not enumerate or
 close handles.
+
+The optional **Open with SessionDock** feature is off by default. Enabling it
+writes only SessionDock-owned per-user URL-handler keys under
+`HKCU\Software\Classes`, a private `sessiondock-roblox:` protocol, and a named
+Open With hint for `roblox:` links. It does not register for all HTTPS links,
+replace Roblox's default handler, elevate, or make a network request. Disable
+removes only registrations carrying SessionDock's ownership marker; unknown or
+conflicting keys are preserved.
+
+An incoming link is bounded, forwarded only within the same Windows user and
+interactive session, and validated before sending and again on receipt.
+SessionDock accepts only official Roblox HTTPS destinations or restricted
+`roblox:` forms that normalize through its normal destination parser. It
+rejects arbitrary protocols, credentials, authentication tickets, cookies,
+tokens, server JobIds, duplicate or unknown parameters, fragments, and
+ambiguous authority or port syntax. The UI hides private codes, requires an
+account choice, and asks for final confirmation before requesting a fresh
+ticket. Incoming links are never logged. Public launches may appear in Recent;
+private links received through this handler are not persisted.
+
+Windows necessarily places the incoming link in the short-lived command line
+of the newly invoked SessionDock process, and SessionDock holds it transiently
+in memory while forwarding it to the existing process. That transient payload
+can include a private-server code even though the preview hides the code and
+SessionDock does not write it to settings, history, diagnostics, or logs. A
+different process already running as the same Windows user may be able to
+inspect process command lines or memory; the handler does not claim to protect
+against a compromised same-user desktop.
 
 ## Browser permissions
 

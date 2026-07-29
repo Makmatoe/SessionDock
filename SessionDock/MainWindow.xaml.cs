@@ -1706,17 +1706,28 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task LaunchAsync(CancellationToken cancellationToken)
+    private async Task LaunchAsync(
+        CancellationToken cancellationToken,
+        ExternalRobloxLink? externalLink = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var accountDestination = PlaceIdBox.Text.Trim();
+        var accountDestination = externalLink?.Destination ??
+            PlaceIdBox.Text.Trim();
         JoinUserIdentifier? joinUser = null;
         string destination;
         LaunchTarget? target;
         string? serverJobId;
         long? trackedPlaceId;
         string parseError;
-        if (_joinUserMode)
+        if (externalLink is not null)
+        {
+            destination = externalLink.Destination;
+            target = externalLink.Target;
+            serverJobId = null;
+            trackedPlaceId = null;
+            parseError = string.Empty;
+        }
+        else if (_joinUserMode)
         {
             if (!JoinUserDestination.TryParseInput(
                     accountDestination,
@@ -1744,7 +1755,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!await FlushDestinationPersistenceAsync())
+        if (externalLink is null &&
+            !await FlushDestinationPersistenceAsync())
             return;
 
         await CheckAuthenticatedAccountAsync(
@@ -1898,7 +1910,9 @@ public partial class MainWindow : Window
             launchUri,
             activeProfile,
             recent,
-            cancellationToken);
+            cancellationToken,
+            saveToHistory:
+                ExternalRobloxLinkPolicy.ShouldSaveToHistory(externalLink));
     }
 
     private void ShowJoinUserUnavailable(
@@ -1960,7 +1974,8 @@ public partial class MainWindow : Window
         string launchUri,
         AccountProfile account,
         RecentExperience recent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool saveToHistory = true)
     {
         SetStatus(
             $"Launching as @{_currentUser?.Name}",
@@ -1977,8 +1992,9 @@ public partial class MainWindow : Window
         _launchInProgress = false;
         if (result is { Success: true, ProcessId: int processId })
         {
-            await SaveRecentExperienceAsync(recent);
-            if (_settings.RecentExperiences.Contains(recent))
+            if (saveToHistory)
+                await SaveRecentExperienceAsync(recent);
+            if (saveToHistory && _settings.RecentExperiences.Contains(recent))
                 BeginServerTracking(recent, launchStartedAt);
             SetStatus(
                 "Roblox Player started",

@@ -13,10 +13,13 @@ public partial class App : Application
 {
     private const string ProductionApplicationId = "RobloxOneLauncher";
     private readonly string _applicationId;
+    private readonly string? _startupExternalLink;
 #if SESSIONDOCK_SMOKE_HARNESS
     private readonly RuntimeSmokeTestOptions? _runtimeSmokeTest;
 #endif
     private SingleInstanceService? _singleInstance;
+    private readonly LatestOnlyRequestQueue<string> _externalLinkDispatchQueue =
+        new();
     private AppThemeService? _themeService;
     private AppLocalizationService? _localizationService;
     public UiSoundService SoundService { get; private set; } = null!;
@@ -31,9 +34,10 @@ public partial class App : Application
         _localizationService ?? throw new InvalidOperationException(
             "The application localization service has not started.");
 
-    public App()
+    public App(string? startupExternalLink = null)
     {
         _applicationId = ProductionApplicationId;
+        _startupExternalLink = startupExternalLink;
     }
 
 #if SESSIONDOCK_SMOKE_HARNESS
@@ -52,7 +56,24 @@ public partial class App : Application
         _singleInstance = new SingleInstanceService(_applicationId);
         if (!_singleInstance.IsPrimaryInstance)
         {
+            var linkForwarded = true;
+            if (_startupExternalLink is not null)
+            {
+                linkForwarded = _singleInstance.ForwardExternalLinkAsync(
+                        _startupExternalLink,
+                        TimeSpan.FromSeconds(3))
+                    .GetAwaiter()
+                    .GetResult();
+            }
             _singleInstance.NotifyPrimaryInstance();
+            if (!linkForwarded)
+            {
+                MessageBox.Show(
+                    "The running SessionDock window did not accept the link in time. No account was launched. Try the link again after the window finishes starting.",
+                    "SessionDock could not forward the link",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
             Shutdown();
             return;
         }
@@ -95,7 +116,9 @@ public partial class App : Application
                         mainWindow.Left = SystemParameters.VirtualScreenLeft - 10000;
                         mainWindow.Top = SystemParameters.VirtualScreenTop - 10000;
                     }
+#endif
                     mainWindow.Show();
+#if SESSIONDOCK_SMOKE_HARNESS
                     if (_runtimeSmokeTest is not null)
                     {
                         _ = CompleteRuntimeSmokeTestAsync(
@@ -117,6 +140,10 @@ public partial class App : Application
             Dispatcher.BeginInvoke(
                 DispatcherPriority.ApplicationIdle,
                 ActivateExistingWindow));
+        _singleInstance.ListenForExternalLinkRequests(externalLink =>
+            QueueExternalLinkForDispatch(externalLink));
+        if (_startupExternalLink is not null)
+            QueueExternalLinkForDispatch(_startupExternalLink);
     }
 
     private void ReportStartupFailure(string message)
@@ -219,6 +246,48 @@ public partial class App : Application
         window.Topmost = true;
         window.Topmost = false;
         window.Focus();
+    }
+
+    private void ReceiveExternalLink(string externalLink)
+    {
+        ActivateExistingWindow();
+        if (MainWindow is MainWindow mainWindow)
+            mainWindow.QueueExternalRobloxLink(externalLink);
+    }
+
+    private void QueueExternalLinkForDispatch(string externalLink)
+    {
+        if (!_externalLinkDispatchQueue.Enqueue(
+                externalLink,
+                out var firstRequest))
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle,
+            () => DispatchExternalLinks(firstRequest!));
+    }
+
+    private void DispatchExternalLinks(string firstRequest)
+    {
+        var current = firstRequest;
+        while (true)
+        {
+            try
+            {
+                ReceiveExternalLink(current);
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Trace.WriteLine(
+                    $"An external-link UI dispatch failed safely: {exception.GetType().Name}.");
+            }
+
+            if (!_externalLinkDispatchQueue.CompleteCurrent(out var nextRequest))
+                return;
+            current = nextRequest!;
+        }
     }
 
 #if SESSIONDOCK_SMOKE_HARNESS
