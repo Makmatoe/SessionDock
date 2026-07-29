@@ -64,42 +64,91 @@ if (-not [Version]::TryParse($fileVersion, [ref] $parsedFileVersion) -or
     throw "Published SessionDock.exe version '$fileVersion' does not match project version '$version'."
 }
 
-function Test-FileContainsBytes {
-    param(
-        [Parameter(Mandatory)] [string] $Path,
-        [Parameter(Mandatory)] [byte[]] $Pattern
-    )
+if ($null -eq ('SessionDockPublishIconProbe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Runtime.InteropServices;
 
-    $stream = [IO.File]::Open(
-        $Path,
-        [IO.FileMode]::Open,
-        [IO.FileAccess]::Read,
-        [IO.FileShare]::Read)
-    try {
-        $buffer = [byte[]]::new(128KB)
-        $matched = 0
-        while (($count = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            for ($index = 0; $index -lt $count; $index++) {
-                if ($buffer[$index] -eq $Pattern[$matched]) {
-                    $matched++
-                    if ($matched -eq $Pattern.Length) { return $true }
-                }
-                else {
-                    $matched = if ($buffer[$index] -eq $Pattern[0]) { 1 } else { 0 }
+public static class SessionDockPublishIconProbe
+{
+    public static bool ContainsBytes(string path, byte[] pattern)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("The path cannot be empty.", "path");
+        if (pattern == null)
+            throw new ArgumentNullException("pattern");
+        if (pattern.Length == 0)
+            throw new ArgumentException("The pattern cannot be empty.", "pattern");
+
+        var prefix = new int[pattern.Length];
+        for (var index = 1; index < pattern.Length; index++)
+        {
+            var candidate = prefix[index - 1];
+            while (candidate > 0 && pattern[index] != pattern[candidate])
+                candidate = prefix[candidate - 1];
+            if (pattern[index] == pattern[candidate])
+                candidate++;
+            prefix[index] = candidate;
+        }
+
+        using (var stream = new FileStream(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            128 * 1024,
+            FileOptions.SequentialScan))
+        {
+            var buffer = new byte[128 * 1024];
+            var matched = 0;
+            int count;
+            while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (var index = 0; index < count; index++)
+                {
+                    while (matched > 0 && buffer[index] != pattern[matched])
+                        matched = prefix[matched - 1];
+                    if (buffer[index] == pattern[matched])
+                        matched++;
+                    if (matched == pattern.Length)
+                        return true;
                 }
             }
         }
-        return $false
+        return false;
     }
-    finally { $stream.Dispose() }
+
+    [DllImport("shell32.dll", EntryPoint = "ExtractIconExW", CharSet = CharSet.Unicode)]
+    public static extern uint ExtractIconEx(
+        string file,
+        int index,
+        IntPtr[] large,
+        IntPtr[] small,
+        uint count);
+}
+'@
 }
 
 $removedSmokeArgument = '--isolated-runtime-smoke'
-if ((Test-FileContainsBytes $applicationPath `
-        ([Text.Encoding]::UTF8.GetBytes($removedSmokeArgument))) -or
-    (Test-FileContainsBytes $applicationPath `
-        ([Text.Encoding]::Unicode.GetBytes($removedSmokeArgument)))) {
+$containsUtf8SmokeArgument = [SessionDockPublishIconProbe]::ContainsBytes(
+    $applicationPath,
+    [Text.Encoding]::UTF8.GetBytes($removedSmokeArgument))
+$containsUnicodeSmokeArgument = [SessionDockPublishIconProbe]::ContainsBytes(
+    $applicationPath,
+    [Text.Encoding]::Unicode.GetBytes($removedSmokeArgument))
+if ($containsUtf8SmokeArgument -or $containsUnicodeSmokeArgument) {
     throw 'Production SessionDock.exe contains the test-only runtime smoke switch.'
+}
+
+$iconGroupCount = [SessionDockPublishIconProbe]::ExtractIconEx(
+    $applicationPath,
+    -1,
+    $null,
+    $null,
+    0)
+if ($iconGroupCount -lt 1) {
+    throw 'Windows cannot extract the reviewed icon from published SessionDock.exe.'
 }
 
 $assetsPath = Join-Path $root 'SessionDock/obj/project.assets.json'

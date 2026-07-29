@@ -155,6 +155,9 @@ jobs:
           RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
         run: |
           New-Item -ItemType Directory release-output -Force | Out-Null
+          # Do not pass Velopack --icon while strict legacy updaters remain
+          # supported: Velopack 1.2 adds setup.ico to the full nupkg, which
+          # those released clients correctly reject as an unexpected entry.
           & ./release-input/vpk-tool/vpk.exe pack `
             --packId SessionDockApp `
             --packVersion $env:RELEASE_VERSION `

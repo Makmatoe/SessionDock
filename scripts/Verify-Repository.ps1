@@ -41,6 +41,8 @@ try {
         'THIRD_PARTY_NOTICES.md',
         'docs/RELEASING.md',
         'SessionDock/SessionDock.csproj',
+        'SessionDock/Assets/SessionDock.Icon.png',
+        'SessionDock/Assets/SessionDock.ico',
         'SessionDock/Resources/update-public-key.pem',
         'SessionDock.ReleaseTrust/ReleaseDescriptorPolicy.cs',
         'licenses/Velopack-LICENSE.txt',
@@ -102,6 +104,22 @@ try {
     Assert-LegacyReadableReleaseNotes `
         -Path (Join-Path $root "SessionDock/ReleaseNotes/$version.md")
 
+    [xml] $applicationProject = Get-Content -LiteralPath `
+        (Join-Path $root 'SessionDock/SessionDock.csproj') -Raw
+    $applicationIcons = @($applicationProject.SelectNodes(
+            '/Project/PropertyGroup/ApplicationIcon') |
+        ForEach-Object { $_.InnerText } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($applicationIcons.Count -ne 1 -or
+        $applicationIcons[0] -cne 'Assets\SessionDock.ico') {
+        throw 'SessionDock must use the reviewed Assets\SessionDock.ico application icon.'
+    }
+    $brandResources = @($applicationProject.SelectNodes(
+            "/Project/ItemGroup/Resource[@Include='Assets\SessionDock.Icon.png']"))
+    if ($brandResources.Count -ne 1) {
+        throw 'The in-app SessionDock icon must remain an embedded WPF resource.'
+    }
+
     $releasePolicyContents = Get-Content -LiteralPath `
         (Join-Path $root 'SessionDock.ReleaseTrust/ReleaseDescriptorPolicy.cs') -Raw
     $packageIdentityMatch = [regex]::Match(
@@ -120,6 +138,11 @@ try {
     if ($releaseWorkflowContents -notmatch '--packId\s+SessionDockApp' -or
         $publishContents -notmatch 'Local production release packaging is intentionally disabled') {
         throw 'Only the protected workflow may package the non-colliding SessionDockApp production release.'
+    }
+    if ($releaseWorkflowContents -match '(?m)^\s*--icon(?:\s|$)' -or
+        $releaseWorkflowContents -match
+            'artifacts/release-input/(?:app/)?SessionDock\.ico') {
+        throw 'Velopack --icon would add setup.ico and break strict legacy updater compatibility.'
     }
     if ($publishContents -match "'--framework'\s+'webview2'" -or
         $releaseWorkflowContents -match '--framework\s+webview2') {

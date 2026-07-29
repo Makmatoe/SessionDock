@@ -130,11 +130,11 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Border Width="40" Height="40" CornerRadius="10"
-                        Background="{DynamicResource AccentBrush}"
+                        ClipToBounds="True"
                         ToolTip="{DynamicResource Main.AppTooltip}">
-                    <TextBlock Text="SD" Foreground="{DynamicResource OnAccentTextBrush}" FontSize="13"
-                               FontWeight="Bold" HorizontalAlignment="Center"
-                               VerticalAlignment="Center"/>
+                    <Image Width="52" Height="52" Margin="-6"
+                           Source="/SessionDock;component/Assets/SessionDock.Icon.png"
+                           Stretch="Uniform"/>
                 </Border>
 
                 <StackPanel Grid.Row="2">
