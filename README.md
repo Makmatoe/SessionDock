@@ -90,7 +90,8 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   default follows Dutch Windows installations and otherwise uses the complete
   English fallback; the choice is remembered locally and does not require a
   restart. Display dates and times follow the selected culture, while stored
-  data keeps its stable machine-readable format.
+  data keeps its stable machine-readable format. Some runtime confirmations
+  and detailed technical previews can use the English fallback.
 - Provides an **About and diagnostics** panel with an exact, reviewable support
   summary that can be copied or exported as text. The summary contains bounded
   counts and system/component states, never settings files, logs, paths,
@@ -141,10 +142,12 @@ entries under `HKCU\Software\Classes`: a SessionDock URL ProgID, the private
 `roblox:` links. It does not claim all HTTPS links, change the default Roblox
 handler, or elevate. Received links are forwarded over bounded same-user,
 same-Windows-session IPC to the existing SessionDock process and are validated
-again before any UI is shown. The link exists transiently in the Windows
-command line and in-memory IPC while it is handed off; private codes are hidden
-from the preview and not persisted, but this is not a boundary against another
-process already running as the same Windows user.
+again before any UI is shown. Windows leaves the link in the invoked process's
+OS command line for that process's lifetime, including when it becomes the new
+primary instance. SessionDock clears its own startup references promptly and
+keeps the link in memory only as needed to forward, review, and confirm it;
+private codes are hidden from the preview and not persisted. This is not a
+boundary against another process already running as the same Windows user.
 
 HandleScope installation starts the API immediately and enables HandleScope's
 limited per-user task so it starts automatically at future Windows sign-ins;
@@ -162,7 +165,9 @@ manager integrations. It supports normal clipboard paste and its context menu,
 while keeping each Roblox account in its own isolated local browser profile.
 
 Read [Privacy](docs/PRIVACY.md) for the complete data/network summary and
-[Security](SECURITY.md) before reporting a security issue.
+[Security](SECURITY.md) before reporting a security issue. Maintainers and
+accessibility testers can use the manual
+[accessibility verification matrix](docs/ACCESSIBILITY.md).
 
 For troubleshooting, open **About and diagnostics** from the top of the main
 window. The preview is the exact text used by both Copy and Export. SessionDock

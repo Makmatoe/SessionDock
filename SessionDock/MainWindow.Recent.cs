@@ -14,25 +14,49 @@ public partial class MainWindow
     private RecentTypeFilter _recentTypeFilter;
     private long _recentAccountFilter;
     private bool _updatingRecentFilters;
+    private bool _updatingWorkspaceTabSelection;
+    private bool _updatingRecentTypeSelection;
 
-    private void LaunchTabButton_Click(object sender, RoutedEventArgs e) =>
-        ShowLauncherTab();
-
-    private void RecentTabButton_Click(object sender, RoutedEventArgs e)
+    private void LaunchTabButton_Checked(object sender, RoutedEventArgs e)
     {
-        LaunchTabPanel.Visibility = Visibility.Collapsed;
-        RecentTabPanel.Visibility = Visibility.Visible;
-        LaunchTabButton.IsChecked = false;
-        RecentTabButton.IsChecked = true;
+        if (!_updatingWorkspaceTabSelection)
+            ShowLauncherTab();
+    }
+
+    private void RecentTabButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_updatingWorkspaceTabSelection)
+            return;
+
+        _updatingWorkspaceTabSelection = true;
+        try
+        {
+            LaunchTabPanel.Visibility = Visibility.Collapsed;
+            RecentTabPanel.Visibility = Visibility.Visible;
+            LaunchTabButton.IsChecked = false;
+            RecentTabButton.IsChecked = true;
+        }
+        finally
+        {
+            _updatingWorkspaceTabSelection = false;
+        }
         RenderRecentExperiences();
     }
 
     private void ShowLauncherTab()
     {
-        LaunchTabPanel.Visibility = Visibility.Visible;
-        RecentTabPanel.Visibility = Visibility.Collapsed;
-        RecentTabButton.IsChecked = false;
-        LaunchTabButton.IsChecked = true;
+        _updatingWorkspaceTabSelection = true;
+        try
+        {
+            LaunchTabPanel.Visibility = Visibility.Visible;
+            RecentTabPanel.Visibility = Visibility.Collapsed;
+            RecentTabButton.IsChecked = false;
+            LaunchTabButton.IsChecked = true;
+        }
+        finally
+        {
+            _updatingWorkspaceTabSelection = false;
+        }
     }
 
     private void RenderRecentExperiences()
@@ -772,21 +796,38 @@ public partial class MainWindow
         RenderRecentExperiences();
     }
 
-    private void AllTypeFilterButton_Click(object sender, RoutedEventArgs e) =>
-        SetRecentTypeFilter(RecentTypeFilter.All);
+    private void AllTypeFilterButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingRecentTypeSelection)
+            SetRecentTypeFilter(RecentTypeFilter.All);
+    }
 
-    private void PublicFilterButton_Click(object sender, RoutedEventArgs e) =>
-        SetRecentTypeFilter(RecentTypeFilter.Public);
+    private void PublicFilterButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingRecentTypeSelection)
+            SetRecentTypeFilter(RecentTypeFilter.Public);
+    }
 
-    private void PrivateFilterButton_Click(object sender, RoutedEventArgs e) =>
-        SetRecentTypeFilter(RecentTypeFilter.Private);
+    private void PrivateFilterButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingRecentTypeSelection)
+            SetRecentTypeFilter(RecentTypeFilter.Private);
+    }
 
     private void SetRecentTypeFilter(RecentTypeFilter filter)
     {
         _recentTypeFilter = filter;
-        AllTypeFilterButton.IsChecked = filter == RecentTypeFilter.All;
-        PublicFilterButton.IsChecked = filter == RecentTypeFilter.Public;
-        PrivateFilterButton.IsChecked = filter == RecentTypeFilter.Private;
+        _updatingRecentTypeSelection = true;
+        try
+        {
+            AllTypeFilterButton.IsChecked = filter == RecentTypeFilter.All;
+            PublicFilterButton.IsChecked = filter == RecentTypeFilter.Public;
+            PrivateFilterButton.IsChecked = filter == RecentTypeFilter.Private;
+        }
+        finally
+        {
+            _updatingRecentTypeSelection = false;
+        }
         RenderRecentExperiences();
     }
 

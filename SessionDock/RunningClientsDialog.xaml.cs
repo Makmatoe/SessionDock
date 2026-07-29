@@ -15,6 +15,8 @@ public partial class RunningClientsDialog : Window
     private readonly Func<bool> _ownerIsShuttingDown;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly List<Button> _closeButtons = [];
+    private readonly AccessibilityLiveRegion _statusLiveRegion;
+    private readonly AccessibilityLiveRegion _warningLiveRegion;
     private IReadOnlyList<RunningRobloxClient> _clients = [];
     private bool _busy;
     private bool _destructiveOperationBusy;
@@ -27,6 +29,8 @@ public partial class RunningClientsDialog : Window
         ArgumentNullException.ThrowIfNull(clientService);
         ArgumentNullException.ThrowIfNull(registry);
         InitializeComponent();
+        _statusLiveRegion = new AccessibilityLiveRegion(StatusText);
+        _warningLiveRegion = new AccessibilityLiveRegion(WarningText);
         Services.WindowLayoutService.FitToWorkArea(this);
         _clientService = clientService;
         _registry = registry;
@@ -63,9 +67,10 @@ public partial class RunningClientsDialog : Window
                 _lifetime.Token);
             _lifetime.Token.ThrowIfCancellationRequested();
             ApplyScan(scan, focusIndex);
-            StatusText.Text = AppendUnverifiedWarning(
-                result ?? GetRefreshStatus(scan.Clients.Count),
-                scan.UnverifiedCount);
+            var baseStatus = result ?? GetRefreshStatus(scan.Clients.Count);
+            SetStatus(
+                AppendUnverifiedWarning(baseStatus, scan.UnverifiedCount),
+                accessibleAnnouncement: baseStatus);
         }
         catch (OperationCanceledException) when (
             _lifetime.IsCancellationRequested)
@@ -75,8 +80,9 @@ public partial class RunningClientsDialog : Window
         catch (Exception exception) when (
             IsExpectedProcessInspectionFailure(exception))
         {
-            StatusText.Text =
-                "Running Roblox clients could not be inspected safely. Try Refresh.";
+            SetStatus(
+                "Running Roblox clients could not be inspected safely. Try Refresh.",
+                isError: true);
         }
         finally
         {
@@ -98,9 +104,12 @@ public partial class RunningClientsDialog : Window
         WarningBorder.Visibility = scan.UnverifiedCount > 0
             ? Visibility.Visible
             : Visibility.Collapsed;
-        WarningText.Text = scan.UnverifiedCount == 1
-            ? "One Roblox-named process could not be safely verified and was left untouched."
-            : $"{scan.UnverifiedCount} Roblox-named processes could not be safely verified and were left untouched.";
+        SetWarning(scan.UnverifiedCount switch
+        {
+            0 => string.Empty,
+            1 => "One Roblox-named process could not be safely verified and was left untouched.",
+            _ => $"{scan.UnverifiedCount} Roblox-named processes could not be safely verified and were left untouched."
+        });
     }
 
     private void RenderClients(int? focusIndex)
@@ -255,7 +264,7 @@ public partial class RunningClientsDialog : Window
             Text = knownAccount
                 ? $"{experience} • launched for @{attribution!.AccountUsername}"
                 : "Launched before SessionDock opened or outside this run",
-            FontSize = 10,
+            FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -271,7 +280,7 @@ public partial class RunningClientsDialog : Window
             Text = client.HasVisibleWindow
                 ? $"Started {startedAt:t} • PID {client.Identity.ProcessId}"
                 : $"Background process • started {startedAt:t} • PID {client.Identity.ProcessId}",
-            FontSize = 10,
+            FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -337,7 +346,7 @@ public partial class RunningClientsDialog : Window
             return;
 
         SetBusy(true, destructive: true);
-        StatusText.Text = $"Closing PID {target.Client.Identity.ProcessId}…";
+        SetStatus($"Closing PID {target.Client.Identity.ProcessId}…");
         try
         {
             var closeResult = await _clientService.ClosePlayerAsync(
@@ -379,8 +388,9 @@ public partial class RunningClientsDialog : Window
         catch (Exception exception) when (
             IsExpectedProcessInspectionFailure(exception))
         {
-            StatusText.Text =
-                "The selected Roblox client could not be inspected safely.";
+            SetStatus(
+                "The selected Roblox client could not be inspected safely.",
+                isError: true);
         }
         finally
         {
@@ -409,7 +419,7 @@ public partial class RunningClientsDialog : Window
             return;
 
         SetBusy(true, destructive: true);
-        StatusText.Text = "Closing the displayed Roblox clients…";
+        SetStatus("Closing the displayed Roblox clients…");
         try
         {
             var results = await CloseIdentitySnapshotAsync(
@@ -448,8 +458,9 @@ public partial class RunningClientsDialog : Window
         catch (Exception exception) when (
             IsExpectedProcessInspectionFailure(exception))
         {
-            StatusText.Text =
-                "The displayed Roblox clients could not be inspected or closed safely.";
+            SetStatus(
+                "The displayed Roblox clients could not be inspected or closed safely.",
+                isError: true);
         }
         finally
         {
@@ -501,9 +512,11 @@ public partial class RunningClientsDialog : Window
                 _lifetime.Token);
             _lifetime.Token.ThrowIfCancellationRequested();
             ApplyScan(scan, focusIndex);
-            StatusText.Text = AppendUnverifiedWarning(
-                completedActionStatus,
-                scan.UnverifiedCount);
+            SetStatus(
+                AppendUnverifiedWarning(
+                    completedActionStatus,
+                    scan.UnverifiedCount),
+                accessibleAnnouncement: completedActionStatus);
         }
         catch (OperationCanceledException)
         {
@@ -512,8 +525,9 @@ public partial class RunningClientsDialog : Window
         catch (Exception exception) when (
             IsExpectedProcessInspectionFailure(exception))
         {
-            StatusText.Text =
-                $"{completedActionStatus} The client list could not be refreshed; use Refresh to try again.";
+            SetStatus(
+                $"{completedActionStatus} The client list could not be refreshed; use Refresh to try again.",
+                isError: true);
         }
     }
 
@@ -527,6 +541,22 @@ public partial class RunningClientsDialog : Window
         foreach (var closeButton in _closeButtons)
             closeButton.IsEnabled = !busy;
     }
+
+    private void SetStatus(
+        string text,
+        bool isError = false,
+        string? accessibleAnnouncement = null) =>
+        _statusLiveRegion.Update(
+            text,
+            accessibleAnnouncement,
+            severity: isError
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
+
+    private void SetWarning(string text) =>
+        _warningLiveRegion.Update(
+            text,
+            severity: AccessibilityLiveRegionSeverity.Assertive);
 
     private void RestoreFocusAfterClose(int requestedIndex)
     {
@@ -622,8 +652,9 @@ public partial class RunningClientsDialog : Window
             return;
 
         e.Cancel = true;
-        StatusText.Text =
-            "Wait for the current close operation to finish before closing this window.";
+        SetStatus(
+            "Wait for the current close operation to finish before closing this window.",
+            isError: true);
     }
 
     private void RunningClientsDialog_Closed(object? sender, EventArgs e)

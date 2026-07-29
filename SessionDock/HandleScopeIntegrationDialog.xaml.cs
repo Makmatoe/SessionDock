@@ -14,6 +14,8 @@ public partial class HandleScopeIntegrationDialog : Window
     private readonly HandleScopeIntegrationService _integrationService = new();
     private readonly HandleScopeReleaseInstaller _releaseInstaller = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
+    private readonly AccessibilityLiveRegion _stateLiveRegion;
+    private readonly AccessibilityLiveRegion _actionStatusLiveRegion;
     private HandleScopeIntegrationState _state =
         HandleScopeIntegrationState.NotInstalled;
     private bool _canRepairConfiguration;
@@ -25,6 +27,9 @@ public partial class HandleScopeIntegrationDialog : Window
     public HandleScopeIntegrationDialog()
     {
         InitializeComponent();
+        _stateLiveRegion = new AccessibilityLiveRegion(StateTitleText);
+        _actionStatusLiveRegion =
+            new AccessibilityLiveRegion(ActionStatusText);
         WindowLayoutService.FitToWorkArea(this);
         Loaded += HandleScopeIntegrationDialog_Loaded;
         Closing += HandleScopeIntegrationDialog_Closing;
@@ -117,7 +122,7 @@ public partial class HandleScopeIntegrationDialog : Window
             return;
 
         SetBusy(true);
-        ActionStatusText.Text = "Checking the latest stable HandleScope release...";
+        SetActionStatus("Checking the latest stable HandleScope release...");
         try
         {
             var progress = new ImmediateProgress<HandleScopeReleaseInstallProgress>(
@@ -133,7 +138,7 @@ public partial class HandleScopeIntegrationDialog : Window
             _state = result.State;
             _canRepairConfiguration = result.CanRepairConfiguration;
             RenderState();
-            ActionStatusText.Text = _state switch
+            SetActionStatus(_state switch
             {
                 HandleScopeIntegrationState.Ready =>
                     $"HandleScope {installed.Version} was verified and installed. Its API is running, autostart is enabled, and the integration is ready.",
@@ -141,14 +146,14 @@ public partial class HandleScopeIntegrationDialog : Window
                     $"HandleScope {installed.Version} was verified and installed. Its API is running with autostart enabled; select Enable once to opt in.",
                 _ =>
                     $"HandleScope {installed.Version} was verified and installed with autostart enabled. Use Start API if it is not yet running."
-            };
+            });
         }
         catch (OperationCanceledException)
         {
             if (!_isClosed)
             {
-                ActionStatusText.Text =
-                    "HandleScope installation was cancelled before the installer started.";
+                SetActionStatus(
+                    "HandleScope installation was cancelled before the installer started.");
             }
         }
         catch (HandleScopeInstallException exception)
@@ -156,7 +161,7 @@ public partial class HandleScopeIntegrationDialog : Window
             Trace.WriteLine(
                 $"HandleScope install failed safely: {exception.GetType().Name}.");
             if (!_isClosed)
-                ActionStatusText.Text = exception.Message;
+                SetActionStatus(exception.Message, isError: true);
         }
         finally
         {
@@ -170,7 +175,7 @@ public partial class HandleScopeIntegrationDialog : Window
     {
         if (_isClosed)
             return;
-        ActionStatusText.Text = progress.Stage switch
+        var visibleStatus = progress.Stage switch
         {
             HandleScopeReleaseInstallStage.CheckingRelease =>
                 "Checking the latest stable HandleScope release...",
@@ -183,6 +188,13 @@ public partial class HandleScopeIntegrationDialog : Window
             _ => throw new InvalidOperationException(
                 "Unexpected HandleScope installation stage.")
         };
+        var accessibleStatus = progress.Stage ==
+            HandleScopeReleaseInstallStage.DownloadingPackage
+                ? $"Downloading HandleScope {progress.Version}."
+                : visibleStatus;
+        SetActionStatus(
+            visibleStatus,
+            accessibleAnnouncement: accessibleStatus);
     }
 
     private string MarkInstallCommitStarted(string? version)
@@ -200,7 +212,7 @@ public partial class HandleScopeIntegrationDialog : Window
             return;
 
         SetBusy(true);
-        ActionStatusText.Text = "Working...";
+        SetActionStatus("Working...");
         try
         {
             var result = await action(_lifetimeCancellation.Token);
@@ -209,16 +221,19 @@ public partial class HandleScopeIntegrationDialog : Window
             if (_canRepairConfiguration)
                 _repairEnablesIntegration = repairEnablesIntegration;
             RenderState();
-            ActionStatusText.Text = _state ==
-                HandleScopeIntegrationState.ConfigurationError
+            var configurationError = _state ==
+                HandleScopeIntegrationState.ConfigurationError;
+            SetActionStatus(
+                configurationError
                     ? _canRepairConfiguration
                         ? "The existing opt-in was preserved. Review the warning before choosing Repair."
                         : "The action was refused safely. Check the official installation, then refresh the status."
-                    : completedMessage;
+                    : completedMessage,
+                isError: configurationError);
         }
         catch (OperationCanceledException)
         {
-            ActionStatusText.Text = string.Empty;
+            SetActionStatus(string.Empty);
         }
         finally
         {
@@ -342,7 +357,13 @@ public partial class HandleScopeIntegrationDialog : Window
         string surfaceResource,
         string iconResource)
     {
-        StateTitleText.Text = title;
+        var tone = StatusToneClassifier.Classify(badge);
+        _stateLiveRegion.Update(
+            title,
+            $"{title} {description} {badge}",
+            tone is StatusTone.Error or StatusTone.Warning
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
         StateDescriptionText.Text = description;
         StateBadgeText.Text = badge;
         StateIcon.SetResourceReference(
@@ -359,6 +380,17 @@ public partial class HandleScopeIntegrationDialog : Window
             surfaceResource);
         StateIcon.Data = (Geometry)FindResource(iconResource);
     }
+
+    private void SetActionStatus(
+        string text,
+        bool isError = false,
+        string? accessibleAnnouncement = null) =>
+        _actionStatusLiveRegion.Update(
+            text,
+            accessibleAnnouncement,
+            severity: isError
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
 
     private void SetBusy(bool busy)
     {

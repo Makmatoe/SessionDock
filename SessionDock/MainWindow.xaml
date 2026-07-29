@@ -439,7 +439,6 @@
                                         GroupName="MainWorkspaceTabs"
                                         IsChecked="True"
                                         Style="{StaticResource SegmentRadioButton}"
-                                        Click="LaunchTabButton_Click"
                                         Margin="0,0,6,0"
                             AutomationProperties.Name="{DynamicResource Main.Launch}"
                             ToolTip="{DynamicResource Main.LaunchTabTooltip}">
@@ -454,7 +453,6 @@
                                         GroupName="MainWorkspaceTabs"
                                         IsChecked="False"
                                         Style="{StaticResource SegmentRadioButton}"
-                                        Click="RecentTabButton_Click"
                             AutomationProperties.Name="{DynamicResource Main.Recent}"
                             ToolTip="{DynamicResource Main.RecentTabTooltip}">
                                     <StackPanel Orientation="Horizontal">
@@ -500,7 +498,6 @@
                                           IsChecked="True"
                                           Content="{DynamicResource Main.Experience}"
                                                 Style="{StaticResource SegmentRadioButton}"
-                                                Click="ExperienceDestinationModeButton_Click"
                                                 Padding="10,7" Margin="0,0,4,0"
                                           AutomationProperties.Name="{DynamicResource Main.JoinExperience}"/>
                                         <RadioButton x:Name="UserDestinationModeButton"
@@ -508,7 +505,6 @@
                                           IsChecked="False"
                                           Content="{DynamicResource Main.User}"
                                                 Style="{StaticResource SegmentRadioButton}"
-                                                Click="UserDestinationModeButton_Click"
                                                 Padding="10,7"
                                           AutomationProperties.Name="{DynamicResource Main.JoinUser}"/>
                                     </StackPanel>
@@ -694,21 +690,18 @@
                                             IsChecked="True"
                                             Content="{DynamicResource Common.All}"
                                             Style="{StaticResource SegmentRadioButton}"
-                                            Click="AllTypeFilterButton_Click"
                                             Padding="10,7" Margin="0,0,4,0"/>
                                     <RadioButton x:Name="PublicFilterButton"
                                             GroupName="RecentTypeFilter"
                                             IsChecked="False"
                                             Content="{DynamicResource Main.Public}"
                                             Style="{StaticResource SegmentRadioButton}"
-                                            Click="PublicFilterButton_Click"
                                             Padding="10,7" Margin="0,0,4,0"/>
                                     <RadioButton x:Name="PrivateFilterButton"
                                             GroupName="RecentTypeFilter"
                                             IsChecked="False"
                                             Content="{DynamicResource Main.Private}"
                                             Style="{StaticResource SegmentRadioButton}"
-                                            Click="PrivateFilterButton_Click"
                                             Padding="10,7"/>
                                 </StackPanel>
                                 <Border Grid.Column="1" Height="34"
@@ -856,7 +849,8 @@
                                    Text="{DynamicResource Main.CheckingSession}"
                                    Foreground="{DynamicResource TextBrush}"
                                    FontSize="13" FontWeight="SemiBold"
-                                   TextWrapping="Wrap"/>
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite"/>
                         <TextBlock x:Name="StatusDetail"
                                    Text="{DynamicResource Main.CheckingSessionDetail}"
                                    Foreground="{DynamicResource MutedBrush}"

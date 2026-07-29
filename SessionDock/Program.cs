@@ -102,6 +102,8 @@ public static class Program
 #else
         var application = new App(externalLink);
 #endif
+        externalLink = null;
+        Array.Clear(args);
         application.InitializeComponent();
         Environment.ExitCode = application.Run();
     }

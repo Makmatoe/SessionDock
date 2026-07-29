@@ -40,7 +40,7 @@
                                FontSize="12" Margin="0,4,0,0"/>
                         <TextBlock Text="{DynamicResource About.Subtitle}"
                                Foreground="{DynamicResource SubtleBrush}"
-                               FontSize="10" Margin="0,3,0,0"/>
+                               FontSize="11" Margin="0,3,0,0"/>
                 </StackPanel>
             </Grid>
 
@@ -81,7 +81,7 @@
                 </Grid.RowDefinitions>
                 <TextBlock Text="{DynamicResource About.PreviewLabel}"
                            Foreground="{DynamicResource SubtleBrush}"
-                           FontSize="10" FontWeight="SemiBold"
+                           FontSize="11" FontWeight="SemiBold"
                            Margin="2,0,0,6"/>
                 <Border Grid.Row="1" Padding="10"
                         Background="{DynamicResource InsetSurfaceBrush}"

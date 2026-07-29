@@ -1,8 +1,10 @@
 using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
+using System.Windows;
 using System.Windows.Automation.Peers;
 using System.Windows.Automation.Provider;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using System.Xml.Linq;
 
 namespace SessionDock.Tests;
@@ -63,6 +65,7 @@ public sealed class SemanticSelectorTests
             Assert.Equal(
                 "{StaticResource SegmentRadioButton}",
                 (string?)selector.Attribute("Style"));
+            Assert.Null(selector.Attribute("Click"));
             Assert.Null(selector.Attribute("AutomationProperties.ItemStatus"));
 
             var group = Assert.IsType<XElement>(selector.Parent);
@@ -114,6 +117,7 @@ public sealed class SemanticSelectorTests
         Exception? failure = null;
         var thread = new Thread(() =>
         {
+            Window? window = null;
             try
             {
                 var group = new StackPanel();
@@ -122,19 +126,46 @@ public sealed class SemanticSelectorTests
                 group.Children.Add(first);
                 group.Children.Add(second);
 
-                first.IsChecked = true;
                 second.IsChecked = true;
+                var checkedEvents = 0;
+                var clickEvents = 0;
+                first.Checked += (_, _) => checkedEvents++;
+                first.Click += (_, _) => clickEvents++;
+                window = new Window
+                {
+                    Content = group,
+                    Width = 100,
+                    Height = 100,
+                    Left = -10_000,
+                    Top = -10_000,
+                    ShowActivated = false,
+                    ShowInTaskbar = false,
+                    WindowStyle = WindowStyle.None
+                };
+                window.Show();
+                Dispatcher.CurrentDispatcher.Invoke(
+                    DispatcherPriority.ApplicationIdle,
+                    static () => { });
 
-                Assert.False(first.IsChecked == true);
-                Assert.True(second.IsChecked == true);
-                var peer = new RadioButtonAutomationPeer(second);
+                var peer = new RadioButtonAutomationPeer(first);
                 var provider = Assert.IsAssignableFrom<ISelectionItemProvider>(
                     peer.GetPattern(PatternInterface.SelectionItem));
+                provider.Select();
+
+                Assert.True(first.IsChecked == true);
+                Assert.False(second.IsChecked == true);
                 Assert.True(provider.IsSelected);
+                Assert.Equal(1, checkedEvents);
+                Assert.Equal(0, clickEvents);
             }
             catch (Exception exception)
             {
                 failure = exception;
+            }
+            finally
+            {
+                window?.Close();
+                Dispatcher.CurrentDispatcher.InvokeShutdown();
             }
         });
         thread.SetApartmentState(ApartmentState.STA);
@@ -145,6 +176,58 @@ public sealed class SemanticSelectorTests
             "The STA automation check did not complete.");
         if (failure is not null)
             ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+
+    [Fact]
+    public void MainWindow_CheckedEventsRouteEverySemanticSelection()
+    {
+        var root = FindRepositoryRoot();
+        var mainSource = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.xaml.cs"));
+        var recentSource = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.Recent.cs"));
+        var appSource = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "App.xaml.cs"));
+
+        Assert.Contains(
+            "AttachSemanticSelectorHandlers();",
+            mainSource,
+            StringComparison.Ordinal);
+        foreach (var selector in new[]
+                 {
+                     "LaunchTabButton",
+                     "RecentTabButton",
+                     "ExperienceDestinationModeButton",
+                     "UserDestinationModeButton",
+                     "AllTypeFilterButton",
+                     "PublicFilterButton",
+                     "PrivateFilterButton"
+                 })
+        {
+            Assert.Contains(
+                $"{selector}.Checked +=",
+                mainSource,
+                StringComparison.Ordinal);
+        }
+
+        Assert.DoesNotContain(
+            "LaunchTabButton_Click",
+            recentSource,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "PublicFilterButton_Click",
+            recentSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "VerifySemanticSelectorsForRuntimeSmoke();",
+            appSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]

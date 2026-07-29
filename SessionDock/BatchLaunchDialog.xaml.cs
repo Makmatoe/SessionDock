@@ -10,6 +10,7 @@ public partial class BatchLaunchDialog : Window
     private readonly IReadOnlyList<BatchLaunchAccountOption> _accounts;
     private readonly List<BatchLaunchPreset> _presets;
     private readonly bool _retryMode;
+    private readonly AccessibilityLiveRegion _validationLiveRegion;
 
     public IReadOnlyList<AccountProfile> SelectedAccounts { get; private set; } = [];
     public TimeSpan Delay { get; private set; } =
@@ -37,6 +38,7 @@ public partial class BatchLaunchDialog : Window
         ArgumentNullException.ThrowIfNull(accounts);
         ArgumentNullException.ThrowIfNull(presets);
         InitializeComponent();
+        _validationLiveRegion = new AccessibilityLiveRegion(ValidationText);
         WindowLayoutService.FitToWorkArea(this);
         _retryMode = retryMode;
         var accountArray = accounts.ToArray();
@@ -292,7 +294,9 @@ public partial class BatchLaunchDialog : Window
         ValidationText.SetResourceReference(
             TextBlock.ForegroundProperty,
             "ErrorTextBrush");
-        ValidationText.Text = message;
+        _validationLiveRegion.Update(
+            message,
+            severity: AccessibilityLiveRegionSeverity.Assertive);
     }
 
     private void SetStatus(string message)
@@ -300,7 +304,7 @@ public partial class BatchLaunchDialog : Window
         ValidationText.SetResourceReference(
             TextBlock.ForegroundProperty,
             "MutedBrush");
-        ValidationText.Text = message;
+        _validationLiveRegion.Update(message);
     }
 
     private void CancelButton_Click(object sender, RoutedEventArgs e) =>

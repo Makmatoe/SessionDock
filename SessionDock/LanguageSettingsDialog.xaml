@@ -32,7 +32,7 @@
             <StackPanel Grid.Row="1" Margin="0,24,0,0">
                 <TextBlock Text="{DynamicResource Language.DisplayLanguage}"
                            Foreground="{DynamicResource SubtleBrush}"
-                           FontSize="10" FontWeight="SemiBold"/>
+                           FontSize="11" FontWeight="SemiBold"/>
                 <ComboBox x:Name="LanguageComboBox"
                           Margin="0,8,0,0"
                           SelectionChanged="LanguageComboBox_SelectionChanged"

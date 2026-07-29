@@ -47,7 +47,7 @@
                         Click="CurrentReleaseButton_Click"
                         PreviewKeyDown="ReleaseTabButton_PreviewKeyDown">
                     <StackPanel>
-                            <TextBlock Text="{DynamicResource Release.Current}" FontSize="9"
+                            <TextBlock Text="{DynamicResource Release.Current}" FontSize="11"
                                    Foreground="{DynamicResource InfoTextBrush}"
                                    FontWeight="Bold"/>
                         <TextBlock x:Name="CurrentVersionText"
@@ -62,7 +62,7 @@
                         Click="PreviousReleaseButton_Click"
                         PreviewKeyDown="ReleaseTabButton_PreviewKeyDown">
                     <StackPanel>
-                            <TextBlock Text="{DynamicResource Release.Previous}" FontSize="9"
+                            <TextBlock Text="{DynamicResource Release.Previous}" FontSize="11"
                                    Foreground="{DynamicResource SubtleBrush}"
                                    FontWeight="Bold"/>
                         <TextBlock x:Name="PreviousVersionText"

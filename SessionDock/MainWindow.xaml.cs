@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -42,6 +44,8 @@ public partial class MainWindow : Window
     private readonly SettingsMutationCoordinator _settingsMutations;
     private readonly DestinationPersistenceDebouncer _destinationPersistence;
     private readonly AccountVerificationGate _accountVerificationGate = new();
+    private readonly AccessibilityLiveRegion _statusLiveRegion;
+    private readonly AccessibilityLiveRegion? _destinationValidationLiveRegion;
     private string? _startupNotice;
     private AccountProfile? _activeProfile;
     private AccountProfile? _pendingProfile;
@@ -61,6 +65,7 @@ public partial class MainWindow : Window
     private bool _destinationDraftDirty;
     private bool _destinationDraftValid = true;
     private bool _joinUserMode;
+    private bool _updatingDestinationModeSelection;
     private bool _destinationModeAwaitingInput;
     private bool _webView2RecoveryPromptShown;
     private bool _shutdownComplete;
@@ -121,7 +126,7 @@ public partial class MainWindow : Window
     internal void VerifyJoinUserUiForRuntimeSmoke()
     {
         Dispatcher.VerifyAccess();
-        ChangeDestinationMode(joinUser: true);
+        SelectWithAutomation(UserDestinationModeButton);
         if (!_joinUserMode ||
             LaunchButtonLabel.Text != Localize("Main.JoinUserButton") ||
             UserDestinationModeButton.IsChecked != true ||
@@ -133,7 +138,7 @@ public partial class MainWindow : Window
                 "The join-user destination mode did not become active.");
         }
 
-        ChangeDestinationMode(joinUser: false);
+        SelectWithAutomation(ExperienceDestinationModeButton);
         if (_joinUserMode ||
             LaunchButtonLabel.Text != Localize("Main.Launch") ||
             ExperienceDestinationModeButton.IsChecked != true ||
@@ -146,6 +151,46 @@ public partial class MainWindow : Window
         }
     }
 
+    internal void VerifySemanticSelectorsForRuntimeSmoke()
+    {
+        Dispatcher.VerifyAccess();
+        SelectWithAutomation(RecentTabButton);
+        if (RecentTabPanel.Visibility != Visibility.Visible ||
+            LaunchTabPanel.Visibility == Visibility.Visible)
+        {
+            throw new InvalidOperationException(
+                "The UI Automation selection did not open Recent.");
+        }
+
+        SelectWithAutomation(PublicFilterButton);
+        if (_recentTypeFilter != RecentTypeFilter.Public ||
+            PublicFilterButton.IsChecked != true ||
+            AllTypeFilterButton.IsChecked == true)
+        {
+            throw new InvalidOperationException(
+                "The UI Automation selection did not apply the public filter.");
+        }
+
+        SelectWithAutomation(AllTypeFilterButton);
+        SelectWithAutomation(LaunchTabButton);
+        if (_recentTypeFilter != RecentTypeFilter.All ||
+            LaunchTabPanel.Visibility != Visibility.Visible ||
+            RecentTabPanel.Visibility == Visibility.Visible)
+        {
+            throw new InvalidOperationException(
+                "The semantic selectors did not restore their default state.");
+        }
+    }
+
+    private static void SelectWithAutomation(RadioButton selector)
+    {
+        var peer = new RadioButtonAutomationPeer(selector);
+        var provider = peer.GetPattern(PatternInterface.SelectionItem) as
+            ISelectionItemProvider ?? throw new InvalidOperationException(
+                "A segmented selector did not expose SelectionItem.");
+        provider.Select();
+    }
+
     private static Color GetSolidColor(Brush brush, string description) =>
         brush is SolidColorBrush solidColorBrush
             ? solidColorBrush.Color
@@ -155,6 +200,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        AttachSemanticSelectorHandlers();
+        _statusLiveRegion = new AccessibilityLiveRegion(StatusTitle);
+        _destinationValidationLiveRegion =
+            new AccessibilityLiveRegion(DestinationValidationText);
         CaptionControls.AttachToWindow(this);
         var app = (App)Application.Current;
         _soundService = app.SoundService;
@@ -191,6 +240,19 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
+    }
+
+    private void AttachSemanticSelectorHandlers()
+    {
+        LaunchTabButton.Checked += LaunchTabButton_Checked;
+        RecentTabButton.Checked += RecentTabButton_Checked;
+        ExperienceDestinationModeButton.Checked +=
+            ExperienceDestinationModeButton_Checked;
+        UserDestinationModeButton.Checked +=
+            UserDestinationModeButton_Checked;
+        AllTypeFilterButton.Checked += AllTypeFilterButton_Checked;
+        PublicFilterButton.Checked += PublicFilterButton_Checked;
+        PrivateFilterButton.Checked += PrivateFilterButton_Checked;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e) =>
@@ -817,11 +879,16 @@ public partial class MainWindow : Window
 
     private void SetStatus(string title, string detail, string badge)
     {
-        StatusTitle.Text = title;
+        var tone = StatusToneClassifier.Classify(badge);
+        _statusLiveRegion.Update(
+            title,
+            CreateStatusAnnouncement(title, detail, badge),
+            tone is StatusTone.Error or StatusTone.Warning
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
         StatusDetail.Text = detail;
         SessionBadge.Text = badge;
 
-        var tone = StatusToneClassifier.Classify(badge);
         var foregroundResource = tone switch
         {
             StatusTone.Error => "ErrorTextBrush",
@@ -855,6 +922,16 @@ public partial class MainWindow : Window
             Border.BackgroundProperty,
             surfaceResource);
     }
+
+    internal static string CreateStatusAnnouncement(
+        string title,
+        string detail,
+        string badge) =>
+        string.Join(
+            " ",
+            new[] { title, detail, badge }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim()));
 
     private Task RunWindowOperationAsync(
         Func<CancellationToken, Task> operation) =>
@@ -2267,13 +2344,21 @@ public partial class MainWindow : Window
             RefreshLaunchAvailability();
     }
 
-    private void ExperienceDestinationModeButton_Click(
+    private void ExperienceDestinationModeButton_Checked(
         object sender,
-        RoutedEventArgs e) => ChangeDestinationMode(joinUser: false);
+        RoutedEventArgs e)
+    {
+        if (!_updatingDestinationModeSelection)
+            ChangeDestinationMode(joinUser: false);
+    }
 
-    private void UserDestinationModeButton_Click(
+    private void UserDestinationModeButton_Checked(
         object sender,
-        RoutedEventArgs e) => ChangeDestinationMode(joinUser: true);
+        RoutedEventArgs e)
+    {
+        if (!_updatingDestinationModeSelection)
+            ChangeDestinationMode(joinUser: true);
+    }
 
     private void ChangeDestinationMode(bool joinUser)
     {
@@ -2298,8 +2383,16 @@ public partial class MainWindow : Window
 
     private void UpdateDestinationModePresentation()
     {
-        ExperienceDestinationModeButton.IsChecked = !_joinUserMode;
-        UserDestinationModeButton.IsChecked = _joinUserMode;
+        _updatingDestinationModeSelection = true;
+        try
+        {
+            ExperienceDestinationModeButton.IsChecked = !_joinUserMode;
+            UserDestinationModeButton.IsChecked = _joinUserMode;
+        }
+        finally
+        {
+            _updatingDestinationModeSelection = false;
+        }
         DestinationHelpText.Text = _joinUserMode
             ? Localize("Main.JoinUserHelp")
             : Localize("Main.DestinationHelp");
@@ -2706,7 +2799,16 @@ public partial class MainWindow : Window
             out var validationError);
         if (DestinationValidationText is not null)
         {
-            DestinationValidationText.Text = validationError;
+            if (_destinationValidationLiveRegion is { } liveRegion)
+            {
+                liveRegion.Update(
+                    validationError,
+                    severity: AccessibilityLiveRegionSeverity.Assertive);
+            }
+            else
+            {
+                DestinationValidationText.Text = validationError;
+            }
             DestinationValidationText.Visibility =
                 destination.Length > 0 && !destinationIsValid
                     ? Visibility.Visible

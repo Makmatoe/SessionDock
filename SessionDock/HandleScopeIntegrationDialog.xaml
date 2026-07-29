@@ -72,7 +72,8 @@
                             <StackPanel Grid.Column="1" Margin="10,0,16,0">
                         <TextBlock x:Name="StateTitleText" Text="{DynamicResource Handle.CheckingSetup}"
                                            Foreground="{DynamicResource TextBrush}" FontSize="16"
-                                           FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                           FontWeight="SemiBold" TextWrapping="Wrap"
+                                           AutomationProperties.LiveSetting="Polite"/>
                                 <TextBlock x:Name="StateDescriptionText"
                                    Text="{DynamicResource Handle.CheckingDetail}"
                                            Foreground="{DynamicResource MutedBrush}" FontSize="12"
@@ -84,7 +85,7 @@
                                     Padding="9,5" VerticalAlignment="Top">
                         <TextBlock x:Name="StateBadgeText" Text="{DynamicResource Common.Checking}"
                                            Foreground="{DynamicResource BadgeTextBrush}"
-                                           FontSize="9"
+                                           FontSize="11"
                                            FontWeight="Bold"/>
                             </Border>
                         </Grid>
@@ -222,7 +223,7 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                 <TextBlock Text="{DynamicResource Handle.TestDetail}"
-                                   Foreground="{DynamicResource SubtleBrush}" FontSize="10"
+                                   Foreground="{DynamicResource SubtleBrush}" FontSize="11"
                                    Margin="0,0,18,0" VerticalAlignment="Center"
                                    TextWrapping="Wrap"/>
             <Button Grid.Column="1" Content="{DynamicResource Common.Close}" Click="CloseButton_Click"

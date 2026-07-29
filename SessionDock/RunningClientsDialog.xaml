@@ -36,7 +36,7 @@
                         VerticalAlignment="Top" Margin="14,2,0,0">
                 <TextBlock x:Name="ClientCountText" Text="{DynamicResource Common.Checking}"
                                Foreground="{DynamicResource InfoTextBrush}"
-                               FontSize="9"
+                               FontSize="11"
                                FontWeight="SemiBold"/>
                 </Border>
             </Grid>

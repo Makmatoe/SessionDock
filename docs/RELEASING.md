@@ -92,6 +92,12 @@ dotnet restore SessionDock.slnx --locked-mode
 ./scripts/Verify-Release.ps1 -Tag vX.Y.Z
 ```
 
+Complete and record the manual keyboard, Narrator/UIA, high-contrast, text
+scaling, localization, DPI, and multi-monitor checks in
+[`docs/ACCESSIBILITY.md`](ACCESSIBILITY.md). Automated tests cover the
+underlying contracts but do not replace assistive-technology and physical
+display verification.
+
 The smoke feature is compiled only into a separate test artifact. Production
 publish verification proves the privileged smoke switch is absent.
 

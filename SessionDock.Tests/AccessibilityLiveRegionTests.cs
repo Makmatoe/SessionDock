@@ -177,6 +177,70 @@ public sealed class AccessibilityLiveRegionTests
         });
     }
 
+    [Fact]
+    public void Update_RetriesOneTransientAutomationEventFailure()
+    {
+        RunOnSta(() =>
+        {
+            Window? window = null;
+            try
+            {
+                var target = new TextBlock();
+                var attempts = 0;
+                var liveRegion = new AccessibilityLiveRegion(
+                    target,
+                    _ => ++attempts >= 2);
+                window = CreateOffscreenWindow(target);
+                window.Show();
+                FlushDispatcher();
+
+                Assert.True(liveRegion.Update("Ready"));
+                Assert.Equal(1, attempts);
+
+                FlushDispatcher();
+                Assert.Equal(2, attempts);
+            }
+            finally
+            {
+                window?.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void Update_BoundsRepeatedAutomationEventFailures()
+    {
+        RunOnSta(() =>
+        {
+            Window? window = null;
+            try
+            {
+                var target = new TextBlock();
+                var attempts = 0;
+                var liveRegion = new AccessibilityLiveRegion(
+                    target,
+                    _ =>
+                    {
+                        attempts++;
+                        return false;
+                    });
+                window = CreateOffscreenWindow(target);
+                window.Show();
+                FlushDispatcher();
+
+                Assert.True(liveRegion.Update("Ready"));
+                FlushDispatcher();
+                FlushDispatcher();
+
+                Assert.Equal(2, attempts);
+            }
+            finally
+            {
+                window?.Close();
+            }
+        });
+    }
+
     private static Window CreateOffscreenWindow(UIElement content)
     {
         return new Window

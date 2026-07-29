@@ -6,10 +6,16 @@ namespace SessionDock;
 public partial class RobloxLinkIntegrationDialog : Window
 {
     private readonly RobloxLinkRegistrationService _registration = new();
+    private readonly AccessibilityLiveRegion _registrationStatusLiveRegion;
+    private readonly AccessibilityLiveRegion _actionStatusLiveRegion;
 
     public RobloxLinkIntegrationDialog()
     {
         InitializeComponent();
+        _registrationStatusLiveRegion =
+            new AccessibilityLiveRegion(StateTitleText);
+        _actionStatusLiveRegion =
+            new AccessibilityLiveRegion(ActionStatusText);
         WindowLayoutService.FitToWorkArea(this);
         Loaded += (_, _) => RefreshStatus();
     }
@@ -28,9 +34,12 @@ public partial class RobloxLinkIntegrationDialog : Window
 
         var status = _registration.Enable();
         RenderStatus(status);
-        ActionStatusText.Text = status.State == RobloxLinkRegistrationState.Enabled
-            ? Localize("LinkIntegration.EnabledAction")
-            : LocalizeDescription(status.State);
+        var succeeded = status.State == RobloxLinkRegistrationState.Enabled;
+        SetActionStatus(
+            succeeded
+                ? Localize("LinkIntegration.EnabledAction")
+                : LocalizeDescription(status.State),
+            isError: !succeeded);
     }
 
     private void DisableButton_Click(object sender, RoutedEventArgs e)
@@ -47,22 +56,25 @@ public partial class RobloxLinkIntegrationDialog : Window
 
         var status = _registration.Disable();
         RenderStatus(status);
-        ActionStatusText.Text = status.State == RobloxLinkRegistrationState.Disabled
-            ? Localize("LinkIntegration.DisabledAction")
-            : LocalizeDescription(status.State);
+        var succeeded = status.State == RobloxLinkRegistrationState.Disabled;
+        SetActionStatus(
+            succeeded
+                ? Localize("LinkIntegration.DisabledAction")
+                : LocalizeDescription(status.State),
+            isError: !succeeded);
     }
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e)
     {
         RefreshStatus();
-        ActionStatusText.Text = Localize("LinkIntegration.RefreshedAction");
+        SetActionStatus(Localize("LinkIntegration.RefreshedAction"));
     }
 
     private void RefreshStatus() => RenderStatus(_registration.Inspect());
 
     private void RenderStatus(RobloxLinkRegistrationStatus status)
     {
-        StateTitleText.Text = status.State switch
+        var title = status.State switch
         {
             RobloxLinkRegistrationState.Enabled =>
                 Localize("LinkIntegration.StateEnabled"),
@@ -77,7 +89,16 @@ public partial class RobloxLinkIntegrationDialog : Window
             _ => throw new InvalidOperationException(
                 "Unexpected link-handler registration state.")
         };
-        StateDescriptionText.Text = LocalizeDescription(status.State);
+        var description = LocalizeDescription(status.State);
+        _registrationStatusLiveRegion.Update(
+            title,
+            $"{title} {description}",
+            status.State is RobloxLinkRegistrationState.UpdateRequired or
+                RobloxLinkRegistrationState.Conflict or
+                RobloxLinkRegistrationState.Unavailable
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
+        StateDescriptionText.Text = description;
         EnableButton.IsEnabled = status.State is
             RobloxLinkRegistrationState.Disabled or
             RobloxLinkRegistrationState.UpdateRequired;
@@ -89,6 +110,13 @@ public partial class RobloxLinkIntegrationDialog : Window
             RobloxLinkRegistrationState.Enabled or
             RobloxLinkRegistrationState.UpdateRequired;
     }
+
+    private void SetActionStatus(string text, bool isError = false) =>
+        _actionStatusLiveRegion.Update(
+            text,
+            severity: isError
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 

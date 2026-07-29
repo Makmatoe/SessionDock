@@ -28,6 +28,8 @@ SessionDock stores application settings and isolated browser profiles under
   changing it only swaps bundled text resources and culture-aware display
   formatting, without contacting a translation service or changing the stable
   JSON representation of stored dates and numbers;
+- the last main-window display identifier, monitor-relative position, size, and
+  maximized state, used only to restore a visible window on the next launch;
 - the current settings, the prior successful settings backup, and timestamped
   preserved copies of settings files that could not be read;
 - small recovery markers that keep automatic browser-profile cleanup paused
@@ -170,14 +172,16 @@ account choice, and asks for final confirmation before requesting a fresh
 ticket. Incoming links are never logged. Public launches may appear in Recent;
 private links received through this handler are not persisted.
 
-Windows necessarily places the incoming link in the short-lived command line
-of the newly invoked SessionDock process, and SessionDock holds it transiently
-in memory while forwarding it to the existing process. That transient payload
-can include a private-server code even though the preview hides the code and
-SessionDock does not write it to settings, history, diagnostics, or logs. A
-different process already running as the same Windows user may be able to
-inspect process command lines or memory; the handler does not claim to protect
-against a compromised same-user desktop.
+Windows necessarily places the incoming link in the newly invoked SessionDock
+process's OS command line. Windows retains that command line for the lifetime
+of the invoked process, including when it becomes the new primary instance.
+SessionDock clears its own argument and startup-field references promptly, then
+holds the link in memory only as needed to forward, review, and confirm it.
+That payload can include a private-server code even though the preview hides
+the code and SessionDock does not write it to settings, history, diagnostics,
+or logs. A different process already running as the same Windows user may be
+able to inspect process command lines or memory; the handler does not claim to
+protect against a compromised same-user desktop.
 
 ## Browser permissions
 

@@ -282,6 +282,9 @@ public sealed class ExternalRobloxLinkTests
         (int)RobloxLinkRegistrationOwnership.Empty)]
     [InlineData(false, null, false, null, true,
         (int)RobloxLinkRegistrationOwnership.Conflict)]
+    [InlineData(false, null, true,
+        RobloxLinkRegistrationService.OwnerValue, true,
+        (int)RobloxLinkRegistrationOwnership.Conflict)]
     [InlineData(true, "foreign", false, null, false,
         (int)RobloxLinkRegistrationOwnership.Conflict)]
     [InlineData(false, null, true, "foreign", false,
@@ -373,9 +376,12 @@ public sealed class ExternalRobloxLinkTests
             "var velopackArguments = externalLink is null ? args : [];",
             program,
             StringComparison.Ordinal);
+        Assert.Contains("externalLink = null;", program, StringComparison.Ordinal);
+        Assert.Contains("Array.Clear(args);", program, StringComparison.Ordinal);
         Assert.Contains("ForwardExternalLinkAsync", app, StringComparison.Ordinal);
         Assert.Contains("ListenForExternalLinkRequests", app, StringComparison.Ordinal);
         Assert.Contains("QueueExternalLinkForDispatch", app, StringComparison.Ordinal);
+        Assert.Contains("_startupExternalLink = null;", app, StringComparison.Ordinal);
     }
 
     [Fact]

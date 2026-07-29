@@ -11,6 +11,8 @@ public partial class MetadataTransferDialog : Window
 {
     private readonly MetadataExportPackage _exportPackage;
     private readonly AppSettings _settings;
+    private readonly AccessibilityLiveRegion _exportStatusLiveRegion;
+    private readonly AccessibilityLiveRegion _importStatusLiveRegion;
     private MetadataImportPlan? _importPlan;
 
     internal MetadataTransferDialog(
@@ -20,6 +22,8 @@ public partial class MetadataTransferDialog : Window
         ArgumentNullException.ThrowIfNull(exportPackage);
         ArgumentNullException.ThrowIfNull(settings);
         InitializeComponent();
+        _exportStatusLiveRegion = new AccessibilityLiveRegion(ExportStatusText);
+        _importStatusLiveRegion = new AccessibilityLiveRegion(ImportStatusText);
         WindowLayoutService.FitToWorkArea(this);
         _exportPackage = exportPackage;
         _settings = settings;
@@ -173,17 +177,30 @@ public partial class MetadataTransferDialog : Window
     }
 
     private void SetExportStatus(string text, bool? succeeded) =>
-        SetStatus(ExportStatusText, text, succeeded);
+        SetStatus(
+            ExportStatusText,
+            _exportStatusLiveRegion,
+            text,
+            succeeded);
 
     private void SetImportStatus(string text, bool? succeeded) =>
-        SetStatus(ImportStatusText, text, succeeded);
+        SetStatus(
+            ImportStatusText,
+            _importStatusLiveRegion,
+            text,
+            succeeded);
 
     private static void SetStatus(
         System.Windows.Controls.TextBlock status,
+        AccessibilityLiveRegion liveRegion,
         string text,
         bool? succeeded)
     {
-        status.Text = text;
+        liveRegion.Update(
+            text,
+            severity: succeeded == false
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
         status.SetResourceReference(
             System.Windows.Controls.TextBlock.ForegroundProperty,
             succeeded switch

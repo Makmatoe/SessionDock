@@ -13,7 +13,7 @@ public partial class App : Application
 {
     private const string ProductionApplicationId = "RobloxOneLauncher";
     private readonly string _applicationId;
-    private readonly string? _startupExternalLink;
+    private string? _startupExternalLink;
 #if SESSIONDOCK_SMOKE_HARNESS
     private readonly RuntimeSmokeTestOptions? _runtimeSmokeTest;
 #endif
@@ -51,16 +51,18 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        var startupExternalLink = _startupExternalLink;
+        _startupExternalLink = null;
         // Production retains the original mutex name so renamed and older
         // copies cannot run against the same browser profiles at the same time.
         _singleInstance = new SingleInstanceService(_applicationId);
         if (!_singleInstance.IsPrimaryInstance)
         {
             var linkForwarded = true;
-            if (_startupExternalLink is not null)
+            if (startupExternalLink is not null)
             {
                 linkForwarded = _singleInstance.ForwardExternalLinkAsync(
-                        _startupExternalLink,
+                        startupExternalLink,
                         TimeSpan.FromSeconds(3))
                     .GetAwaiter()
                     .GetResult();
@@ -142,8 +144,8 @@ public partial class App : Application
                 ActivateExistingWindow));
         _singleInstance.ListenForExternalLinkRequests(externalLink =>
             QueueExternalLinkForDispatch(externalLink));
-        if (_startupExternalLink is not null)
-            QueueExternalLinkForDispatch(_startupExternalLink);
+        if (startupExternalLink is not null)
+            QueueExternalLinkForDispatch(startupExternalLink);
     }
 
     private void ReportStartupFailure(string message)
@@ -307,6 +309,7 @@ public partial class App : Application
             VerifyIntegratedWindowChrome(mainWindow);
             mainWindow.VerifyThemeSwitchForRuntimeSmoke();
             mainWindow.VerifyLocalizationSwitchForRuntimeSmoke();
+            mainWindow.VerifySemanticSelectorsForRuntimeSmoke();
             mainWindow.VerifyJoinUserUiForRuntimeSmoke();
 
             void HandleShutdownCompleted(Exception? shutdownFailure)

@@ -10,6 +10,7 @@ namespace SessionDock;
 public partial class AboutDiagnosticsDialog : Window
 {
     private readonly SupportDiagnosticsDocument _document;
+    private readonly AccessibilityLiveRegion _actionStatusLiveRegion;
 
     internal AboutDiagnosticsDialog(
         SupportDiagnosticsDocument document,
@@ -17,6 +18,8 @@ public partial class AboutDiagnosticsDialog : Window
     {
         ArgumentNullException.ThrowIfNull(document);
         InitializeComponent();
+        _actionStatusLiveRegion =
+            new AccessibilityLiveRegion(ActionStatusText);
         WindowLayoutService.FitToWorkArea(this);
 
         _document = document;
@@ -105,7 +108,11 @@ public partial class AboutDiagnosticsDialog : Window
 
     private void SetActionStatus(string text, bool? succeeded)
     {
-        ActionStatusText.Text = text;
+        _actionStatusLiveRegion.Update(
+            text,
+            severity: succeeded == false
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
         ActionStatusText.SetResourceReference(
             System.Windows.Controls.TextBlock.ForegroundProperty,
             succeeded switch

@@ -188,7 +188,7 @@
                                             Visibility="{Binding GroupVisibility}">
                                         <TextBlock Text="{Binding GroupName}"
                                                    Foreground="{DynamicResource ControlTextBrush}"
-                                                   FontSize="10" FontWeight="SemiBold"/>
+                                                   FontSize="11" FontWeight="SemiBold"/>
                                     </Border>
                                 </Grid>
                             </CheckBox>

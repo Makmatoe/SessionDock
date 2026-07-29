@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Automation.Peers;
 using System.Windows.Controls;
+using System.Windows.Threading;
 
 namespace SessionDock.Services;
 
@@ -14,12 +15,15 @@ internal enum AccessibilityLiveRegionSeverity
 
 internal sealed class AccessibilityLiveRegion
 {
+    private const int MaximumRaiseAttempts = 2;
     private readonly TextBlock _target;
     private readonly Func<TextBlock, bool> _raiseAutomationEvent;
     private bool _hasPreviousAnnouncement;
     private string _previousAnnouncement = string.Empty;
     private bool _announcementPending;
     private bool _waitingForAvailability;
+    private bool _retryQueued;
+    private int _raiseAttempts;
 
     internal AccessibilityLiveRegion(TextBlock target)
         : this(target, RaiseLiveRegionChanged)
@@ -82,11 +86,13 @@ internal sealed class AccessibilityLiveRegion
         if (!shouldAnnounce)
         {
             _announcementPending = false;
+            _raiseAttempts = 0;
             StopWaitingForAvailability();
             return false;
         }
 
         _announcementPending = true;
+        _raiseAttempts = 0;
         TryRaisePendingAnnouncement();
         return true;
     }
@@ -124,9 +130,41 @@ internal sealed class AccessibilityLiveRegion
             return;
         }
 
-        _announcementPending = false;
         StopWaitingForAvailability();
-        _ = _raiseAutomationEvent(_target);
+        _raiseAttempts++;
+        if (_raiseAutomationEvent(_target))
+        {
+            _announcementPending = false;
+            _raiseAttempts = 0;
+            return;
+        }
+
+        if (_raiseAttempts >= MaximumRaiseAttempts)
+        {
+            _announcementPending = false;
+            return;
+        }
+
+        QueueAutomationRetry();
+    }
+
+    private void QueueAutomationRetry()
+    {
+        if (_retryQueued ||
+            _target.Dispatcher.HasShutdownStarted ||
+            _target.Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        _retryQueued = true;
+        _ = _target.Dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle,
+            () =>
+            {
+                _retryQueued = false;
+                TryRaisePendingAnnouncement();
+            });
     }
 
     private bool CanRaiseAutomationEvent()

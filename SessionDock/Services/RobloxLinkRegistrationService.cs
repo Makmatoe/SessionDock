@@ -217,7 +217,7 @@ internal sealed class RobloxLinkRegistrationService
             return RobloxLinkRegistrationOwnership.Empty;
         if (progIdExists && !HasOwnerMarker(progIdOwner) ||
             protocolExists && !HasOwnerMarker(protocolOwner) ||
-            !progIdExists && !protocolExists && openWithValueExists)
+            !progIdExists && openWithValueExists)
         {
             return RobloxLinkRegistrationOwnership.Conflict;
         }
