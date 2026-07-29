@@ -89,6 +89,17 @@
     <sys:String x:Key="Main.LaunchRoblox">Launch Roblox</sys:String>
     <sys:String x:Key="Main.LaunchTooltip">Launch immediately with the selected account</sys:String>
     <sys:String x:Key="Main.JoinUserButton">Join user</sys:String>
+    <sys:String x:Key="Main.AutoJoinLabel">Watch and auto-join</sys:String>
+    <sys:String x:Key="Main.AutoJoinName">Watch this Roblox user and join automatically</sys:String>
+    <sys:String x:Key="Main.AutoJoinHelp">Checks immediately, then usually about every 30 seconds and slows down when needed, for up to four hours using the selected account. Player starts once when Roblox reports a usable current server, then makes the final access check. While watching, Stop remains available.</sys:String>
+    <sys:String x:Key="Main.AutoJoinStart">Start watching</sys:String>
+    <sys:String x:Key="Main.AutoJoinStartName">Start watching this Roblox user and auto-join</sys:String>
+    <sys:String x:Key="Main.AutoJoinStartTooltip">Watch with the selected account and start Roblox Player once Roblox reports a current server; Player rechecks access</sys:String>
+    <sys:String x:Key="Main.AutoJoinStop">Stop watching</sys:String>
+    <sys:String x:Key="Main.AutoJoinStopName">Stop the active auto-join watch</sys:String>
+    <sys:String x:Key="Main.AutoJoinStopTooltip">Stop watching without starting another Roblox Player launch</sys:String>
+    <sys:String x:Key="Main.AutoJoinStopping">Stopping...</sys:String>
+    <sys:String x:Key="Main.AutoJoinStoppingName">Stopping the active auto-join watch</sys:String>
     <sys:String x:Key="Main.RecentExperiences">Recent experiences</sys:String>
     <sys:String x:Key="Main.RecentSubtitle">Reuse a destination with the currently selected account.</sys:String>
     <sys:String x:Key="Main.Public">Public</sys:String>

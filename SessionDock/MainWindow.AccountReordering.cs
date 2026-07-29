@@ -390,7 +390,9 @@ public partial class MainWindow
 
     private void UpdateAccountControlAvailability()
     {
-        var enabled = !_operationBusy && !_accountReorderInProgress;
+        var enabled = !_operationBusy &&
+                      !_accountReorderInProgress &&
+                      !IsAutoJoinWatchActive;
         var activeProfileVisible =
             _activeProfile is not null &&
             _accountSearch.MatchesAccount(
