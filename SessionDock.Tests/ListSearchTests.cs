@@ -214,6 +214,46 @@ public sealed class ListSearchTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void MainWindow_IncludesPersistedGroupsInAccountSearchAndVisibility()
+    {
+        var root = FindRepositoryRoot();
+        var mainWindowSource = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.xaml.cs"));
+        var renderStart = mainWindowSource.IndexOf(
+            "private void RenderAccountList()",
+            StringComparison.Ordinal);
+        var renderEnd = mainWindowSource.IndexOf(
+            "private static void RestoreKeyboardFocus",
+            renderStart,
+            StringComparison.Ordinal);
+        Assert.True(renderStart >= 0 && renderEnd > renderStart);
+        Assert.Contains(
+            "account.Group",
+            mainWindowSource[renderStart..renderEnd],
+            StringComparison.Ordinal);
+
+        var reorderingSource = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.AccountReordering.cs"));
+        var availabilityStart = reorderingSource.IndexOf(
+            "private void UpdateAccountControlAvailability()",
+            StringComparison.Ordinal);
+        var availabilityEnd = reorderingSource.IndexOf(
+            "internal static int CalculateAccountDropInsertionIndex",
+            availabilityStart,
+            StringComparison.Ordinal);
+        Assert.True(
+            availabilityStart >= 0 && availabilityEnd > availabilityStart);
+        Assert.Contains(
+            "_activeProfile.Group",
+            reorderingSource[availabilityStart..availabilityEnd],
+            StringComparison.Ordinal);
+    }
+
     private static string FindRepositoryRoot()
     {
         foreach (var start in new[]
