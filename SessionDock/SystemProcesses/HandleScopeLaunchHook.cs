@@ -44,12 +44,39 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
     internal HandleScopeLaunchHook(
         HandleScopeConfigurationLoader configurationLoader,
         HandleScopeConnectionLoader connectionLoader)
+        : this(
+            configurationLoader,
+            connectionLoader,
+            CreateDefaultHandler(),
+            HandleScopeProcessVerifier.CreateDefault())
+    {
+    }
+
+    internal HandleScopeLaunchHook(
+        HandleScopeConfigurationLoader configurationLoader,
+        HandleScopeConnectionLoader connectionLoader,
+        HttpMessageHandler handler,
+        IHandleScopeProcessVerifier processVerifier)
     {
         ArgumentNullException.ThrowIfNull(configurationLoader);
         ArgumentNullException.ThrowIfNull(connectionLoader);
+        ArgumentNullException.ThrowIfNull(handler);
+        ArgumentNullException.ThrowIfNull(processVerifier);
         _configurationLoader = configurationLoader;
         _connectionLoader = connectionLoader;
-        var handler = new SocketsHttpHandler
+        _client = new HttpClient(handler, disposeHandler: true)
+        {
+            Timeout = RequestTimeout
+        };
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd("SessionDock/2.1");
+        _apiBootstrapper = new HandleScopeApiBootstrapper(
+            _connectionLoader,
+            _client,
+            processVerifier);
+    }
+
+    private static HttpMessageHandler CreateDefaultHandler() =>
+        new SocketsHttpHandler
         {
             AllowAutoRedirect = false,
             ConnectTimeout = RequestTimeout,
@@ -59,15 +86,6 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
             UseCookies = false,
             UseProxy = false
         };
-        _client = new HttpClient(handler)
-        {
-            Timeout = RequestTimeout
-        };
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("SessionDock/2.1");
-        _apiBootstrapper = new HandleScopeApiBootstrapper(
-            _connectionLoader,
-            _client);
-    }
 
     public async Task NotifyLaunchAsync(
         LaunchHookEvent launchEvent,
@@ -246,7 +264,11 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
             if (dryRun.Kind == CloseOutcomeKind.Completed)
             {
                 var close = await SendCloseAsync(
-                    CreatePidRequest(processId, configuration, dryRun: false),
+                    CreatePidRequest(
+                        processId,
+                        configuration,
+                        dryRun: false,
+                        dryRun.PlanId),
                     connection,
                     processId,
                     cancellationToken);
@@ -278,7 +300,10 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
             return;
 
         await SendCloseAsync(
-            CreateAllProcessesRequest(configuration, dryRun: false),
+            CreateAllProcessesRequest(
+                configuration,
+                dryRun: false,
+                dryRun.PlanId),
             connection,
             expectedProcessId: null,
             cancellationToken);
@@ -364,7 +389,8 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
                 document.RootElement,
                 expectedProcessId,
                 expectedDryRun,
-                out var closedExpectedProcess))
+                out var closedExpectedProcess,
+                out var planId))
         {
             Trace.WriteLine("HandleScope returned an invalid operation response.");
             return CloseOutcome.Failure;
@@ -372,16 +398,31 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
 
         return new CloseOutcome(
             CloseOutcomeKind.Completed,
-            closedExpectedProcess);
+            closedExpectedProcess,
+            planId);
     }
 
     internal static bool TryValidateOperationDocument(
         JsonElement root,
         int? expectedProcessId,
         bool expectedDryRun,
-        out bool closedExpectedProcess)
+        out bool closedExpectedProcess) =>
+        TryValidateOperationDocument(
+            root,
+            expectedProcessId,
+            expectedDryRun,
+            out closedExpectedProcess,
+            out _);
+
+    internal static bool TryValidateOperationDocument(
+        JsonElement root,
+        int? expectedProcessId,
+        bool expectedDryRun,
+        out bool closedExpectedProcess,
+        out string? planId)
     {
         closedExpectedProcess = false;
+        planId = null;
         if (root.ValueKind != JsonValueKind.Object ||
             !HasUniqueRootProperties(root) ||
             !TryGetRequiredString(root, "policy", out var policy) ||
@@ -411,7 +452,9 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
 
         if (expectedDryRun)
         {
-            if (matchCount <= 0 ||
+            if (!TryGetRequiredString(root, "planId", out var dryRunPlanId) ||
+                !IsCanonicalPlanId(dryRunPlanId) ||
+                matchCount <= 0 ||
                 closedCount != 0 ||
                 expectedProcessId is int expectedPid &&
                 !CollectionContainsPid(matches, expectedPid))
@@ -419,7 +462,14 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
                 return false;
             }
 
+            planId = dryRunPlanId;
             return true;
+        }
+
+        if (!root.TryGetProperty("planId", out var executionPlanId) ||
+            executionPlanId.ValueKind != JsonValueKind.Null)
+        {
+            return false;
         }
 
         closedExpectedProcess = closedCount > 0 &&
@@ -430,23 +480,27 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
     private static CloseRequest CreatePidRequest(
         int processId,
         HandleScopeConfiguration configuration,
-        bool dryRun) =>
+        bool dryRun,
+        string? planId = null) =>
         new(
             new ProcessSelector(processId, null),
             CreateHandleSelector(configuration),
             configuration.CloseAll,
             dryRun,
-            false);
+            false,
+            planId);
 
     private static CloseRequest CreateAllProcessesRequest(
         HandleScopeConfiguration configuration,
-        bool dryRun) =>
+        bool dryRun,
+        string? planId = null) =>
         new(
             new ProcessSelector(null, configuration.ProcessName),
             CreateHandleSelector(configuration),
             configuration.CloseAll,
             dryRun,
-            true);
+            true,
+            planId);
 
     private static HandleSelector CreateHandleSelector(
         HandleScopeConfiguration configuration) =>
@@ -536,12 +590,20 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
             pid.TryGetInt32(out var value) &&
             value == processId);
 
+    private static bool IsCanonicalPlanId(string value) =>
+        value.Length == 43 &&
+        value.All(character =>
+            char.IsAsciiLetterOrDigit(character) ||
+            character is '_' or '-');
+
     private sealed record CloseRequest(
         ProcessSelector Process,
         HandleSelector Handle,
         bool CloseAll,
         bool DryRun,
-        bool AllProcesses);
+        bool AllProcesses,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        string? PlanId);
 
     private sealed record ProcessSelector(
         [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -564,11 +626,12 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
 
     private sealed record CloseOutcome(
         CloseOutcomeKind Kind,
-        bool ClosedExpectedProcess)
+        bool ClosedExpectedProcess,
+        string? PlanId)
     {
         public static CloseOutcome NoMatch { get; } =
-            new(CloseOutcomeKind.NoMatch, false);
+            new(CloseOutcomeKind.NoMatch, false, null);
         public static CloseOutcome Failure { get; } =
-            new(CloseOutcomeKind.Failure, false);
+            new(CloseOutcomeKind.Failure, false, null);
     }
 }
