@@ -283,8 +283,9 @@ public sealed class BatchLaunchPreferencesTests : IDisposable
         Assert.DoesNotContain(
             "Parse",
             batchSource[
-                batchSource.IndexOf("private void SetBatchRetryState", StringComparison.Ordinal)..
                 batchSource.IndexOf(
+                    "private void SetBatchRetryState",
+                    StringComparison.Ordinal)..batchSource.IndexOf(
                     "private async Task<WebSessionToken?> ActivateBatchAccountAsync",
                     StringComparison.Ordinal)],
             StringComparison.Ordinal);
