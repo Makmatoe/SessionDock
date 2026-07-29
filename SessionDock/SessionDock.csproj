@@ -8,8 +8,9 @@
     <AssemblyName>SessionDock</AssemblyName>
     <RootNamespace>SessionDock</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\SessionDock.ico</ApplicationIcon>
     <StartupObject>SessionDock.Program</StartupObject>
-    <Version>2.6.2</Version>
+    <Version>2.7.0</Version>
     <Product>SessionDock</Product>
     <Authors>Makmatoe</Authors>
     <Copyright>Copyright (c) 2026 Makmatoe</Copyright>
@@ -76,6 +77,13 @@
                       LogicalName="SessionDock.Embedded.HandleScopeReleasePublicKeys.json" />
     <EmbeddedResource Include="ReleaseNotes\*.md"
                       LogicalName="SessionDock.Embedded.ReleaseNotes.%(Filename)%(Extension)" />
+    <None Update="Assets\SessionDock.ico"
+          CopyToOutputDirectory="Never"
+          CopyToPublishDirectory="Never" />
+    <None Remove="Assets\SessionDock.Icon.png" />
+    <Resource Include="Assets\SessionDock.Icon.png"
+              CopyToOutputDirectory="Never"
+              CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <Target Name="RemovePublishDocumentation" AfterTargets="Publish">

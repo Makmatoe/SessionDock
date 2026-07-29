@@ -1,7 +1,7 @@
 <Window x:Class="SessionDock.UpdateConfirmationDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="SessionDock update" Width="640" Height="650"
+        Title="{DynamicResource Update.Title}" Width="640" Height="650"
         MinWidth="440" MinHeight="420"
         ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}"
@@ -23,7 +23,7 @@
                            Foreground="{DynamicResource TextBrush}"
                            FontSize="24" FontWeight="SemiBold"
                            TextWrapping="Wrap"/>
-                <TextBlock Text="Review the signed release details before installing."
+                <TextBlock Text="{DynamicResource Update.Detail}"
                            Foreground="{DynamicResource MutedBrush}"
                            FontSize="13" Margin="0,6,0,0"
                            TextWrapping="Wrap"/>
@@ -40,7 +40,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel>
-                        <TextBlock Text="SIGNED RELEASE VERIFIED"
+                        <TextBlock Text="{DynamicResource Update.Verified}"
                                    Foreground="{DynamicResource SuccessTextBrush}"
                                    FontSize="11"
                                    FontWeight="Bold"/>
@@ -56,7 +56,7 @@
                 </Grid>
             </Border>
 
-            <TextBlock Grid.Row="2" Text="RELEASE NOTES"
+            <TextBlock Grid.Row="2" Text="{DynamicResource Update.ReleaseNotes}"
                        Foreground="{DynamicResource SubtleBrush}" FontSize="11"
                        FontWeight="Bold" Margin="0,18,0,8"/>
 
@@ -73,7 +73,7 @@
                          Background="Transparent" BorderThickness="0"
                          Padding="2" Foreground="{DynamicResource TextBrush}"
                          FontSize="13" TextBlock.LineHeight="20"
-                         AutomationProperties.Name="Signed release notes"/>
+                     AutomationProperties.Name="{DynamicResource Update.NotesName}"/>
             </Border>
 
             <TextBlock x:Name="IntegrityText" Grid.Row="4"
@@ -86,20 +86,20 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="App files are replaced; local account data stays outside the install folder."
+                <TextBlock Text="{DynamicResource Update.LocalData}"
                            Foreground="{DynamicResource MutedBrush}" FontSize="11"
                            VerticalAlignment="Center" TextWrapping="Wrap"
                            Margin="0,0,18,0"/>
-                <Button Grid.Column="1" Content="Cancel"
+                <Button Grid.Column="1" Content="{DynamicResource Common.Cancel}"
                         Click="CancelButton_Click" IsCancel="True"
                         Background="{DynamicResource ControlSurfaceBrush}"
                         Foreground="{DynamicResource ControlTextBrush}"
                         Padding="16,9"
                         Margin="0,0,10,0"/>
-                <Button Grid.Column="2" Content="Install update"
+                <Button Grid.Column="2" Content="{DynamicResource Update.Install}"
                         Click="InstallButton_Click" IsDefault="True"
                         Padding="22,9"
-                        AutomationProperties.Name="Install integrity-checked update"/>
+                        AutomationProperties.Name="{DynamicResource Update.InstallName}"/>
             </Grid>
         </Grid>
     </Border>

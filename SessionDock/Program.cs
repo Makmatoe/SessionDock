@@ -19,9 +19,38 @@ public static class Program
             Environment.ExitCode = 2;
             return;
         }
-        var velopackArguments = runtimeSmokeTest is null ? args : [];
+#endif
+        string? externalLink = null;
+        var externalLinkError = string.Empty;
+        var externalCommandValid = true;
+#if SESSIONDOCK_SMOKE_HARNESS
+        if (runtimeSmokeTest is null)
+        {
+#endif
+        externalCommandValid = ExternalLaunchCommandLine.TryParse(
+            args,
+            out externalLink,
+            out externalLinkError);
+#if SESSIONDOCK_SMOKE_HARNESS
+        }
+#endif
+        if (!externalCommandValid)
+        {
+            MessageBox.Show(
+                externalLinkError,
+                "SessionDock refused an external link",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            Environment.ExitCode = 2;
+            return;
+        }
+#if SESSIONDOCK_SMOKE_HARNESS
+        var velopackArguments = runtimeSmokeTest is not null ||
+                               externalLink is not null
+            ? []
+            : args;
 #else
-        var velopackArguments = args;
+        var velopackArguments = externalLink is null ? args : [];
 #endif
         VelopackApp.Build()
             .SetArgs(velopackArguments)
@@ -68,11 +97,13 @@ public static class Program
 
 #if SESSIONDOCK_SMOKE_HARNESS
         var application = runtimeSmokeTest is null
-            ? new App()
+            ? new App(externalLink)
             : new App(runtimeSmokeTest);
 #else
-        var application = new App();
+        var application = new App(externalLink);
 #endif
+        externalLink = null;
+        Array.Clear(args);
         application.InitializeComponent();
         Environment.ExitCode = application.Run();
     }

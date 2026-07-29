@@ -7,10 +7,16 @@ internal static class ShutdownSettingsSnapshot
     internal static AppSettings Create(
         AppSettings settings,
         DestinationPersistenceRequest? capturedDestinationRequest,
-        DestinationPersistenceRequest? currentDestinationRequest)
+        DestinationPersistenceRequest? currentDestinationRequest,
+        WindowPlacementSettings? mainWindowPlacement = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         var snapshot = AppSettingsSnapshot.Create(settings);
+        if (mainWindowPlacement is not null)
+        {
+            snapshot.MainWindowPlacement =
+                AppSettingsSnapshot.Clone(mainWindowPlacement);
+        }
         if (capturedDestinationRequest is null ||
             capturedDestinationRequest != currentDestinationRequest)
         {

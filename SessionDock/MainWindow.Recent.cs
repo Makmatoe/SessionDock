@@ -14,45 +14,49 @@ public partial class MainWindow
     private RecentTypeFilter _recentTypeFilter;
     private long _recentAccountFilter;
     private bool _updatingRecentFilters;
+    private bool _updatingWorkspaceTabSelection;
+    private bool _updatingRecentTypeSelection;
 
-    private void LaunchTabButton_Click(object sender, RoutedEventArgs e) =>
-        ShowLauncherTab();
-
-    private void RecentTabButton_Click(object sender, RoutedEventArgs e)
+    private void LaunchTabButton_Checked(object sender, RoutedEventArgs e)
     {
-        LaunchTabPanel.Visibility = Visibility.Collapsed;
-        RecentTabPanel.Visibility = Visibility.Visible;
-        LaunchTabButton.Background = Brushes.Transparent;
-        LaunchTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "MutedBrush");
-        RecentTabButton.SetResourceReference(
-            Control.BackgroundProperty,
-            "SelectedControlSurfaceBrush");
-        RecentTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "SelectedControlTextBrush");
-        AutomationProperties.SetItemStatus(LaunchTabButton, "Not selected");
-        AutomationProperties.SetItemStatus(RecentTabButton, "Selected");
+        if (!_updatingWorkspaceTabSelection)
+            ShowLauncherTab();
+    }
+
+    private void RecentTabButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_updatingWorkspaceTabSelection)
+            return;
+
+        _updatingWorkspaceTabSelection = true;
+        try
+        {
+            LaunchTabPanel.Visibility = Visibility.Collapsed;
+            RecentTabPanel.Visibility = Visibility.Visible;
+            LaunchTabButton.IsChecked = false;
+            RecentTabButton.IsChecked = true;
+        }
+        finally
+        {
+            _updatingWorkspaceTabSelection = false;
+        }
         RenderRecentExperiences();
     }
 
     private void ShowLauncherTab()
     {
-        LaunchTabPanel.Visibility = Visibility.Visible;
-        RecentTabPanel.Visibility = Visibility.Collapsed;
-        LaunchTabButton.SetResourceReference(
-            Control.BackgroundProperty,
-            "SelectedControlSurfaceBrush");
-        LaunchTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "SelectedControlTextBrush");
-        RecentTabButton.Background = Brushes.Transparent;
-        RecentTabButton.SetResourceReference(
-            Control.ForegroundProperty,
-            "MutedBrush");
-        AutomationProperties.SetItemStatus(LaunchTabButton, "Selected");
-        AutomationProperties.SetItemStatus(RecentTabButton, "Not selected");
+        _updatingWorkspaceTabSelection = true;
+        try
+        {
+            LaunchTabPanel.Visibility = Visibility.Visible;
+            RecentTabPanel.Visibility = Visibility.Collapsed;
+            RecentTabButton.IsChecked = false;
+            LaunchTabButton.IsChecked = true;
+        }
+        finally
+        {
+            _updatingWorkspaceTabSelection = false;
+        }
     }
 
     private void RenderRecentExperiences()
@@ -74,9 +78,15 @@ public partial class MainWindow
         RecentExperiencesList.Children.Clear();
         var filtered = _settings.RecentExperiences
             .Where(MatchesRecentFilters)
+            .Where(_recentSearch.MatchesRecent)
             .OrderByDescending(item => item.IsPinned)
             .ThenByDescending(item => item.LastLaunchedAt)
             .ToList();
+        AutomationProperties.SetItemStatus(
+            RecentSearchBox,
+            _recentSearch.IsActive
+                ? $"{filtered.Count} of {_settings.RecentExperiences.Count(MatchesRecentFilters)} saved experiences shown"
+                : $"{filtered.Count} saved experiences shown");
 
         if (filtered.Count == 0)
         {
@@ -84,6 +94,8 @@ public partial class MainWindow
             {
                 Text = _settings.RecentExperiences.Count == 0
                     ? "Experiences you successfully launch will appear here."
+                    : _recentSearch.IsActive
+                        ? "No Recent or Favorite items match your search and filters."
                     : "No saved experiences match these filters.",
                 FontSize = 13,
                 Margin = new Thickness(2, 18, 0, 0)
@@ -120,7 +132,7 @@ public partial class MainWindow
         if (!shouldRestore || destinationKey is null)
             return;
 
-        Button? focusTarget = null;
+        Control? focusTarget = null;
         foreach (var card in RecentExperiencesList.Children.OfType<Border>())
         {
             if (card.Child is not Grid grid)
@@ -149,7 +161,9 @@ public partial class MainWindow
             break;
         }
 
-        RestoreKeyboardFocus(focusTarget ?? RecentTabButton);
+        RestoreKeyboardFocus(
+            focusTarget ??
+            (_recentSearch.IsActive ? RecentSearchBox : RecentTabButton));
     }
 
     private void AddRecentSection(string title, IReadOnlyList<RecentExperience> items)
@@ -160,7 +174,7 @@ public partial class MainWindow
         var sectionTitle = new TextBlock
         {
             Text = title,
-            FontSize = 10,
+            FontSize = 11,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(2, 4, 0, 8)
         };
@@ -177,7 +191,9 @@ public partial class MainWindow
         var title = recent.CustomName
             ?? recent.Name
             ?? $"Place {recent.PlaceId}";
-        var timestamp = recent.LastLaunchedAt.ToLocalTime().ToString("g");
+        var timestamp = LocalizationCulture.FormatLocalDateTime(
+            recent.LastLaunchedAt,
+            Localization.EffectiveCulture);
         var type = recent.IsPrivateServer ? "Private server" : "Public";
         var account = string.IsNullOrWhiteSpace(recent.AccountUsername)
             ? "Unknown account"
@@ -228,7 +244,7 @@ public partial class MainWindow
         var metadataText = new TextBlock
         {
             Text = $"{type}  •  {account}  •  {timestamp}",
-            FontSize = 10,
+            FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -242,7 +258,7 @@ public partial class MainWindow
             {
                 Text = $"Tracked server {serverJobId[..8]}…",
                 ToolTip = $"Roblox server JobId\n{serverJobId}",
-                FontSize = 10,
+                FontSize = 11,
                 Margin = new Thickness(0, 3, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis
             };
@@ -748,7 +764,7 @@ public partial class MainWindow
         AccountFilterCombo.Items.Clear();
         AccountFilterCombo.Items.Add(new ComboBoxItem
         {
-            Content = "All accounts",
+            Content = Localize("Main.AllAccounts"),
             Tag = 0L
         });
         foreach (var account in accountIds)
@@ -780,43 +796,39 @@ public partial class MainWindow
         RenderRecentExperiences();
     }
 
-    private void AllTypeFilterButton_Click(object sender, RoutedEventArgs e) =>
-        SetRecentTypeFilter(RecentTypeFilter.All);
+    private void AllTypeFilterButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingRecentTypeSelection)
+            SetRecentTypeFilter(RecentTypeFilter.All);
+    }
 
-    private void PublicFilterButton_Click(object sender, RoutedEventArgs e) =>
-        SetRecentTypeFilter(RecentTypeFilter.Public);
+    private void PublicFilterButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingRecentTypeSelection)
+            SetRecentTypeFilter(RecentTypeFilter.Public);
+    }
 
-    private void PrivateFilterButton_Click(object sender, RoutedEventArgs e) =>
-        SetRecentTypeFilter(RecentTypeFilter.Private);
+    private void PrivateFilterButton_Checked(object sender, RoutedEventArgs e)
+    {
+        if (!_updatingRecentTypeSelection)
+            SetRecentTypeFilter(RecentTypeFilter.Private);
+    }
 
     private void SetRecentTypeFilter(RecentTypeFilter filter)
     {
         _recentTypeFilter = filter;
-        SetFilterButtonState(AllTypeFilterButton, filter == RecentTypeFilter.All);
-        SetFilterButtonState(PublicFilterButton, filter == RecentTypeFilter.Public);
-        SetFilterButtonState(PrivateFilterButton, filter == RecentTypeFilter.Private);
+        _updatingRecentTypeSelection = true;
+        try
+        {
+            AllTypeFilterButton.IsChecked = filter == RecentTypeFilter.All;
+            PublicFilterButton.IsChecked = filter == RecentTypeFilter.Public;
+            PrivateFilterButton.IsChecked = filter == RecentTypeFilter.Private;
+        }
+        finally
+        {
+            _updatingRecentTypeSelection = false;
+        }
         RenderRecentExperiences();
-    }
-
-    private static void SetFilterButtonState(Button button, bool active)
-    {
-        if (active)
-        {
-            button.SetResourceReference(
-                Control.BackgroundProperty,
-                "SelectedControlSurfaceBrush");
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "SelectedControlTextBrush");
-        }
-        else
-        {
-            button.Background = Brushes.Transparent;
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "MutedBrush");
-        }
-        AutomationProperties.SetItemStatus(button, active ? "Selected" : "Not selected");
     }
 
     private enum RecentTypeFilter

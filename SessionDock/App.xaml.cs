@@ -2,8 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Shell;
 using System.Windows.Media;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using SessionDock.Services;
 
@@ -13,11 +13,15 @@ public partial class App : Application
 {
     private const string ProductionApplicationId = "RobloxOneLauncher";
     private readonly string _applicationId;
+    private string? _startupExternalLink;
 #if SESSIONDOCK_SMOKE_HARNESS
     private readonly RuntimeSmokeTestOptions? _runtimeSmokeTest;
 #endif
     private SingleInstanceService? _singleInstance;
+    private readonly LatestOnlyRequestQueue<string> _externalLinkDispatchQueue =
+        new();
     private AppThemeService? _themeService;
+    private AppLocalizationService? _localizationService;
     public UiSoundService SoundService { get; private set; } = null!;
     public bool UiSoundsEnabled { get; set; } = true;
 #if SESSIONDOCK_SMOKE_HARNESS
@@ -26,10 +30,14 @@ public partial class App : Application
     internal AppThemeService ThemeService => _themeService ??
         throw new InvalidOperationException(
             "The application theme service has not started.");
+    internal AppLocalizationService LocalizationService =>
+        _localizationService ?? throw new InvalidOperationException(
+            "The application localization service has not started.");
 
-    public App()
+    public App(string? startupExternalLink = null)
     {
         _applicationId = ProductionApplicationId;
+        _startupExternalLink = startupExternalLink;
     }
 
 #if SESSIONDOCK_SMOKE_HARNESS
@@ -43,12 +51,31 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        var startupExternalLink = _startupExternalLink;
+        _startupExternalLink = null;
         // Production retains the original mutex name so renamed and older
         // copies cannot run against the same browser profiles at the same time.
         _singleInstance = new SingleInstanceService(_applicationId);
         if (!_singleInstance.IsPrimaryInstance)
         {
+            var linkForwarded = true;
+            if (startupExternalLink is not null)
+            {
+                linkForwarded = _singleInstance.ForwardExternalLinkAsync(
+                        startupExternalLink,
+                        TimeSpan.FromSeconds(3))
+                    .GetAwaiter()
+                    .GetResult();
+            }
             _singleInstance.NotifyPrimaryInstance();
+            if (!linkForwarded)
+            {
+                MessageBox.Show(
+                    "The running SessionDock window did not accept the link in time. No account was launched. Try the link again after the window finishes starting.",
+                    "SessionDock could not forward the link",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
             Shutdown();
             return;
         }
@@ -69,6 +96,7 @@ public partial class App : Application
         base.OnStartup(e);
         _themeService = new AppThemeService(this);
         _themeService.ThemeChanged += ThemeService_ThemeChanged;
+        _localizationService = new AppLocalizationService(this);
 
         if (!ApplicationStartup.TryStart(
                 () =>
@@ -90,7 +118,9 @@ public partial class App : Application
                         mainWindow.Left = SystemParameters.VirtualScreenLeft - 10000;
                         mainWindow.Top = SystemParameters.VirtualScreenTop - 10000;
                     }
+#endif
                     mainWindow.Show();
+#if SESSIONDOCK_SMOKE_HARNESS
                     if (_runtimeSmokeTest is not null)
                     {
                         _ = CompleteRuntimeSmokeTestAsync(
@@ -112,6 +142,10 @@ public partial class App : Application
             Dispatcher.BeginInvoke(
                 DispatcherPriority.ApplicationIdle,
                 ActivateExistingWindow));
+        _singleInstance.ListenForExternalLinkRequests(externalLink =>
+            QueueExternalLinkForDispatch(externalLink));
+        if (startupExternalLink is not null)
+            QueueExternalLinkForDispatch(startupExternalLink);
     }
 
     private void ReportStartupFailure(string message)
@@ -140,6 +174,7 @@ public partial class App : Application
         if (_themeService is not null)
             _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         _themeService?.Dispose();
+        _localizationService?.Dispose();
         SoundService?.Dispose();
         base.OnExit(e);
     }
@@ -215,6 +250,48 @@ public partial class App : Application
         window.Focus();
     }
 
+    private void ReceiveExternalLink(string externalLink)
+    {
+        ActivateExistingWindow();
+        if (MainWindow is MainWindow mainWindow)
+            mainWindow.QueueExternalRobloxLink(externalLink);
+    }
+
+    private void QueueExternalLinkForDispatch(string externalLink)
+    {
+        if (!_externalLinkDispatchQueue.Enqueue(
+                externalLink,
+                out var firstRequest))
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle,
+            () => DispatchExternalLinks(firstRequest!));
+    }
+
+    private void DispatchExternalLinks(string firstRequest)
+    {
+        var current = firstRequest;
+        while (true)
+        {
+            try
+            {
+                ReceiveExternalLink(current);
+            }
+            catch (Exception exception)
+            {
+                System.Diagnostics.Trace.WriteLine(
+                    $"An external-link UI dispatch failed safely: {exception.GetType().Name}.");
+            }
+
+            if (!_externalLinkDispatchQueue.CompleteCurrent(out var nextRequest))
+                return;
+            current = nextRequest!;
+        }
+    }
+
 #if SESSIONDOCK_SMOKE_HARNESS
     private async Task CompleteRuntimeSmokeTestAsync(
         MainWindow mainWindow,
@@ -231,6 +308,8 @@ public partial class App : Application
             }
             VerifyIntegratedWindowChrome(mainWindow);
             mainWindow.VerifyThemeSwitchForRuntimeSmoke();
+            mainWindow.VerifyLocalizationSwitchForRuntimeSmoke();
+            mainWindow.VerifySemanticSelectorsForRuntimeSmoke();
             mainWindow.VerifyJoinUserUiForRuntimeSmoke();
 
             void HandleShutdownCompleted(Exception? shutdownFailure)

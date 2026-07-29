@@ -22,18 +22,31 @@ public partial class MainWindow
     private bool _accountDragInProgress;
     private bool _accountReorderInProgress;
 
-    private bool CanReorderAccounts =>
-        !_operationBusy &&
-        !_accountReorderInProgress &&
-        !_operationLifetime.IsShuttingDown &&
-        _pendingProfile is null &&
-        _settings.Accounts.Count >= 2;
+    private bool CanReorderAccounts => IsAccountReorderingAvailable(
+        _operationBusy,
+        _accountReorderInProgress,
+        _operationLifetime.IsShuttingDown,
+        _pendingProfile is not null,
+        _accountSearch.IsActive,
+        _settings.Accounts.Count);
 
     private void ConfigureAccountReordering(
         Button button,
         int positionInSet,
         int sizeOfSet)
     {
+        AutomationProperties.SetPositionInSet(button, positionInSet);
+        AutomationProperties.SetSizeOfSet(button, sizeOfSet);
+        if (_accountSearch.IsActive)
+        {
+            button.ToolTip =
+                "Clear the account search to reorder saved accounts.";
+            AutomationProperties.SetHelpText(
+                button,
+                "Account reordering is paused while search is active. Clear the account search to reorder saved accounts.");
+            return;
+        }
+
         button.PreviewMouseLeftButtonDown +=
             AccountButton_PreviewMouseLeftButtonDown;
         button.PreviewMouseLeftButtonUp +=
@@ -46,8 +59,6 @@ public partial class MainWindow
         AutomationProperties.SetHelpText(
             button,
             "Drag left or right to reorder. Press Control Shift Left or Control Shift Right to move this account.");
-        AutomationProperties.SetPositionInSet(button, positionInSet);
-        AutomationProperties.SetSizeOfSet(button, sizeOfSet);
     }
 
     private void AccountButton_PreviewMouseLeftButtonDown(
@@ -380,13 +391,43 @@ public partial class MainWindow
     private void UpdateAccountControlAvailability()
     {
         var enabled = !_operationBusy && !_accountReorderInProgress;
+        var activeProfileVisible =
+            _activeProfile is not null &&
+            _accountSearch.MatchesAccount(
+                _activeProfile,
+                _activeProfile.Group);
         AccountsList.IsEnabled = enabled;
         AddAccountButton.IsEnabled =
             enabled && _pendingProfile is null;
-        EditAccountButton.IsEnabled =
-            enabled && _pendingProfile is null && _activeProfile is not null;
-        ResetButton.IsEnabled =
-            enabled && _pendingProfile is null && _activeProfile is not null;
+        var activeAccountControlsEnabled =
+            AreActiveAccountControlsAvailable(
+                enabled,
+                _pendingProfile is not null,
+                _activeProfile is not null,
+                activeProfileVisible);
+        EditAccountButton.IsEnabled = activeAccountControlsEnabled;
+        ResetButton.IsEnabled = activeAccountControlsEnabled;
+
+        var activeProfileFilteredOut =
+            _activeProfile is not null && !activeProfileVisible;
+        EditAccountButton.ToolTip = activeProfileFilteredOut
+            ? "Clear the account search or select a visible account before editing."
+            : "Change the selected account label, group, and color";
+        ResetButton.ToolTip = activeProfileFilteredOut
+            ? "Clear the account search or select a visible account before removing."
+            : "Clear and remove the selected local account profile";
+        AutomationProperties.SetHelpText(
+            EditAccountButton,
+            activeProfileFilteredOut
+                ? "The selected account is hidden by account search. Clear the search or select a visible account before editing."
+                : "Change the selected account label, group, and color.");
+        AutomationProperties.SetHelpText(
+            ResetButton,
+            activeProfileFilteredOut
+                ? "The selected account is hidden by account search. Clear the search or select a visible account before removing."
+                : "Clear and remove the selected local account profile.");
+        RetryFailedBatchButton.IsEnabled =
+            enabled && _batchRetryState is not null;
     }
 
     internal static int CalculateAccountDropInsertionIndex(
@@ -402,6 +443,30 @@ public partial class MainWindow
 
         return itemMidpoints.Count;
     }
+
+    internal static bool IsAccountReorderingAvailable(
+        bool operationBusy,
+        bool reorderInProgress,
+        bool shuttingDown,
+        bool hasPendingProfile,
+        bool searchActive,
+        int accountCount) =>
+        !operationBusy &&
+        !reorderInProgress &&
+        !shuttingDown &&
+        !hasPendingProfile &&
+        !searchActive &&
+        accountCount >= 2;
+
+    internal static bool AreActiveAccountControlsAvailable(
+        bool controlsEnabled,
+        bool hasPendingProfile,
+        bool hasActiveProfile,
+        bool activeProfileVisible) =>
+        controlsEnabled &&
+        !hasPendingProfile &&
+        hasActiveProfile &&
+        activeProfileVisible;
 
     internal static bool ShouldStartHorizontalAccountDrag(
         double deltaX,

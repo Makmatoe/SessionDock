@@ -7,10 +7,26 @@ namespace SessionDock;
 
 public partial class MainWindow
 {
+    private BatchRetryState? _batchRetryState;
+
     private async void BatchLaunchButton_Click(object sender, RoutedEventArgs e) =>
-        await RunWindowOperationAsync(BatchLaunchButtonClickAsync);
+        await RunWindowOperationAsync(cancellationToken =>
+            BatchLaunchButtonClickAsync(retryState: null, cancellationToken));
+
+    private async void RetryFailedBatchButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var retryState = _batchRetryState;
+        if (retryState is null)
+            return;
+
+        await RunWindowOperationAsync(cancellationToken =>
+            BatchLaunchButtonClickAsync(retryState, cancellationToken));
+    }
 
     private async Task BatchLaunchButtonClickAsync(
+        BatchRetryState? retryState,
         CancellationToken cancellationToken)
     {
         if (_operationBusy ||
@@ -25,9 +41,62 @@ public partial class MainWindow
             _accountReorderInProgress ||
             _pendingProfile is not null)
             return;
-        var dialog = new BatchLaunchDialog(_settings.Accounts) { Owner = this };
-        if (dialog.ShowDialog() != true)
+        var dialogAccounts = retryState is null
+            ? _settings.Accounts.Select(AppSettingsSnapshot.Clone).ToArray()
+            : CreateRetryAccounts(retryState);
+        if (dialogAccounts.Count == 0)
+        {
+            ClearBatchRetryState();
+            SetStatus(
+                "No failed accounts remain",
+                "The accounts from that batch are no longer saved, so there is nothing left to retry.",
+                "RETRY CLEARED");
             return;
+        }
+
+        var dialog = new BatchLaunchDialog(
+            dialogAccounts,
+            retryState is null ? _settings.BatchLaunchPresets : [],
+            _settings.BatchLaunchDelaySeconds,
+            retryState?.AccountKeys,
+            retryMode: retryState is not null)
+        {
+            Owner = this
+        };
+        var shouldStart = dialog.ShowDialog() == true;
+        var persistPresets = retryState is null && dialog.PresetsChanged;
+        var persistDelay = shouldStart &&
+            dialog.DelaySeconds != _settings.BatchLaunchDelaySeconds;
+        if (persistPresets || persistDelay)
+        {
+            var updatedPresets = dialog.UpdatedPresets
+                .Select(AppSettingsSnapshot.Clone)
+                .ToList();
+            if (!await TryCommitSettingsMutationAsync(
+                    () =>
+                    {
+                        if (persistPresets)
+                        {
+                            _settings.BatchLaunchPresets = updatedPresets
+                                .Select(AppSettingsSnapshot.Clone)
+                                .ToList();
+                        }
+                        if (persistDelay)
+                        {
+                            _settings.BatchLaunchDelaySeconds =
+                                dialog.DelaySeconds;
+                        }
+                    },
+                    "Batch preferences could not be saved",
+                    "BATCH SETTINGS ERROR",
+                    "SessionDock could not confirm the preset or delay update, so it was rolled back. Make %LOCALAPPDATA%\\SessionDock writable, then retry."))
+            {
+                return;
+            }
+        }
+        if (!shouldStart)
+            return;
+
         if (!BatchDestinationPlanner.TryCreate(
                 dialog.SelectedAccounts,
                 _settings.RecentExperiences,
@@ -47,6 +116,7 @@ public partial class MainWindow
             _pendingProfile is not null)
             return;
 
+        ClearBatchRetryState();
         var originalProfile = _activeProfile;
         _batchCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
@@ -98,7 +168,28 @@ public partial class MainWindow
 
         ShowBatchResult(
             result ?? BatchLaunchResult.CancelledResult(dialog.SelectedAccounts.Count),
-            restoredOriginalProfile);
+            restoredOriginalProfile,
+            launchPlans);
+    }
+
+    private IReadOnlyList<AccountProfile> CreateRetryAccounts(
+        BatchRetryState retryState)
+    {
+        var accounts = BatchLaunchPreferences.ResolveAccounts(
+            retryState.AccountKeys,
+            _settings.Accounts);
+        return accounts.Select(account =>
+        {
+            var retryAccount = AppSettingsSnapshot.Clone(account);
+            if (string.IsNullOrWhiteSpace(retryAccount.Destination) &&
+                retryState.EffectiveDestinations.TryGetValue(
+                    retryAccount.Key,
+                    out var effectiveDestination))
+            {
+                retryAccount.Destination = effectiveDestination;
+            }
+            return retryAccount;
+        }).ToArray();
     }
 
     private void CancelBatchButton_Click(object sender, RoutedEventArgs e)
@@ -159,7 +250,10 @@ public partial class MainWindow
             return new BatchLaunchResult(
                 0,
                 launchPlans.Count,
-                ["Existing Roblox clients could not be verified as closed"],
+                launchPlans.Select(plan => new BatchFailure(
+                    plan.Account.Key,
+                    "Existing Roblox clients could not be verified as closed"))
+                    .ToArray(),
                 ClientsWereClosed: false,
                 Cancelled: false);
         }
@@ -176,7 +270,10 @@ public partial class MainWindow
             return new BatchLaunchResult(
                 0,
                 launchPlans.Count,
-                [detail],
+                launchPlans.Select(plan => new BatchFailure(
+                    plan.Account.Key,
+                    detail))
+                    .ToArray(),
                 ClientsWereClosed: false,
                 Cancelled: false);
         }
@@ -232,8 +329,12 @@ public partial class MainWindow
                 }
 
                 return launched
-                    ? new BatchAccountLaunchResult(true, null)
+                    ? new BatchAccountLaunchResult(
+                        started.Account.Key,
+                        true,
+                        null)
                     : new BatchAccountLaunchResult(
+                        started.Account.Key,
                         false,
                         started.Failure ??
                         $"@{started.Account.Username}: launch failed");
@@ -245,7 +346,9 @@ public partial class MainWindow
             launchPlans.Count,
             outcomes
                 .Where(outcome => outcome.Failure is not null)
-                .Select(outcome => outcome.Failure!)
+                .Select(outcome => new BatchFailure(
+                    outcome.AccountKey,
+                    outcome.Failure!))
                 .ToArray(),
             ClientsWereClosed: true,
             Cancelled: false);
@@ -255,7 +358,7 @@ public partial class MainWindow
         IReadOnlyList<BatchLaunchPlan> launchPlans,
         CancellationToken cancellationToken)
     {
-        var unavailable = new List<string>();
+        var unavailable = new List<BatchFailure>();
         var verifiedPlans = new List<VerifiedBatchLaunchPlan>(launchPlans.Count);
         for (var index = 0; index < launchPlans.Count; index++)
         {
@@ -276,7 +379,9 @@ public partial class MainWindow
                     cancellationToken);
                 if (sessionToken is null)
                 {
-                    unavailable.Add($"@{account.Username}: sign-in unavailable");
+                    unavailable.Add(new BatchFailure(
+                        account.Key,
+                        $"@{account.Username}: sign-in unavailable"));
                     continue;
                 }
 
@@ -291,8 +396,9 @@ public partial class MainWindow
                         out var currentToken) ||
                     currentToken != sessionToken.Value)
                 {
-                    unavailable.Add(
-                        $"@{plan.Account.Username}: account session unavailable");
+                    unavailable.Add(new BatchFailure(
+                        account.Key,
+                        $"@{plan.Account.Username}: account session unavailable"));
                     continue;
                 }
                 account = currentAccount;
@@ -303,8 +409,9 @@ public partial class MainWindow
                 {
                     if (!IsCurrentWebSessionOwner(activeSessionToken))
                     {
-                        unavailable.Add(
-                            $"@{account.Username}: account session unavailable");
+                        unavailable.Add(new BatchFailure(
+                            account.Key,
+                            $"@{account.Username}: account session unavailable"));
                         continue;
                     }
                     var resolvedTarget = await _webSession.ResolvePrivateServerAsync(
@@ -314,16 +421,18 @@ public partial class MainWindow
                     cancellationToken.ThrowIfCancellationRequested();
                     if (!IsCurrentWebSessionOwner(activeSessionToken))
                     {
-                        unavailable.Add(
-                            $"@{account.Username}: account session unavailable");
+                        unavailable.Add(new BatchFailure(
+                            account.Key,
+                            $"@{account.Username}: account session unavailable"));
                         continue;
                     }
                     if (resolvedTarget is null ||
                         plan.LaunchInput.TrackedPlaceId is not null &&
                         resolvedTarget.PlaceId != plan.LaunchInput.TrackedPlaceId)
                     {
-                        unavailable.Add(
-                            $"@{account.Username}: private server unavailable");
+                        unavailable.Add(new BatchFailure(
+                            account.Key,
+                            $"@{account.Username}: private server unavailable"));
                         continue;
                     }
                     target = resolvedTarget;
@@ -340,7 +449,9 @@ public partial class MainWindow
             {
                 Trace.WriteLine(
                     $"Batch preflight failed for one account: {ex.GetType().Name}.");
-                unavailable.Add($"@{account.Username}: account check failed");
+                unavailable.Add(new BatchFailure(
+                    account.Key,
+                    $"@{account.Username}: account check failed"));
             }
         }
         return new BatchPreflightResult(verifiedPlans, unavailable);
@@ -385,13 +496,15 @@ public partial class MainWindow
 
     private void ShowBatchResult(
         BatchLaunchResult result,
-        bool restoredOriginalProfile)
+        bool restoredOriginalProfile,
+        IReadOnlyList<BatchLaunchPlan> launchPlans)
     {
         var restoreDetail = restoredOriginalProfile
             ? string.Empty
             : " The original account needs to be signed in again.";
         if (result.Cancelled)
         {
+            ClearBatchRetryState();
             SetStatus(
                 "Batch launch cancelled",
                 $"No further accounts will start. Started clients remain open; clients already closed during cleanup cannot be restored.{restoreDetail}",
@@ -401,6 +514,7 @@ public partial class MainWindow
 
         if (result.Failures.Count == 0)
         {
+            ClearBatchRetryState();
             SetStatus(
                 $"Batch complete: {result.Started} clients started",
                 $"Every selected account received its own launch ticket.{restoreDetail}",
@@ -411,10 +525,92 @@ public partial class MainWindow
         var title = result.ClientsWereClosed
             ? $"Batch complete: {result.Started} of {result.Total} started"
             : "Batch not started";
+        SetBatchRetryState(result, launchPlans);
+        var failureDetail = string.Join(
+            "; ",
+            result.Failures
+                .Select(failure => failure.Message)
+                .Distinct(StringComparer.Ordinal));
         SetStatus(
             title,
-            $"{string.Join("; ", result.Failures)}.{restoreDetail}".Trim(),
+            $"{failureDetail}.{restoreDetail} Choose Retry failed only to review just the failed account(s); retrying will close currently running Roblox clients.".Trim(),
             result.Started > 0 ? "BATCH PARTIAL" : "BATCH ERROR");
+    }
+
+    private void SetBatchRetryState(
+        BatchLaunchResult result,
+        IReadOnlyList<BatchLaunchPlan> launchPlans)
+    {
+        var accountKeys = BatchLaunchPreferences.GetRetryAccountKeys(
+            result.Failures.Select(failure => failure.AccountKey),
+            _settings.Accounts);
+        if (accountKeys.Count == 0)
+        {
+            ClearBatchRetryState();
+            return;
+        }
+
+        var failedKeys = accountKeys.ToHashSet(
+            StringComparer.OrdinalIgnoreCase);
+        var effectiveDestinations = launchPlans
+            .Where(plan => failedKeys.Contains(plan.Account.Key))
+            .GroupBy(
+                plan => plan.Account.Key,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.First().LaunchInput.AccountDestination,
+                StringComparer.OrdinalIgnoreCase);
+        _batchRetryState = new BatchRetryState(
+            accountKeys,
+            effectiveDestinations);
+        RetryFailedBatchButton.Visibility = Visibility.Visible;
+        RetryFailedBatchButton.IsEnabled =
+            !_operationBusy && !_accountReorderInProgress;
+        System.Windows.Automation.AutomationProperties.SetHelpText(
+            RetryFailedBatchButton,
+            $"Review and retry {accountKeys.Count} failed account(s). Starting the retry closes currently running verified Roblox Player clients.");
+    }
+
+    private void RefreshBatchRetryState()
+    {
+        if (_batchRetryState is null)
+        {
+            RetryFailedBatchButton.Visibility = Visibility.Collapsed;
+            RetryFailedBatchButton.IsEnabled = false;
+            return;
+        }
+
+        var currentKeys = BatchLaunchPreferences.GetRetryAccountKeys(
+            _batchRetryState.AccountKeys,
+            _settings.Accounts);
+        if (currentKeys.Count == 0)
+        {
+            ClearBatchRetryState();
+            return;
+        }
+
+        var effectiveDestinations = _batchRetryState.EffectiveDestinations
+            .Where(pair => currentKeys.Contains(
+                pair.Key,
+                StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value,
+                StringComparer.OrdinalIgnoreCase);
+        _batchRetryState = new BatchRetryState(
+            currentKeys,
+            effectiveDestinations);
+        RetryFailedBatchButton.Visibility = Visibility.Visible;
+        RetryFailedBatchButton.IsEnabled =
+            !_operationBusy && !_accountReorderInProgress;
+    }
+
+    private void ClearBatchRetryState()
+    {
+        _batchRetryState = null;
+        RetryFailedBatchButton.Visibility = Visibility.Collapsed;
+        RetryFailedBatchButton.IsEnabled = false;
     }
 
     private async Task<WebSessionToken?> ActivateBatchAccountAsync(
@@ -786,7 +982,11 @@ public partial class MainWindow
 
     private sealed record BatchPreflightResult(
         IReadOnlyList<VerifiedBatchLaunchPlan> Plans,
-        IReadOnlyList<string> Failures);
+        IReadOnlyList<BatchFailure> Failures);
+
+    private sealed record BatchFailure(
+        string AccountKey,
+        string Message);
 
     private sealed record VerifiedBatchLaunchPlan(
         BatchLaunchPlan Plan,
@@ -831,17 +1031,22 @@ public partial class MainWindow
     }
 
     private sealed record BatchAccountLaunchResult(
+        string AccountKey,
         bool Started,
         string? Failure);
 
     private sealed record BatchLaunchResult(
         int Started,
         int Total,
-        IReadOnlyList<string> Failures,
+        IReadOnlyList<BatchFailure> Failures,
         bool ClientsWereClosed,
         bool Cancelled)
     {
         public static BatchLaunchResult CancelledResult(int total) =>
             new(0, total, [], ClientsWereClosed: false, Cancelled: true);
     }
+
+    private sealed record BatchRetryState(
+        IReadOnlyList<string> AccountKeys,
+        IReadOnlyDictionary<string, string> EffectiveDestinations);
 }

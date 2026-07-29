@@ -226,12 +226,20 @@ public sealed class HandleScopeReleaseInstallerTests
             "HandleScopeIntegrationDialog.xaml"));
 
         Assert.Contains(
-            "Text=\"Install Latest HandleScope release\"",
+            "Text=\"{DynamicResource Handle.Install}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"Install Latest HandleScope release\"",
+            "AutomationProperties.Name=\"{DynamicResource Handle.InstallName}\"",
             xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ">Install Latest HandleScope release<",
+            File.ReadAllText(Path.Combine(
+                FindRepositoryRoot(),
+                "SessionDock",
+                "Localization",
+                "Strings.en-US.xaml")),
             StringComparison.Ordinal);
         Assert.DoesNotContain("GetHandleScopeButton", xaml, StringComparison.Ordinal);
     }
@@ -706,14 +714,14 @@ public sealed class HandleScopeReleaseInstallerTests
         string name,
         long size,
         byte[] hash) => new()
-    {
-        ["name"] = name,
-        ["state"] = "uploaded",
-        ["size"] = size,
-        ["digest"] = $"sha256:{Hex(hash)}",
-        ["browser_download_url"] =
+        {
+            ["name"] = name,
+            ["state"] = "uploaded",
+            ["size"] = size,
+            ["digest"] = $"sha256:{Hex(hash)}",
+            ["browser_download_url"] =
             $"https://github.com/Makmatoe/HandleScope/releases/download/{TagName}/{Uri.EscapeDataString(name)}"
-    };
+        };
 
     private static byte[] CreateValidBundle()
     {

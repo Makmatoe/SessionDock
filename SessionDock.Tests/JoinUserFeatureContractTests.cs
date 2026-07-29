@@ -69,7 +69,16 @@ public sealed class JoinUserFeatureContractTests : IDisposable
 
         Assert.Contains("x:Name=\"ExperienceDestinationModeButton\"", xaml);
         Assert.Contains("x:Name=\"UserDestinationModeButton\"", xaml);
-        Assert.Contains("AutomationProperties.Name=\"Join a user\"", xaml);
+        Assert.Contains(
+            "AutomationProperties.Name=\"{DynamicResource Main.JoinUser}\"",
+            xaml);
+        Assert.Contains(
+            "<sys:String x:Key=\"Main.JoinUser\">Join a user</sys:String>",
+            File.ReadAllText(Path.Combine(
+                root,
+                "SessionDock",
+                "Localization",
+                "Strings.en-US.xaml")));
     }
 
     [Fact]

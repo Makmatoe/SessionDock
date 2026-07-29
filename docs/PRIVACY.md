@@ -9,16 +9,27 @@ SessionDock stores application settings and isolated browser profiles under
 `%LOCALAPPDATA%\SessionDock`. Depending on features used, this can include:
 
 - local account-slot identifiers, Roblox user ID/username after Roblox reports
-  them, custom labels, and accent colors;
+  them, custom labels, optional groups, and accent colors;
 - a separate WebView2 profile per account, including Roblox cookies and browser
   storage controlled by Roblox;
 - each account's selected destination;
+- named batch presets containing only stable local account-slot keys and a
+  launch delay, plus the last selected batch delay; presets do not duplicate
+  destinations, private-server codes, server JobIds, cookies, or launch tickets;
 - shared Recent/Favorite metadata, timestamps, experience names, public/private
   classification, and a server JobId when a best-effort local match succeeds;
 - private-server codes only when the user explicitly saves or launches such a
-  destination;
+  destination through the normal launcher. A private-server link received by
+  the optional Windows link handler is used in memory for that confirmed launch
+  and is not written to account defaults, Recent, or Favorites;
 - sound preferences, generated built-in sound files, and a local copy under the
   `Sounds` folder of any startup sound the user explicitly imports;
+- the selected display-language preference (`system`, `en-US`, or `nl-NL`);
+  changing it only swaps bundled text resources and culture-aware display
+  formatting, without contacting a translation service or changing the stable
+  JSON representation of stored dates and numbers;
+- the last main-window display identifier, monitor-relative position, size, and
+  maximized state, used only to restore a visible window on the next launch;
 - the current settings, the prior successful settings backup, and timestamped
   preserved copies of settings files that could not be read;
 - small recovery markers that keep automatic browser-profile cleanup paused
@@ -31,6 +42,53 @@ SessionDock does not intentionally store Roblox passwords, launch tickets, raw
 Roblox Player logs, server IP addresses, HandleScope bearer tokens, or raw
 handle values. Never send the `%LOCALAPPDATA%\SessionDock` directory in a public
 bug report because its WebView2 profiles may contain authenticated cookies.
+
+## Privacy-safe support diagnostics
+
+The **About and diagnostics** panel builds a small, read-only support summary
+from an explicit allowlist. It can include the SessionDock, Windows, .NET, and
+WebView2 versions; architecture; whether a Windows-verified Roblox Player was
+found; install/update capability; bounded aggregate counts; theme; and the
+interface-sound setting. Roblox Player discovery is reduced immediately to an
+availability/trust state, so its path is never retained in the report model.
+
+The preview is exactly what the Copy and Export actions use. Export writes only
+that preview to a user-chosen text file. The panel never reads or attaches
+settings files, logs, browser profiles, or integration configuration, and it
+omits user and computer names, local paths, account names/labels/IDs/keys,
+destinations, place/server/private-server details, cookies, tokens, URLs, and
+exception details. SessionDock does not send the summary automatically. Users
+should still review the complete preview before sharing it.
+
+## Safe metadata transfer
+
+The **Safe metadata transfer** sidebar panel creates a separate, versioned JSON
+document from a fixed allowlist. Its exact export preview contains Roblox user
+IDs (needed to match existing accounts), account labels, optional groups,
+approved accent colors, account order, and pinned public place IDs with their
+display and custom names. The file is written only after the user selects
+**Export reviewed JSON** and chooses a destination; SessionDock does not send
+it. Roblox user IDs and user-written labels are still personal metadata, so the
+complete preview should be reviewed before the file is stored or shared.
+
+The transfer file never contains local account-slot keys, usernames, active
+account state, selected account destinations, Recent timestamps, private-server
+links or codes, server JobIds, session/profile folder names, WebView2 data,
+cookies, passwords, authentication/launch tickets, sound files or preferences,
+pending-deletion state, settings/backup files, logs, local paths, or integration
+configuration and secrets. A public Favorite is eligible only when its stored
+destination parses to the same plain public place ID, has no private-server
+material, and has no server JobId.
+
+Import reads at most 256 KiB from a regular file, rejects unsupported versions,
+unknown or duplicate JSON fields, duplicate account/favorite entries, invalid
+types, out-of-range counts, unsupported colors, and unbounded/control text. It
+then shows a human-readable plan and skipped-item counts. The import button
+remains disabled until the user selects a confirmation checkbox. Import matches
+by Roblox user ID only to account slots already present on this computer; it
+does not create accounts or browser profiles. Unmatched accounts and their
+favorites are skipped. The settings change is saved as one mutation and is
+fully rolled back if persistence fails.
 
 When upgrading from the historic Roblox One package identity, SessionDock may
 copy recognized settings, browser profiles, sounds, and local integration
@@ -94,6 +152,36 @@ persistent configuration. Installation starts the API and enables HandleScope's
 limited per-user autostart task for future Windows sign-ins, but does not change
 SessionDock's integration setting. The connection test does not enumerate or
 close handles.
+
+The optional **Open with SessionDock** feature is off by default. Enabling it
+writes only SessionDock-owned per-user URL-handler keys under
+`HKCU\Software\Classes`, a private `sessiondock-roblox:` protocol, and a named
+Open With hint for `roblox:` links. It does not register for all HTTPS links,
+replace Roblox's default handler, elevate, or make a network request. Disable
+removes only registrations carrying SessionDock's ownership marker; unknown or
+conflicting keys are preserved.
+
+An incoming link is bounded, forwarded only within the same Windows user and
+interactive session, and validated before sending and again on receipt.
+SessionDock accepts only official Roblox HTTPS destinations or restricted
+`roblox:` forms that normalize through its normal destination parser. It
+rejects arbitrary protocols, credentials, authentication tickets, cookies,
+tokens, server JobIds, duplicate or unknown parameters, fragments, and
+ambiguous authority or port syntax. The UI hides private codes, requires an
+account choice, and asks for final confirmation before requesting a fresh
+ticket. Incoming links are never logged. Public launches may appear in Recent;
+private links received through this handler are not persisted.
+
+Windows necessarily places the incoming link in the newly invoked SessionDock
+process's OS command line. Windows retains that command line for the lifetime
+of the invoked process, including when it becomes the new primary instance.
+SessionDock clears its own argument and startup-field references promptly, then
+holds the link in memory only as needed to forward, review, and confirm it.
+That payload can include a private-server code even though the preview hides
+the code and SessionDock does not write it to settings, history, diagnostics,
+or logs. A different process already running as the same Windows user may be
+able to inspect process command lines or memory; the handler does not claim to
+protect against a compromised same-user desktop.
 
 ## Browser permissions
 

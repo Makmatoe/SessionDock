@@ -897,8 +897,14 @@ internal static class AppDataPaths
         settings.Accounts is { Count: 0 } &&
         settings.ActiveAccountKey is null &&
         settings.RecentExperiences is { Count: 0 } &&
+        settings.BatchLaunchPresets is { Count: 0 } &&
+        settings.BatchLaunchDelaySeconds == 8 &&
+        settings.MainWindowPlacement is null &&
         settings.UiSoundsEnabled &&
         !settings.UseLightTheme &&
+        LocalizationPreference.System.Equals(
+            settings.Language,
+            StringComparison.Ordinal) &&
         "soft".Equals(settings.StartupSound, StringComparison.Ordinal) &&
         settings.CustomStartupSoundFileName is null &&
         settings.PendingProfileDeletionKeys is { Count: 0 } &&

@@ -1,0 +1,79 @@
+<Window x:Class="SessionDock.ExternalRobloxLinkDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource ExternalLink.Title}" Width="580" Height="500"
+        MinWidth="460" MinHeight="410" ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable Text" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Border Style="{StaticResource DialogShell}">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource ExternalLink.Heading}"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontSize="24" FontWeight="SemiBold"/>
+                    <TextBlock Text="{DynamicResource ExternalLink.Detail}"
+                               Foreground="{DynamicResource MutedBrush}"
+                               FontSize="13" Margin="0,6,0,0"
+                               TextWrapping="Wrap"/>
+
+                    <Border Margin="0,22,0,0" Padding="16"
+                            Background="{DynamicResource InsetSurfaceBrush}"
+                            BorderBrush="{DynamicResource StrokeBrush}"
+                            BorderThickness="1" CornerRadius="10"
+                            AutomationProperties.Name="{DynamicResource ExternalLink.PreviewName}">
+                        <StackPanel>
+                            <TextBlock x:Name="PreviewTitleText"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       FontSize="16" FontWeight="SemiBold"/>
+                            <TextBlock x:Name="PreviewDetailText"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="12" Margin="0,6,0,0"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="{DynamicResource ExternalLink.Account}"
+                               Foreground="{DynamicResource SubtleBrush}"
+                               FontSize="11" FontWeight="Bold"
+                               Margin="0,20,0,7"/>
+                    <ComboBox x:Name="AccountComboBox"
+                              DisplayMemberPath="DisplayName"
+                              MinHeight="42"
+                              SelectionChanged="AccountComboBox_SelectionChanged"
+                              AutomationProperties.Name="{DynamicResource ExternalLink.AccountName}"
+                              AutomationProperties.HelpText="{DynamicResource ExternalLink.AccountHelp}"/>
+
+                    <Border x:Name="PrivateNoticePanel" Margin="0,14,0,0"
+                            Padding="14" Visibility="Collapsed"
+                            Background="{DynamicResource PrivacySurfaceBrush}"
+                            CornerRadius="10">
+                        <TextBlock Text="{DynamicResource ExternalLink.PrivateNotice}"
+                                   Foreground="{DynamicResource PrivacyIconBrush}"
+                                   FontSize="11" TextWrapping="Wrap"/>
+                    </Border>
+
+                    <Grid Margin="0,24,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Content="{DynamicResource Common.Cancel}" IsCancel="True"
+                                Click="CancelButton_Click"
+                                HorizontalAlignment="Left" Padding="20,10"
+                                Background="{DynamicResource ControlSurfaceBrush}"
+                                Foreground="{DynamicResource ControlTextBrush}"/>
+                        <Button x:Name="ReviewButton" Grid.Column="1"
+                                Content="{DynamicResource ExternalLink.Review}" IsDefault="True"
+                                Click="ReviewButton_Click" Padding="20,10"
+                                AutomationProperties.Name="{DynamicResource ExternalLink.ReviewName}"
+                                AutomationProperties.HelpText="{DynamicResource ExternalLink.ReviewHelp}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</Window>

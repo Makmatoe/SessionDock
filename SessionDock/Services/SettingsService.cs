@@ -1155,6 +1155,15 @@ public sealed class SettingsService
     {
         settings.Accounts ??= [];
         settings.RecentExperiences ??= [];
+        settings.BatchLaunchPresets ??= [];
+        var originalAccountGroups = settings.Accounts
+            .Select(account => account?.Group)
+            .ToArray();
+        var originalBatchLaunchPresets = settings.BatchLaunchPresets;
+        var originalBatchLaunchDelaySeconds =
+            settings.BatchLaunchDelaySeconds;
+        var originalMainWindowPlacement = settings.MainWindowPlacement;
+        var originalLanguage = settings.Language;
         var originalPendingDeletionKeys =
             settings.PendingProfileDeletionKeys ?? [];
         settings.PendingProfileDeletionKeys = originalPendingDeletionKeys
@@ -1162,10 +1171,6 @@ public sealed class SettingsService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(MaximumPendingProfileDeletions)
             .ToList();
-        pendingDeletionStateWasNormalized =
-            !originalPendingDeletionKeys.SequenceEqual(
-                settings.PendingProfileDeletionKeys,
-                StringComparer.OrdinalIgnoreCase);
         var originalAccountCount = settings.Accounts.Count;
         var validAccounts = settings.Accounts
             .Where(IsValidAccount)
@@ -1177,6 +1182,36 @@ public sealed class SettingsService
             .GroupBy(account => account.Key, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.First())
             .ToList();
+        settings.BatchLaunchDelaySeconds =
+            BatchLaunchPreferences.NormalizeDelaySeconds(
+                settings.BatchLaunchDelaySeconds);
+        settings.MainWindowPlacement = WindowPlacementPolicy.Normalize(
+            settings.MainWindowPlacement);
+        settings.BatchLaunchPresets = BatchLaunchPreferences.NormalizePresets(
+                settings.BatchLaunchPresets,
+                settings.Accounts)
+            .ToList();
+        settings.Language = LocalizationPreference.Normalize(
+            settings.Language);
+        pendingDeletionStateWasNormalized =
+            !originalPendingDeletionKeys.SequenceEqual(
+                settings.PendingProfileDeletionKeys,
+                StringComparer.OrdinalIgnoreCase) ||
+            originalBatchLaunchDelaySeconds !=
+                settings.BatchLaunchDelaySeconds ||
+            !string.Equals(
+                originalLanguage,
+                settings.Language,
+                StringComparison.Ordinal) ||
+            !BatchLaunchPreferences.AreEquivalent(
+                originalBatchLaunchPresets,
+                settings.BatchLaunchPresets) ||
+            !WindowPlacementPolicy.AreEquivalent(
+                originalMainWindowPlacement,
+                settings.MainWindowPlacement) ||
+            !originalAccountGroups.SequenceEqual(
+                settings.Accounts.Select(account => account.Group),
+                StringComparer.Ordinal);
 
         if (settings.ActiveAccountKey is not null &&
             !settings.Accounts.Any(account =>
@@ -1313,6 +1348,8 @@ public sealed class SettingsService
         account.Label = string.IsNullOrWhiteSpace(label)
             ? null
             : label[..Math.Min(label.Length, 40)];
+        account.Group = BatchLaunchPreferences.NormalizeAccountGroup(
+            account.Group);
         account.ColorHex = AccountColors.Contains(
             account.ColorHex ?? string.Empty,
             StringComparer.OrdinalIgnoreCase)

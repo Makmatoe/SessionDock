@@ -1,0 +1,108 @@
+<Window x:Class="SessionDock.RobloxLinkIntegrationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource LinkIntegration.Title}" Width="650" Height="590"
+        MinWidth="500" MinHeight="460"
+        ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable Text" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display" ShowInTaskbar="False">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Border Style="{StaticResource DialogShell}">
+                <StackPanel>
+                    <TextBlock Text="{DynamicResource LinkIntegration.Heading}"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontSize="24" FontWeight="SemiBold"/>
+                    <TextBlock Text="{DynamicResource LinkIntegration.Detail}"
+                               Foreground="{DynamicResource MutedBrush}"
+                               FontSize="13" Margin="0,6,0,0"
+                               TextWrapping="Wrap"/>
+
+                    <Border Margin="0,22,0,0" Padding="16"
+                            Background="{DynamicResource InsetSurfaceBrush}"
+                            BorderBrush="{DynamicResource StrokeBrush}"
+                            BorderThickness="1" CornerRadius="10">
+                        <StackPanel>
+                            <TextBlock x:Name="StateTitleText"
+                                       Text="{DynamicResource LinkIntegration.Checking}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                            <TextBlock x:Name="StateDescriptionText"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="12" Margin="0,6,0,0"
+                                       TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,12,0,0" Padding="16"
+                            Background="{DynamicResource InfoSurfaceBrush}"
+                            BorderBrush="{DynamicResource InfoTextBrush}"
+                            BorderThickness="1" CornerRadius="10">
+                        <StackPanel>
+                            <TextBlock Text="{DynamicResource LinkIntegration.ChangesHeading}"
+                                       Foreground="{DynamicResource InfoTextBrush}"
+                                       FontSize="13" FontWeight="SemiBold"/>
+                            <TextBlock Text="{DynamicResource LinkIntegration.ChangesDetail}"
+                                       Foreground="{DynamicResource InfoTextBrush}"
+                                       FontSize="11" Margin="0,6,0,0"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,12,0,0" Padding="16"
+                            Background="{DynamicResource PrivacySurfaceBrush}"
+                            CornerRadius="10">
+                        <StackPanel>
+                            <TextBlock Text="{DynamicResource LinkIntegration.SafetyHeading}"
+                                       Foreground="{DynamicResource PrivacyIconBrush}"
+                                       FontSize="13" FontWeight="SemiBold"/>
+                            <TextBlock Text="{DynamicResource LinkIntegration.SafetyDetail}"
+                                       Foreground="{DynamicResource PrivacyIconBrush}"
+                                       FontSize="11" Margin="0,6,0,0"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="ActionStatusText" MinHeight="18"
+                               Foreground="{DynamicResource MutedBrush}"
+                               FontSize="11" Margin="0,14,0,0"
+                               TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite"/>
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <WrapPanel>
+                            <Button x:Name="EnableButton" Content="{DynamicResource LinkIntegration.Enable}"
+                                    Click="EnableButton_Click" Padding="16,10"
+                                    Margin="0,0,8,8"
+                                    AutomationProperties.Name="{DynamicResource LinkIntegration.EnableName}"
+                                    AutomationProperties.HelpText="{DynamicResource LinkIntegration.EnableHelp}"/>
+                            <Button x:Name="DisableButton" Content="{DynamicResource LinkIntegration.Disable}"
+                                    Click="DisableButton_Click" Padding="16,10"
+                                    Margin="0,0,8,8"
+                                    Background="{DynamicResource ControlSurfaceBrush}"
+                                    Foreground="{DynamicResource ControlTextBrush}"
+                                    AutomationProperties.Name="{DynamicResource LinkIntegration.DisableName}"/>
+                            <Button Content="{DynamicResource Common.Refresh}" Click="RefreshButton_Click"
+                                    Padding="16,10" Margin="0,0,8,8"
+                                    Background="{DynamicResource ControlSurfaceBrush}"
+                                    Foreground="{DynamicResource ControlTextBrush}"
+                                    AutomationProperties.Name="{DynamicResource LinkIntegration.RefreshName}"/>
+                        </WrapPanel>
+                        <Button Grid.Column="1" Content="{DynamicResource Common.Close}" IsCancel="True"
+                                Click="CloseButton_Click" Padding="20,10"
+                                VerticalAlignment="Top"
+                                Background="{DynamicResource ControlSurfaceBrush}"
+                                Foreground="{DynamicResource ControlTextBrush}"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+    </Grid>
+</Window>

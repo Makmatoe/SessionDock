@@ -2,6 +2,8 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Automation.Provider;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -42,6 +44,8 @@ public partial class MainWindow : Window
     private readonly SettingsMutationCoordinator _settingsMutations;
     private readonly DestinationPersistenceDebouncer _destinationPersistence;
     private readonly AccountVerificationGate _accountVerificationGate = new();
+    private readonly AccessibilityLiveRegion _statusLiveRegion;
+    private readonly AccessibilityLiveRegion? _destinationValidationLiveRegion;
     private string? _startupNotice;
     private AccountProfile? _activeProfile;
     private AccountProfile? _pendingProfile;
@@ -61,6 +65,7 @@ public partial class MainWindow : Window
     private bool _destinationDraftDirty;
     private bool _destinationDraftValid = true;
     private bool _joinUserMode;
+    private bool _updatingDestinationModeSelection;
     private bool _destinationModeAwaitingInput;
     private bool _webView2RecoveryPromptShown;
     private bool _shutdownComplete;
@@ -121,27 +126,69 @@ public partial class MainWindow : Window
     internal void VerifyJoinUserUiForRuntimeSmoke()
     {
         Dispatcher.VerifyAccess();
-        ChangeDestinationMode(joinUser: true);
+        SelectWithAutomation(UserDestinationModeButton);
         if (!_joinUserMode ||
-            LaunchButtonLabel.Text != "Join user" ||
-            AutomationProperties.GetItemStatus(UserDestinationModeButton) !=
-            "Selected" ||
-            AutomationProperties.GetName(PlaceIdBox) != "Roblox user to join")
+            LaunchButtonLabel.Text != Localize("Main.JoinUserButton") ||
+            UserDestinationModeButton.IsChecked != true ||
+            ExperienceDestinationModeButton.IsChecked == true ||
+            AutomationProperties.GetName(PlaceIdBox) !=
+            Localize("Main.JoinUserInputName"))
         {
             throw new InvalidOperationException(
                 "The join-user destination mode did not become active.");
         }
 
-        ChangeDestinationMode(joinUser: false);
+        SelectWithAutomation(ExperienceDestinationModeButton);
         if (_joinUserMode ||
-            LaunchButtonLabel.Text != "Launch" ||
-            AutomationProperties.GetItemStatus(ExperienceDestinationModeButton) !=
-            "Selected" ||
-            AutomationProperties.GetName(PlaceIdBox) != "Roblox destination")
+            LaunchButtonLabel.Text != Localize("Main.Launch") ||
+            ExperienceDestinationModeButton.IsChecked != true ||
+            UserDestinationModeButton.IsChecked == true ||
+            AutomationProperties.GetName(PlaceIdBox) !=
+            Localize("Main.DestinationInputName"))
         {
             throw new InvalidOperationException(
                 "The experience destination mode was not restored.");
         }
+    }
+
+    internal void VerifySemanticSelectorsForRuntimeSmoke()
+    {
+        Dispatcher.VerifyAccess();
+        SelectWithAutomation(RecentTabButton);
+        if (RecentTabPanel.Visibility != Visibility.Visible ||
+            LaunchTabPanel.Visibility == Visibility.Visible)
+        {
+            throw new InvalidOperationException(
+                "The UI Automation selection did not open Recent.");
+        }
+
+        SelectWithAutomation(PublicFilterButton);
+        if (_recentTypeFilter != RecentTypeFilter.Public ||
+            PublicFilterButton.IsChecked != true ||
+            AllTypeFilterButton.IsChecked == true)
+        {
+            throw new InvalidOperationException(
+                "The UI Automation selection did not apply the public filter.");
+        }
+
+        SelectWithAutomation(AllTypeFilterButton);
+        SelectWithAutomation(LaunchTabButton);
+        if (_recentTypeFilter != RecentTypeFilter.All ||
+            LaunchTabPanel.Visibility != Visibility.Visible ||
+            RecentTabPanel.Visibility == Visibility.Visible)
+        {
+            throw new InvalidOperationException(
+                "The semantic selectors did not restore their default state.");
+        }
+    }
+
+    private static void SelectWithAutomation(RadioButton selector)
+    {
+        var peer = new RadioButtonAutomationPeer(selector);
+        var provider = peer.GetPattern(PatternInterface.SelectionItem) as
+            ISelectionItemProvider ?? throw new InvalidOperationException(
+                "A segmented selector did not expose SelectionItem.");
+        provider.Select();
     }
 
     private static Color GetSolidColor(Brush brush, string description) =>
@@ -153,16 +200,27 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        AttachSemanticSelectorHandlers();
+        _statusLiveRegion = new AccessibilityLiveRegion(StatusTitle);
+        _destinationValidationLiveRegion =
+            new AccessibilityLiveRegion(DestinationValidationText);
         CaptionControls.AttachToWindow(this);
-        WindowLayoutService.FitToWorkArea(this);
         var app = (App)Application.Current;
         _soundService = app.SoundService;
-        InstallUpdateButton.ToolTip =
-            $"Check for signed updates (current {_updateService.CurrentVersion})";
         _settings = _settingsService.Load();
+        if (!WindowLayoutService.RestoreMainWindowPlacement(
+                this,
+                _settings.MainWindowPlacement))
+        {
+            WindowLayoutService.FitToWorkArea(this);
+        }
+        app.LocalizationService.ApplyPreference(_settings.Language);
         app.ThemeService.ApplyPreference(_settings.UseLightTheme);
+        UpdateUpdateTooltip();
         UpdateThemeTogglePresentation();
         app.ThemeService.ThemeChanged += ThemeService_ThemeChanged;
+        app.LocalizationService.LanguageChanged +=
+            LocalizationService_LanguageChanged;
         _settingsWriter = new SerializedSettingsWriter(_settingsService.Save);
         _settingsMutations = new SettingsMutationCoordinator(
             _settings,
@@ -182,6 +240,19 @@ public partial class MainWindow : Window
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
         Closed += MainWindow_Closed;
+    }
+
+    private void AttachSemanticSelectorHandlers()
+    {
+        LaunchTabButton.Checked += LaunchTabButton_Checked;
+        RecentTabButton.Checked += RecentTabButton_Checked;
+        ExperienceDestinationModeButton.Checked +=
+            ExperienceDestinationModeButton_Checked;
+        UserDestinationModeButton.Checked +=
+            UserDestinationModeButton_Checked;
+        AllTypeFilterButton.Checked += AllTypeFilterButton_Checked;
+        PublicFilterButton.Checked += PublicFilterButton_Checked;
+        PrivateFilterButton.Checked += PrivateFilterButton_Checked;
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e) =>
@@ -292,6 +363,8 @@ public partial class MainWindow : Window
                         .ToList();
                     _settings.Accounts.RemoveAll(account =>
                         journaledSet.Contains(account.Key));
+                    BatchLaunchPreferences.PrunePresetsForCurrentAccounts(
+                        _settings);
                     if (_settings.ActiveAccountKey is not null &&
                         journaledSet.Contains(_settings.ActiveAccountKey))
                     {
@@ -520,8 +593,10 @@ public partial class MainWindow : Window
         _currentUser = null;
         LaunchButton.IsEnabled = false;
         SignInButton.Visibility = Visibility.Visible;
-        SignInButtonLabel.Text = "Reconnect";
-        AutomationProperties.SetName(SignInButton, "Reconnect Roblox sign-in");
+        SignInButtonLabel.Text = Localize("Main.Reconnect");
+        AutomationProperties.SetName(
+            SignInButton,
+            Localize("Main.ReconnectName"));
         SetStatus(
             "Roblox web session stopped",
             "The isolated browser process became unavailable. Reconnect this account before launching again.",
@@ -698,8 +773,10 @@ public partial class MainWindow : Window
                 "ACCOUNT BLOCKED");
             LaunchButton.IsEnabled = false;
             SignInButton.Visibility = Visibility.Visible;
-            SignInButtonLabel.Text = "Fix sign-in";
-            AutomationProperties.SetName(SignInButton, "Fix Roblox sign-in");
+            SignInButtonLabel.Text = Localize("Main.FixSignIn");
+            AutomationProperties.SetName(
+                SignInButton,
+                Localize("Main.FixSignInName"));
             return;
         }
 
@@ -775,8 +852,10 @@ public partial class MainWindow : Window
             "SIGN-IN NEEDED");
         LaunchButton.IsEnabled = false;
         SignInButton.Visibility = Visibility.Visible;
-        SignInButtonLabel.Text = "Sign in";
-        AutomationProperties.SetName(SignInButton, "Sign in to Roblox");
+        SignInButtonLabel.Text = Localize("Main.SignIn");
+        AutomationProperties.SetName(
+            SignInButton,
+            Localize("Main.SignInName"));
     }
 
     private void SetReadyState()
@@ -792,17 +871,24 @@ public partial class MainWindow : Window
         SignInButton.Visibility = Visibility.Collapsed;
         RefreshLaunchAvailability();
         LaunchButtonLabel.Text = _launchInProgress
-            ? "Launching…"
-            : _joinUserMode ? "Join user" : "Launch";
+            ? Localize("Main.Launching")
+            : _joinUserMode
+                ? Localize("Main.JoinUserButton")
+                : Localize("Main.Launch");
     }
 
     private void SetStatus(string title, string detail, string badge)
     {
-        StatusTitle.Text = title;
+        var tone = StatusToneClassifier.Classify(badge);
+        _statusLiveRegion.Update(
+            title,
+            CreateStatusAnnouncement(title, detail, badge),
+            tone is StatusTone.Error or StatusTone.Warning
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
         StatusDetail.Text = detail;
         SessionBadge.Text = badge;
 
-        var tone = StatusToneClassifier.Classify(badge);
         var foregroundResource = tone switch
         {
             StatusTone.Error => "ErrorTextBrush",
@@ -836,6 +922,16 @@ public partial class MainWindow : Window
             Border.BackgroundProperty,
             surfaceResource);
     }
+
+    internal static string CreateStatusAnnouncement(
+        string title,
+        string detail,
+        string badge) =>
+        string.Join(
+            " ",
+            new[] { title, detail, badge }
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim()));
 
     private Task RunWindowOperationAsync(
         Func<CancellationToken, Task> operation) =>
@@ -912,17 +1008,39 @@ public partial class MainWindow : Window
             ((Keyboard.FocusedElement as Button)?.Tag as string);
         Button? focusedAccountButton = null;
         Button? activeAccountButton = null;
+        var visibleAccounts = _settings.Accounts
+            .Where(account => _accountSearch.MatchesAccount(
+                account,
+                account.Group))
+            .ToList();
+
+        AccountStripHintText.Text = _accountSearch.IsActive
+            ? Localize("Main.ReorderPaused")
+            : Localize("Main.DragToReorder");
+        AutomationProperties.SetName(
+            AccountStripHintText,
+            _accountSearch.IsActive
+                ? Localize("Main.ReorderPausedHelp")
+                : Localize("Main.ReorderHelp"));
+        AutomationProperties.SetItemStatus(
+            AccountSearchBox,
+            _accountSearch.IsActive
+                ? Localize(
+                    "Main.AccountFilteredCount",
+                    visibleAccounts.Count,
+                    _settings.Accounts.Count)
+                : Localize("Main.AccountCount", _settings.Accounts.Count));
 
         AccountsList.Children.Clear();
-        for (var index = 0; index < _settings.Accounts.Count; index++)
+        for (var index = 0; index < visibleAccounts.Count; index++)
         {
-            var account = _settings.Accounts[index];
+            var account = visibleAccounts[index];
             var isActive = account.Key == _settings.ActiveAccountKey;
             var accountButton = CreateAccountButton(
                 account,
                 isActive,
                 positionInSet: index + 1,
-                sizeOfSet: _settings.Accounts.Count);
+                sizeOfSet: visibleAccounts.Count);
             AccountsList.Children.Add(accountButton);
             if (account.Key.Equals(
                     focusedAccountKey,
@@ -949,23 +1067,50 @@ public partial class MainWindow : Window
             }
         }
 
+        if (visibleAccounts.Count == 0 &&
+            _pendingProfile is null &&
+            _accountSearch.IsActive)
+        {
+            var emptyState = new TextBlock
+            {
+                Text = Localize("Main.NoAccountsMatch"),
+                FontSize = 11,
+                Margin = new Thickness(4, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            emptyState.SetResourceReference(
+                TextBlock.ForegroundProperty,
+                "SubtleBrush");
+            AutomationProperties.SetLiveSetting(
+                emptyState,
+                AutomationLiveSetting.Polite);
+            AccountsList.Children.Add(emptyState);
+        }
+
         UpdateAccountControlAvailability();
+        RefreshBatchRetryState();
 
         if (restoreKeyboardFocus)
-            RestoreKeyboardFocus(focusedAccountButton ?? activeAccountButton);
+        {
+            Control? accountFocusTarget =
+                focusedAccountButton ?? activeAccountButton;
+            if (accountFocusTarget is null && _accountSearch.IsActive)
+                accountFocusTarget = AccountSearchBox;
+            RestoreKeyboardFocus(accountFocusTarget);
+        }
     }
 
-    private static void RestoreKeyboardFocus(Button? button)
+    private static void RestoreKeyboardFocus(Control? control)
     {
-        if (button is null)
+        if (control is null)
             return;
 
-        _ = button.Dispatcher.BeginInvoke(() =>
+        _ = control.Dispatcher.BeginInvoke(() =>
         {
-            if (!button.IsVisible || !button.IsEnabled)
+            if (!control.IsVisible || !control.IsEnabled)
                 return;
-            button.Focus();
-            button.BringIntoView();
+            control.Focus();
+            control.BringIntoView();
         });
     }
 
@@ -990,11 +1135,21 @@ public partial class MainWindow : Window
         AutomationProperties.SetName(
             button,
             pending
-                ? "New account sign-in"
-                : $"Select {account.Label ?? $"@{account.Username}"}");
+                ? Localize("Main.NewAccountSignIn")
+                : Localize(
+                    "Main.SelectAccount",
+                    account.Label ?? $"@{account.Username}"));
         AutomationProperties.SetItemStatus(
             button,
-            selected ? "Selected account" : "Not selected");
+            selected
+                ? Localize("Main.SelectedAccount")
+                : Localize("Main.NotSelectedStatus"));
+        if (!string.IsNullOrWhiteSpace(account.Group))
+        {
+            AutomationProperties.SetHelpText(
+                button,
+                Localize("Main.AccountGroup", account.Group));
+        }
         if (!pending)
         {
             ConfigureAccountReordering(
@@ -1037,7 +1192,7 @@ public partial class MainWindow : Window
         var title = new TextBlock
         {
             Text = pending
-                ? "New account"
+                ? Localize("Main.NewAccount")
                 : account.Label ?? $"@{account.Username}",
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
@@ -1048,11 +1203,14 @@ public partial class MainWindow : Window
         var subtitle = new TextBlock
         {
             Text = pending
-                ? "Finish sign-in"
+                ? Localize("Main.FinishSignIn")
                 : account.Label is null
-                    ? $"User ID {account.UserId}"
-                    : $"@{account.Username}  •  User ID {account.UserId}",
-            FontSize = 10,
+                    ? Localize("Main.UserId", account.UserId)
+                    : Localize(
+                        "Main.AccountIdentity",
+                        account.Username,
+                        account.UserId),
+            FontSize = 11,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
         subtitle.SetResourceReference(
@@ -1085,6 +1243,7 @@ public partial class MainWindow : Window
             return;
 
         var accountLabel = dialog.AccountLabel;
+        var accountGroup = dialog.AccountGroup;
         var selectedColor = dialog.SelectedColor;
         var mutationApplied = false;
         if (!await TryCommitSettingsMutationAsync(
@@ -1097,10 +1256,11 @@ public partial class MainWindow : Window
                     if (profile is null)
                         return;
                     profile.Label = accountLabel;
+                    profile.Group = accountGroup;
                     profile.ColorHex = selectedColor;
                     mutationApplied = true;
                 },
-                "Account appearance could not be saved",
+                "Account details could not be saved",
                 onCommitted: () =>
                 {
                     if (mutationApplied)
@@ -1150,19 +1310,19 @@ public partial class MainWindow : Window
         ThemeToggleIcon.Data = (Geometry)FindResource(
             isDarkTheme ? "IconMoon" : "IconSun");
 
-        var mode = isDarkTheme ? "Dark" : "Light";
-        var target = isDarkTheme ? "light" : "dark";
         var highContrastSuffix =
             ((App)Application.Current).ThemeService.IsHighContrastActive
-                ? "; Windows high contrast is currently active"
+                ? Localize("Main.ThemeHighContrastSuffix")
                 : string.Empty;
-        var description =
-            $"{mode} theme on — switch to {target}{highContrastSuffix}";
+        var description = Localize(
+            isDarkTheme
+                ? "Main.ThemeDarkToLight"
+                : "Main.ThemeLightToDark") + highContrastSuffix;
         ThemeToggleButton.ToolTip = description;
         AutomationProperties.SetName(ThemeToggleButton, description);
         AutomationProperties.SetHelpText(
             ThemeToggleButton,
-            "Switch SessionDock between dark and light appearance.");
+            Localize("Main.ThemeHelp"));
     }
 
     private void ThemeService_ThemeChanged(object? sender, EventArgs e) =>
@@ -1170,8 +1330,10 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
-        ((App)Application.Current).ThemeService.ThemeChanged -=
-            ThemeService_ThemeChanged;
+        var app = (App)Application.Current;
+        app.ThemeService.ThemeChanged -= ThemeService_ThemeChanged;
+        app.LocalizationService.LanguageChanged -=
+            LocalizationService_LanguageChanged;
     }
 
     private async void SoundSettingsButton_Click(object sender, RoutedEventArgs e) =>
@@ -1613,23 +1775,36 @@ public partial class MainWindow : Window
             _launchInProgress = false;
             if (!_operationLifetime.IsShuttingDown)
             {
-                LaunchButtonLabel.Text = _joinUserMode ? "Join user" : "Launch";
+                LaunchButtonLabel.Text = _joinUserMode
+                    ? Localize("Main.JoinUserButton")
+                    : Localize("Main.Launch");
                 SetOperationBusy(false);
             }
         }
     }
 
-    private async Task LaunchAsync(CancellationToken cancellationToken)
+    private async Task LaunchAsync(
+        CancellationToken cancellationToken,
+        ExternalRobloxLink? externalLink = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var accountDestination = PlaceIdBox.Text.Trim();
+        var accountDestination = externalLink?.Destination ??
+            PlaceIdBox.Text.Trim();
         JoinUserIdentifier? joinUser = null;
         string destination;
         LaunchTarget? target;
         string? serverJobId;
         long? trackedPlaceId;
         string parseError;
-        if (_joinUserMode)
+        if (externalLink is not null)
+        {
+            destination = externalLink.Destination;
+            target = externalLink.Target;
+            serverJobId = null;
+            trackedPlaceId = null;
+            parseError = string.Empty;
+        }
+        else if (_joinUserMode)
         {
             if (!JoinUserDestination.TryParseInput(
                     accountDestination,
@@ -1657,7 +1832,8 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!await FlushDestinationPersistenceAsync())
+        if (externalLink is null &&
+            !await FlushDestinationPersistenceAsync())
             return;
 
         await CheckAuthenticatedAccountAsync(
@@ -1725,7 +1901,7 @@ public partial class MainWindow : Window
                     "Private-server link could not be resolved",
                     "The code may be invalid, expired, or unavailable to the selected account.",
                     "SERVER LINK ERROR");
-                LaunchButtonLabel.Text = "Launch";
+                LaunchButtonLabel.Text = Localize("Main.Launch");
                 LaunchButton.IsEnabled = true;
                 return;
             }
@@ -1738,7 +1914,7 @@ public partial class MainWindow : Window
                 "Tracked server does not match its experience",
                 "The saved server record is inconsistent and was not launched.",
                 "SERVER RECORD ERROR");
-            LaunchButtonLabel.Text = "Launch";
+            LaunchButtonLabel.Text = Localize("Main.Launch");
             return;
         }
 
@@ -1779,9 +1955,11 @@ public partial class MainWindow : Window
                 "Refresh this account slot by signing in again, then retry.",
                 "TICKET ERROR");
             SignInButton.Visibility = Visibility.Visible;
-            SignInButtonLabel.Text = "Refresh sign-in";
-            AutomationProperties.SetName(SignInButton, "Refresh Roblox sign-in");
-            LaunchButtonLabel.Text = "Launch";
+            SignInButtonLabel.Text = Localize("Main.RefreshSignIn");
+            AutomationProperties.SetName(
+                SignInButton,
+                Localize("Main.RefreshSignInName"));
+            LaunchButtonLabel.Text = Localize("Main.Launch");
             return;
         }
 
@@ -1809,7 +1987,9 @@ public partial class MainWindow : Window
             launchUri,
             activeProfile,
             recent,
-            cancellationToken);
+            cancellationToken,
+            saveToHistory:
+                ExternalRobloxLinkPolicy.ShouldSaveToHistory(externalLink));
     }
 
     private void ShowJoinUserUnavailable(
@@ -1840,7 +2020,7 @@ public partial class MainWindow : Window
                 "USER CHECK ERROR")
         };
         SetStatus(title, detail, badge);
-        LaunchButtonLabel.Text = "Join user";
+        LaunchButtonLabel.Text = Localize("Main.JoinUserButton");
         LaunchButton.IsEnabled = true;
     }
 
@@ -1871,7 +2051,8 @@ public partial class MainWindow : Window
         string launchUri,
         AccountProfile account,
         RecentExperience recent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool saveToHistory = true)
     {
         SetStatus(
             $"Launching as @{_currentUser?.Name}",
@@ -1888,8 +2069,9 @@ public partial class MainWindow : Window
         _launchInProgress = false;
         if (result is { Success: true, ProcessId: int processId })
         {
-            await SaveRecentExperienceAsync(recent);
-            if (_settings.RecentExperiences.Contains(recent))
+            if (saveToHistory)
+                await SaveRecentExperienceAsync(recent);
+            if (saveToHistory && _settings.RecentExperiences.Contains(recent))
                 BeginServerTracking(recent, launchStartedAt);
             SetStatus(
                 "Roblox Player started",
@@ -1910,11 +2092,11 @@ public partial class MainWindow : Window
                     : "No local launch integration is configured, so that step was skipped.",
                 "CLIENT STARTED");
             RefreshLaunchAvailability();
-            LaunchButtonLabel.Text = "Launch";
+            LaunchButtonLabel.Text = Localize("Main.Launch");
             return;
         }
 
-        LaunchButtonLabel.Text = "Launch";
+        LaunchButtonLabel.Text = Localize("Main.Launch");
         LaunchButton.IsEnabled = true;
         SetStatus("Roblox Player is unavailable", result.Error!, "CLIENT ERROR");
     }
@@ -2034,6 +2216,8 @@ public partial class MainWindow : Window
                             .ToList();
                         _settings.Accounts.RemoveAll(
                             account => account.Key == profile.Key);
+                        BatchLaunchPreferences.PrunePresetsForCurrentAccounts(
+                            _settings);
                         _settings.ActiveAccountKey =
                             _settings.Accounts.FirstOrDefault()?.Key;
                     },
@@ -2160,13 +2344,21 @@ public partial class MainWindow : Window
             RefreshLaunchAvailability();
     }
 
-    private void ExperienceDestinationModeButton_Click(
+    private void ExperienceDestinationModeButton_Checked(
         object sender,
-        RoutedEventArgs e) => ChangeDestinationMode(joinUser: false);
+        RoutedEventArgs e)
+    {
+        if (!_updatingDestinationModeSelection)
+            ChangeDestinationMode(joinUser: false);
+    }
 
-    private void UserDestinationModeButton_Click(
+    private void UserDestinationModeButton_Checked(
         object sender,
-        RoutedEventArgs e) => ChangeDestinationMode(joinUser: true);
+        RoutedEventArgs e)
+    {
+        if (!_updatingDestinationModeSelection)
+            ChangeDestinationMode(joinUser: true);
+    }
 
     private void ChangeDestinationMode(bool joinUser)
     {
@@ -2191,61 +2383,47 @@ public partial class MainWindow : Window
 
     private void UpdateDestinationModePresentation()
     {
-        SetDestinationModeButtonState(
-            ExperienceDestinationModeButton,
-            !_joinUserMode);
-        SetDestinationModeButtonState(
-            UserDestinationModeButton,
-            _joinUserMode);
+        _updatingDestinationModeSelection = true;
+        try
+        {
+            ExperienceDestinationModeButton.IsChecked = !_joinUserMode;
+            UserDestinationModeButton.IsChecked = _joinUserMode;
+        }
+        finally
+        {
+            _updatingDestinationModeSelection = false;
+        }
         DestinationHelpText.Text = _joinUserMode
-            ? "Exact username, Roblox user ID, or official profile URL. Display names are not accepted."
-            : "Place ID, Roblox URL, private-server link, share code, or tracked Job ID.";
+            ? Localize("Main.JoinUserHelp")
+            : Localize("Main.DestinationHelp");
         PlaceIdBox.ToolTip = _joinUserMode
-            ? "Exact Roblox username, user ID, or official profile URL"
-            : "Place ID, official Roblox URL, private-server link, share code, or tracked Server JobId";
+            ? Localize("Main.JoinUserTooltip")
+            : Localize("Main.DestinationInputTooltip");
         AutomationProperties.SetName(
             PlaceIdBox,
-            _joinUserMode ? "Roblox user to join" : "Roblox destination");
+            _joinUserMode
+                ? Localize("Main.JoinUserInputName")
+                : Localize("Main.DestinationInputName"));
         SetDestinationForAllButton.ToolTip = _joinUserMode
-            ? "Copy this user destination to every saved account"
-            : "Copy this valid destination to every saved account";
+            ? Localize("Main.SetUserForAllTooltip")
+            : Localize("Main.SetForAllTooltip");
         BatchLaunchButton.ToolTip = _joinUserMode
-            ? "Join-user destinations currently use single launch"
-            : "Launch each selected account's saved destination";
+            ? Localize("Main.BatchJoinUserTooltip")
+            : Localize("Main.BatchTooltip");
         LaunchButton.ToolTip = _joinUserMode
-            ? "Join this user with the selected account"
-            : "Launch immediately with the selected account";
+            ? Localize("Main.JoinThisUserTooltip")
+            : Localize("Main.LaunchTooltip");
         AutomationProperties.SetName(
             LaunchButton,
-            _joinUserMode ? "Join Roblox user" : "Launch Roblox");
+            _joinUserMode
+                ? Localize("Main.JoinRobloxUser")
+                : Localize("Main.LaunchRoblox"));
         if (!_launchInProgress)
-            LaunchButtonLabel.Text = _joinUserMode ? "Join user" : "Launch";
-    }
-
-    private static void SetDestinationModeButtonState(
-        Button button,
-        bool selected)
-    {
-        if (selected)
         {
-            button.SetResourceReference(
-                Control.BackgroundProperty,
-                "SelectedControlSurfaceBrush");
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "SelectedControlTextBrush");
+            LaunchButtonLabel.Text = _joinUserMode
+                ? Localize("Main.JoinUserButton")
+                : Localize("Main.Launch");
         }
-        else
-        {
-            button.Background = Brushes.Transparent;
-            button.SetResourceReference(
-                Control.ForegroundProperty,
-                "MutedBrush");
-        }
-
-        AutomationProperties.SetItemStatus(
-            button,
-            selected ? "Selected" : "Not selected");
     }
 
     private async void PlaceIdBox_LostKeyboardFocus(
@@ -2621,7 +2799,16 @@ public partial class MainWindow : Window
             out var validationError);
         if (DestinationValidationText is not null)
         {
-            DestinationValidationText.Text = validationError;
+            if (_destinationValidationLiveRegion is { } liveRegion)
+            {
+                liveRegion.Update(
+                    validationError,
+                    severity: AccessibilityLiveRegionSeverity.Assertive);
+            }
+            else
+            {
+                DestinationValidationText.Text = validationError;
+            }
             DestinationValidationText.Visibility =
                 destination.Length > 0 && !destinationIsValid
                     ? Visibility.Visible
@@ -2671,9 +2858,15 @@ public partial class MainWindow : Window
         RecentExperiencesList.IsEnabled = !busy;
         UpdateClearHistoryButton();
         BatchLaunchButton.IsEnabled = !busy;
+        RetryFailedBatchButton.IsEnabled =
+            !busy &&
+            !_accountReorderInProgress &&
+            _batchRetryState is not null;
         ThemeToggleButton.IsEnabled = !busy;
         SoundSettingsButton.IsEnabled = !busy;
+        MetadataTransferButton.IsEnabled = !busy;
         IntegrationsButton.IsEnabled = !busy;
+        AboutDiagnosticsButton.IsEnabled = !busy;
         ReleaseNotesButton.IsEnabled = !busy;
         InstallUpdateButton.IsEnabled = !busy;
         RefreshLaunchAvailability();
@@ -2697,12 +2890,15 @@ public partial class MainWindow : Window
         DisarmWatchdogOnApplicationExit(shutdownWatchdog);
 
         var destinationRequest = CaptureShutdownDestinationRequest();
+        var mainWindowPlacement =
+            WindowLayoutService.CaptureMainWindowPlacement(this);
         var shutdownFailures = new List<Exception>();
         var settingsCompletion = _settingsMutations.CompleteAsync(() =>
             ShutdownSettingsSnapshot.Create(
                 _settings,
                 destinationRequest,
-                CaptureShutdownDestinationRequest()));
+                CaptureShutdownDestinationRequest(),
+                mainWindowPlacement));
         ObserveShutdownSettingsCompletion(settingsCompletion);
         _destinationTrackingEnabled = false;
         IsEnabled = false;

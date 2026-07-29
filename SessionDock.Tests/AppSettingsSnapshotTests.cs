@@ -24,10 +24,16 @@ public sealed class AppSettingsSnapshotTests
         AssertReferencePropertiesAreIndependent(
             source.RecentExperiences[0],
             snapshot.RecentExperiences[0]);
+        AssertReferencePropertiesAreIndependent(
+            source.BatchLaunchPresets[0],
+            snapshot.BatchLaunchPresets[0]);
         Assert.NotSame(source.Accounts[0], snapshot.Accounts[0]);
         Assert.NotSame(
             source.RecentExperiences[0],
             snapshot.RecentExperiences[0]);
+        Assert.NotSame(
+            source.BatchLaunchPresets[0],
+            snapshot.BatchLaunchPresets[0]);
 
         MutateEverySettingsArea(source);
 
@@ -70,6 +76,9 @@ public sealed class AppSettingsSnapshotTests
         AssertReferencePropertiesAreIndependent(
             state.RecentExperiences[0],
             settings.RecentExperiences[0]);
+        AssertReferencePropertiesAreIndependent(
+            state.BatchLaunchPresets[0],
+            settings.BatchLaunchPresets[0]);
     }
 
     [Fact]
@@ -78,24 +87,40 @@ public sealed class AppSettingsSnapshotTests
         AssertPublicProperties<AppSettings>(
             "Accounts",
             "ActiveAccountKey",
+            "BatchLaunchDelaySeconds",
+            "BatchLaunchPresets",
             "CustomStartupSoundFileName",
             "Destination",
+            "Language",
             "LockedUserId",
             "LockedUsername",
+            "MainWindowPlacement",
             "PendingProfileDeletionKeys",
             "PlaceId",
             "RecentExperiences",
             "StartupSound",
             "UseLightTheme",
             "UiSoundsEnabled");
+        AssertPublicProperties<WindowPlacementSettings>(
+            "Height",
+            "IsMaximized",
+            "MonitorDeviceName",
+            "OffsetX",
+            "OffsetY",
+            "Width");
         AssertPublicProperties<AccountProfile>(
             "ColorHex",
             "Destination",
+            "Group",
             "Key",
             "Label",
             "SessionFolder",
             "UserId",
             "Username");
+        AssertPublicProperties<BatchLaunchPreset>(
+            "AccountKeys",
+            "DelaySeconds",
+            "Name");
         AssertPublicProperties<RecentExperience>(
             "AccountUserId",
             "AccountUsername",
@@ -123,6 +148,12 @@ public sealed class AppSettingsSnapshotTests
         AssertEveryPropertyHasNonDefaultFixtureValue(
             settings.RecentExperiences[0],
             new RecentExperience());
+        AssertEveryPropertyHasNonDefaultFixtureValue(
+            settings.BatchLaunchPresets[0],
+            new BatchLaunchPreset());
+        AssertEveryPropertyHasNonDefaultFixtureValue(
+            settings.MainWindowPlacement!,
+            new WindowPlacementSettings());
     }
 
     private static AppSettings CreateSettings()
@@ -139,6 +170,7 @@ public sealed class AppSettingsSnapshotTests
                     Username = "builder",
                     SessionFolder = $@"Profiles\{accountKey}",
                     Label = "Primary",
+                    Group = "Friends",
                     ColorHex = "#7C5CFC",
                     Destination = "12345"
                 }
@@ -167,8 +199,28 @@ public sealed class AppSettingsSnapshotTests
                         TimeSpan.Zero)
                 }
             ],
+            BatchLaunchPresets =
+            [
+                new BatchLaunchPreset
+                {
+                    Name = "Friends",
+                    AccountKeys = [accountKey],
+                    DelaySeconds = 15
+                }
+            ],
+            BatchLaunchDelaySeconds = 15,
+            MainWindowPlacement = new WindowPlacementSettings
+            {
+                MonitorDeviceName = @"\\.\DISPLAY2",
+                OffsetX = 120,
+                OffsetY = 80,
+                Width = 1080,
+                Height = 720,
+                IsMaximized = true
+            },
             UiSoundsEnabled = false,
             UseLightTheme = true,
+            Language = LocalizationPreference.Dutch,
             StartupSound = "bright",
             CustomStartupSoundFileName = "startup-custom.wav",
             PendingProfileDeletionKeys =
@@ -188,6 +240,7 @@ public sealed class AppSettingsSnapshotTests
         originalAccount.Username = "mutated";
         originalAccount.SessionFolder = "Profiles\\mutated";
         originalAccount.Label = "Mutated account";
+        originalAccount.Group = "Mutated group";
         originalAccount.ColorHex = "#000000";
         originalAccount.Destination = "99999";
         settings.Accounts = [new AccountProfile()];
@@ -206,8 +259,17 @@ public sealed class AppSettingsSnapshotTests
         originalRecent.LastLaunchedAt = DateTimeOffset.MinValue;
         settings.RecentExperiences = [new RecentExperience()];
 
+        settings.BatchLaunchPresets[0].Name = "Mutated preset";
+        settings.BatchLaunchPresets[0].AccountKeys[0] =
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        settings.BatchLaunchPresets[0].DelaySeconds = 3;
+        settings.BatchLaunchPresets = [new BatchLaunchPreset()];
+        settings.BatchLaunchDelaySeconds = 3;
+        settings.MainWindowPlacement = null;
+
         settings.UiSoundsEnabled = true;
         settings.UseLightTheme = false;
+        settings.Language = LocalizationPreference.English;
         settings.StartupSound = "soft";
         settings.CustomStartupSoundFileName = null;
         settings.PendingProfileDeletionKeys = [];

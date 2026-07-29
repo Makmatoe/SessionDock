@@ -29,15 +29,15 @@
                         Style="{StaticResource TextFieldShell}">
                     <TextBox x:Name="ValueBox" MaxLength="80"
                              Style="{StaticResource EmbeddedTextBox}"
-                             AutomationProperties.Name="Custom experience name"/>
+                     AutomationProperties.Name="{DynamicResource Prompt.CustomName}"/>
                 </Border>
                 <WrapPanel Grid.Row="3" HorizontalAlignment="Right"
                            Margin="0,20,0,0">
-                    <Button Content="Cancel" Click="CancelButton_Click" IsCancel="True"
+            <Button Content="{DynamicResource Common.Cancel}" Click="CancelButton_Click" IsCancel="True"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
                             Padding="16,9" Margin="0,0,8,0"/>
-                    <Button Content="Save" Click="SaveButton_Click" IsDefault="True"
+            <Button Content="{DynamicResource Common.Save}" Click="SaveButton_Click" IsDefault="True"
                             Padding="22,9"/>
                 </WrapPanel>
             </Grid>

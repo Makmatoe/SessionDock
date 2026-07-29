@@ -59,8 +59,13 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
 - Keeps any number of Roblox sign-ins in separate local WebView2 profiles and
   lets you drag saved accounts into the order used by the account strip and
   batch launch.
-- Gives accounts custom labels and colors and remembers a destination per
-  account.
+- Gives accounts custom labels, colors, and optional groups, and remembers a
+  destination per account. Groups provide one-click selection in Batch launch.
+- Searches saved accounts by label, group, username, user ID, or destination,
+  and searches Recent and Favorites by name, place, account, destination, or
+  tracked server. Press
+  **Ctrl+F** to focus the search for the current workspace and **Escape** to
+  clear it.
 - Opens public places, official private-server links or codes, and supported
   server IDs recovered from recent launches.
 - Joins an online Roblox user by exact username, user ID, or official profile
@@ -70,19 +75,48 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
 - Shares Recent and Favorites across accounts while preserving the account and
   public/private context of each launch.
 - Launches one account at a time or runs a best-effort pipelined batch with a
-  configurable delay. Batch mode verifies selected sign-ins before closing any
-  running clients, prepares the next isolated session while the current client
-  settles, requests each launch ticket only when it is ready to be used, can be
-  cancelled, and restores the previously selected account. Roblox still decides
-  whether multiple Players may run.
+  remembered configurable delay. Named presets save only the selected account
+  keys and delay, and failed accounts can be reviewed and retried without
+  reselecting successful ones. Batch mode verifies selected sign-ins before
+  closing any running clients, prepares the next isolated session while the
+  current client settles, requests each launch ticket only when it is ready to
+  be used, can be cancelled, and restores the previously selected account.
+  Starting a batch or retry closes currently running verified Roblox Player
+  clients; Roblox still decides whether multiple Players may run.
 - Closes all visible and background Roblox Player processes on request.
 - Provides optional interface sounds and a user-selected startup sound.
+- Provides live **System default**, **English (United States)**, and
+  **Dutch (Netherlands)** display-language choices from the sidebar. System
+  default follows Dutch Windows installations and otherwise uses the complete
+  English fallback; the choice is remembered locally and does not require a
+  restart. Display dates and times follow the selected culture, while stored
+  data keeps its stable machine-readable format. Some runtime confirmations
+  and detailed technical previews can use the English fallback.
+- Provides an **About and diagnostics** panel with an exact, reviewable support
+  summary that can be copied or exported as text. The summary contains bounded
+  counts and system/component states, never settings files, logs, paths,
+  account details, destinations, browser data, cookies, or tokens.
+- Exports and imports a separate, exact-preview **safe metadata** JSON file for
+  account appearance/order and pinned public favorites. Import requires a
+  validated preview and confirmation, matches Roblox user IDs only to accounts
+  that already exist locally, and never moves sign-ins, account-slot keys,
+  usernames, destinations, private-server details, JobIds, or local paths.
+- Provides an optional **Open with SessionDock** Windows link handler. Enabling
+  it is an explicit per-user action under **Integrations** and does not replace
+  Roblox's default handler. Every accepted link opens a parsed preview and
+  account chooser followed by a separate confirmation; it never launches an
+  account merely because a link arrived. Authentication-bearing or ambiguous
+  launch URLs are rejected, and private-server links received this way are not
+  saved to account defaults, Recent, or Favorites.
 
 ## Local by design
 
 SessionDock has no cloud backend, advertising, or telemetry. It does not ask
 for, read, or store Roblox passwords. Account browser profiles, settings,
 favorites, and recent-launch metadata remain under `%LOCALAPPDATA%\SessionDock`.
+The optional safe metadata export is written only to the file the user chooses;
+SessionDock never sends it. It contains Roblox user IDs so account appearance
+can be matched, and should be reviewed before it is stored or shared.
 
 SessionDock's direct Roblox API requests and top-level sign-in navigation are
 limited to official Roblox HTTPS endpoints. Embedded Roblox pages may still
@@ -101,7 +135,21 @@ trusting it. HandleScope is unsigned, so this trust comes from the canonical
 immutable GitHub release rather than a certificate-backed publisher.
 
 To use the optional connector, select **Integrations** in the SessionDock
-sidebar. Installation starts the API immediately and enables HandleScope's
+sidebar. That panel also manages the separate **Open with SessionDock** link
+handler. The link handler is off by default and writes only owned per-user
+entries under `HKCU\Software\Classes`: a SessionDock URL ProgID, the private
+`sessiondock-roblox:` forwarding protocol, and an Open With hint for safe
+`roblox:` links. It does not claim all HTTPS links, change the default Roblox
+handler, or elevate. Received links are forwarded over bounded same-user,
+same-Windows-session IPC to the existing SessionDock process and are validated
+again before any UI is shown. Windows leaves the link in the invoked process's
+OS command line for that process's lifetime, including when it becomes the new
+primary instance. SessionDock clears its own startup references promptly and
+keeps the link in memory only as needed to forward, review, and confirm it;
+private codes are hidden from the preview and not persisted. This is not a
+boundary against another process already running as the same Windows user.
+
+HandleScope installation starts the API immediately and enables HandleScope's
 limited per-user task so it starts automatically at future Windows sign-ins;
 it does not change SessionDock's integration opt-in. The HandleScope panel can
 separately enable the fixed per-user Roblox policy, explicitly start the API at
@@ -117,7 +165,14 @@ manager integrations. It supports normal clipboard paste and its context menu,
 while keeping each Roblox account in its own isolated local browser profile.
 
 Read [Privacy](docs/PRIVACY.md) for the complete data/network summary and
-[Security](SECURITY.md) before reporting a security issue.
+[Security](SECURITY.md) before reporting a security issue. Maintainers and
+accessibility testers can use the manual
+[accessibility verification matrix](docs/ACCESSIBILITY.md).
+
+For troubleshooting, open **About and diagnostics** from the top of the main
+window. The preview is the exact text used by both Copy and Export. SessionDock
+does not send it automatically, and the export is a small text-only summary;
+it does not gather a support archive from local application data.
 
 ## Updates
 

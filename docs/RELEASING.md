@@ -78,6 +78,14 @@ intentionally makes signature verification mandatory.
 
 ## Prepare and validate
 
+The SessionDock icon is embedded in `SessionDock.exe`, so installed shortcuts,
+window chrome, the taskbar, and Alt+Tab use the reviewed application mark. Do
+not pass Velopack 1.2's `--icon` option while released strict updaters remain
+supported: that option adds a top-level `setup.ico` entry to the full package,
+and those clients intentionally reject unexpected package entries. The
+bootstrap Setup executable may retain Velopack's default icon until installer
+branding can be introduced without changing the trusted package topology.
+
 Use the pinned .NET SDK 10.0.302 and self-contained runtime 10.0.10. Before
 tagging:
 
@@ -91,6 +99,12 @@ dotnet restore SessionDock.slnx --locked-mode
 ./scripts/Test-DotNetSecurityPatch.ps1 -CheckOnline
 ./scripts/Verify-Release.ps1 -Tag vX.Y.Z
 ```
+
+Complete and record the manual keyboard, Narrator/UIA, high-contrast, text
+scaling, localization, DPI, and multi-monitor checks in
+[`docs/ACCESSIBILITY.md`](ACCESSIBILITY.md). Automated tests cover the
+underlying contracts but do not replace assistive-technology and physical
+display verification.
 
 The smoke feature is compiled only into a separate test artifact. Production
 publish verification proves the privileged smoke switch is absent.

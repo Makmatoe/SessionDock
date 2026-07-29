@@ -10,6 +10,7 @@ public partial class SoundSettingsDialog : Window
 {
     private readonly UiSoundService _soundService;
     private readonly string? _existingCustomFileName;
+    private readonly AccessibilityLiveRegion _validationLiveRegion;
 
     public bool UiSoundsEnabled { get; private set; }
     public string StartupSound { get; private set; }
@@ -22,6 +23,7 @@ public partial class SoundSettingsDialog : Window
         string? customFileName)
     {
         InitializeComponent();
+        _validationLiveRegion = new AccessibilityLiveRegion(ValidationText);
         WindowLayoutService.FitToWorkArea(this);
         _soundService = soundService;
         _existingCustomFileName = customFileName;
@@ -32,7 +34,8 @@ public partial class SoundSettingsDialog : Window
         UiSoundsCheckBox.IsChecked = uiSoundsEnabled;
         SelectStartupSound(StartupSound);
         ImportedSoundText.Text = customFileName is null
-            ? "No custom sound imported"
+            ? ((App)Application.Current).LocalizationService.GetString(
+                "Sound.NoCustom")
             : customFileName;
         Closed += (_, _) => _soundService.StopPreview();
     }
@@ -49,7 +52,7 @@ public partial class SoundSettingsDialog : Window
         object sender,
         SelectionChangedEventArgs e)
     {
-        ValidationText.Text = string.Empty;
+        SetValidation(string.Empty);
         _soundService.StopPreview();
     }
 
@@ -57,8 +60,10 @@ public partial class SoundSettingsDialog : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Import startup sound",
-            Filter = "Audio files (*.wav;*.mp3;*.wma;*.m4a)|*.wav;*.mp3;*.wma;*.m4a|All files (*.*)|*.*",
+            Title = ((App)Application.Current).LocalizationService.GetString(
+                "Sound.ImportTitle"),
+            Filter = ((App)Application.Current).LocalizationService.GetString(
+                "Sound.ImportFilter"),
             CheckFileExists = true,
             Multiselect = false
         };
@@ -74,13 +79,13 @@ public partial class SoundSettingsDialog : Window
                 dialog.FileName);
             PendingCustomSourcePath = dialog.FileName;
             ImportedSoundText.Text = Path.GetFileName(dialog.FileName);
-            ValidationText.Text = string.Empty;
+            SetValidation(string.Empty);
         }
         catch (Exception ex) when (
             ex is IOException or UnauthorizedAccessException or ArgumentException or
                 InvalidOperationException or NotSupportedException)
         {
-            ValidationText.Text = ex.Message;
+            SetValidation(ex.Message, isError: true);
         }
     }
 
@@ -92,13 +97,13 @@ public partial class SoundSettingsDialog : Window
                 GetSelectedStartupSound(),
                 _existingCustomFileName,
                 PendingCustomSourcePath);
-            ValidationText.Text = string.Empty;
+            SetValidation(string.Empty);
         }
         catch (Exception ex) when (
             ex is IOException or UnauthorizedAccessException or ArgumentException or
                 InvalidOperationException or NotSupportedException)
         {
-            ValidationText.Text = ex.Message;
+            SetValidation(ex.Message, isError: true);
         }
     }
 
@@ -109,7 +114,10 @@ public partial class SoundSettingsDialog : Window
             PendingCustomSourcePath is null &&
             !UiSoundService.IsValidImportedFileName(_existingCustomFileName))
         {
-            ValidationText.Text = "Import an audio file before selecting Imported sound.";
+            SetValidation(
+                ((App)Application.Current).LocalizationService.GetString(
+                    "Sound.ImportRequired"),
+                isError: true);
             return;
         }
 
@@ -129,4 +137,11 @@ public partial class SoundSettingsDialog : Window
         StartupSoundComboBox.SelectedItem is ComboBoxItem { Tag: string value }
             ? value
             : UiSoundService.DefaultStartupSound;
+
+    private void SetValidation(string text, bool isError = false) =>
+        _validationLiveRegion.Update(
+            text,
+            severity: isError
+                ? AccessibilityLiveRegionSeverity.Assertive
+                : AccessibilityLiveRegionSeverity.Polite);
 }

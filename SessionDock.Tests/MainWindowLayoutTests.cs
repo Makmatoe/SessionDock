@@ -3,6 +3,47 @@ namespace SessionDock.Tests;
 public sealed class MainWindowLayoutTests
 {
     [Theory]
+    [InlineData(false, 2, true)]
+    [InlineData(true, 2, false)]
+    [InlineData(false, 1, false)]
+    public void IsAccountReorderingAvailable_DisablesFilteredOrTrivialLists(
+        bool searchActive,
+        int accountCount,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            MainWindow.IsAccountReorderingAvailable(
+                operationBusy: false,
+                reorderInProgress: false,
+                shuttingDown: false,
+                hasPendingProfile: false,
+                searchActive,
+                accountCount));
+    }
+
+    [Theory]
+    [InlineData(true, false, true, true, true)]
+    [InlineData(true, false, true, false, false)]
+    [InlineData(true, true, true, true, false)]
+    [InlineData(false, false, true, true, false)]
+    public void AreActiveAccountControlsAvailable_RequiresAVisibleTarget(
+        bool controlsEnabled,
+        bool hasPendingProfile,
+        bool hasActiveProfile,
+        bool activeProfileVisible,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            MainWindow.AreActiveAccountControlsAvailable(
+                controlsEnabled,
+                hasPendingProfile,
+                hasActiveProfile,
+                activeProfileVisible));
+    }
+
+    [Theory]
     [InlineData(-20, 0)]
     [InlineData(49, 0)]
     [InlineData(50, 1)]

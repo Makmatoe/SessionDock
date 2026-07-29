@@ -70,6 +70,22 @@ SessionDock is designed around these boundaries:
   SessionDock integration.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content.
+- Safe metadata transfer uses a small versioned allowlist and bounded strict
+  JSON parser. Export shows the exact file first and excludes authentication,
+  local account keys/paths, destinations, private-server material, JobIds, and
+  integration data. Import requires a reviewed confirmation, matches only
+  existing accounts by Roblox user ID, and commits as one rollback-protected
+  settings mutation; a transfer file can never create a signed-in profile.
+- The optional Windows link handler is disabled until the user explicitly
+  enables its per-user `HKCU\Software\Classes` registration. SessionDock owns
+  reserved ProgID/protocol keys and will neither overwrite nor remove a foreign
+  registration. It does not become the default HTTPS or Roblox handler. Link
+  input is bounded and allowlisted to official Roblox destinations, rejects
+  authentication tickets, cookies, tokens, JobIds, duplicate/unknown
+  parameters, and is validated both before and after bounded same-user,
+  same-session IPC. Receipt activates a preview/account chooser and never
+  auto-launches; a second confirmation is required. Private link codes received
+  this way are not persisted.
 
 Please report any path that bypasses these boundaries, including unsafe URI
 handling, navigation outside official Roblox domains, profile-crossing session

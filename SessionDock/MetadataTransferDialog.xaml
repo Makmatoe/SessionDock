@@ -1,0 +1,187 @@
+<Window x:Class="SessionDock.MetadataTransferDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource Metadata.Title}" Width="820" Height="720"
+        MinWidth="620" MinHeight="560"
+        ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable Text"
+        UseLayoutRounding="True" ShowInTaskbar="False"
+        AutomationProperties.Name="{DynamicResource Metadata.AutomationName}">
+    <Border Style="{StaticResource DialogShell}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Text="{DynamicResource Metadata.Heading}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="23" FontWeight="SemiBold"/>
+                <TextBlock Margin="0,5,0,0"
+                           Text="{DynamicResource Metadata.Detail}"
+                           Foreground="{DynamicResource MutedBrush}"
+                           FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <Border Grid.Row="1" Margin="0,14,0,12" Padding="12,10"
+                    Background="{DynamicResource InfoSurfaceBrush}"
+                    BorderBrush="{DynamicResource InfoBorderBrush}"
+                    BorderThickness="1" CornerRadius="9">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="25"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Data="{StaticResource IconLock}"
+                          Width="15" Height="15" Stretch="Uniform"
+                          Fill="Transparent"
+                          Stroke="{DynamicResource InfoTextBrush}"
+                          StrokeThickness="1.8"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          StrokeLineJoin="Round"
+                          VerticalAlignment="Top"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="{DynamicResource Metadata.PrivacyHeading}"
+                                   Foreground="{DynamicResource InfoTextBrush}"
+                                   FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{DynamicResource InfoTextBrush}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Text="{DynamicResource Metadata.PrivacyDetail}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <TabControl Grid.Row="2"
+                        AutomationProperties.Name="{DynamicResource Metadata.ActionName}">
+                <TabItem Header="{DynamicResource Metadata.ExportTab}"
+                         AutomationProperties.Name="{DynamicResource Metadata.ExportTab}">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock x:Name="ExportSummaryText"
+                                   Foreground="{DynamicResource MutedBrush}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Margin="0,0,0,8"/>
+                        <Border Grid.Row="1" Padding="10"
+                                Background="{DynamicResource InsetSurfaceBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="9">
+                            <TextBox x:Name="ExportPreviewBox"
+                                     IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="True"
+                                     TextWrapping="NoWrap" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Background="Transparent" BorderThickness="0"
+                                     Padding="2"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     FontFamily="Consolas" FontSize="11"
+                                     TextBlock.LineHeight="17"
+                                     AutomationProperties.Name="{DynamicResource Metadata.ExportPreviewName}"
+                                     AutomationProperties.HelpText="{DynamicResource Metadata.ExportPreviewHelp}"/>
+                        </Border>
+                        <Grid Grid.Row="2" Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ExportStatusText"
+                                       Text="{DynamicResource Metadata.ExportInitialStatus}"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Margin="0,0,12,0"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                            <Button x:Name="ExportButton" Grid.Column="1"
+                                    Content="{DynamicResource Metadata.ExportButton}"
+                                    Padding="14,9"
+                                    Click="ExportButton_Click"
+                                    AutomationProperties.Name="{DynamicResource Metadata.ExportButtonName}"
+                                    AutomationProperties.HelpText="{DynamicResource Metadata.ExportButtonHelp}"/>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="{DynamicResource Metadata.ImportTab}"
+                         AutomationProperties.Name="{DynamicResource Metadata.ImportTab}">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ImportStatusText"
+                                       Text="{DynamicResource Metadata.ImportInitialStatus}"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Margin="0,0,12,0"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                            <Button x:Name="ChooseImportButton" Grid.Column="1"
+                                    Content="{DynamicResource Metadata.ChooseFile}"
+                                    Padding="14,9"
+                                    Background="{DynamicResource ControlSurfaceBrush}"
+                                    Foreground="{DynamicResource ControlTextBrush}"
+                                    Click="ChooseImportButton_Click"
+                                    AutomationProperties.Name="{DynamicResource Metadata.ChooseFileName}"/>
+                        </Grid>
+                        <Border Grid.Row="1" Padding="10"
+                                Background="{DynamicResource InsetSurfaceBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="9">
+                            <TextBox x:Name="ImportPreviewBox"
+                                     IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="True"
+                                     TextWrapping="Wrap" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Background="Transparent" BorderThickness="0"
+                                     Padding="2"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     FontFamily="Consolas" FontSize="11"
+                                     TextBlock.LineHeight="17"
+                                     Text="{DynamicResource Metadata.NoFile}"
+                                     AutomationProperties.Name="{DynamicResource Metadata.ImportPreviewName}"
+                                     AutomationProperties.HelpText="{DynamicResource Metadata.ImportPreviewHelp}"/>
+                        </Border>
+                        <CheckBox x:Name="ImportConfirmationCheckBox"
+                                  Grid.Row="2" Margin="0,10,0,0"
+                                  IsEnabled="False"
+                                  Checked="ImportConfirmationCheckBox_Changed"
+                                  Unchecked="ImportConfirmationCheckBox_Changed"
+                                  Content="{DynamicResource Metadata.ConfirmText}"
+                                  AutomationProperties.Name="{DynamicResource Metadata.ConfirmName}"/>
+                        <Button x:Name="ConfirmImportButton"
+                                Grid.Row="3" Margin="0,10,0,0"
+                                HorizontalAlignment="Right"
+                                Content="{DynamicResource Metadata.ImportButton}"
+                                Padding="14,9" IsEnabled="False"
+                                Click="ConfirmImportButton_Click"
+                                AutomationProperties.Name="{DynamicResource Metadata.ImportButtonName}"
+                                AutomationProperties.HelpText="{DynamicResource Metadata.ImportButtonHelp}"/>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+            <Button x:Name="DoneButton" Grid.Row="3"
+                    Content="{DynamicResource Common.Done}" IsCancel="True"
+                    HorizontalAlignment="Right" Margin="0,14,0,0"
+                    Padding="15,9"
+                    Background="{DynamicResource ControlSurfaceBrush}"
+                    Foreground="{DynamicResource ControlTextBrush}"
+                    AutomationProperties.Name="{DynamicResource Metadata.CloseName}"/>
+        </Grid>
+    </Border>
+</Window>
