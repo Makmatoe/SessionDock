@@ -14,6 +14,9 @@ internal static class AppSettingsSnapshot
             Accounts = source.Accounts.Select(Clone).ToList(),
             RecentExperiences = source.RecentExperiences
                 .Select(Clone)
+                .ToList(),
+            BatchLaunchPresets = source.BatchLaunchPresets
+                .Select(Clone)
                 .ToList()
         };
         CopyRootState(source, snapshot);
@@ -48,6 +51,9 @@ internal static class AppSettingsSnapshot
                 originalRecentExperiences[index]);
         }
         target.RecentExperiences = [.. originalRecentExperiences];
+        target.BatchLaunchPresets = source.BatchLaunchPresets
+            .Select(Clone)
+            .ToList();
         CopyRootState(source, target);
     }
 
@@ -65,6 +71,7 @@ internal static class AppSettingsSnapshot
         target.Username = source.Username;
         target.SessionFolder = source.SessionFolder;
         target.Label = source.Label;
+        target.Group = source.Group;
         target.ColorHex = source.ColorHex;
         target.Destination = source.Destination;
     }
@@ -75,6 +82,14 @@ internal static class AppSettingsSnapshot
         Copy(source, clone);
         return clone;
     }
+
+    internal static BatchLaunchPreset Clone(BatchLaunchPreset source) =>
+        new()
+        {
+            Name = source.Name,
+            AccountKeys = [.. source.AccountKeys],
+            DelaySeconds = source.DelaySeconds
+        };
 
     internal static void Copy(RecentExperience source, RecentExperience target)
     {
@@ -95,6 +110,7 @@ internal static class AppSettingsSnapshot
         AppSettings target)
     {
         target.ActiveAccountKey = source.ActiveAccountKey;
+        target.BatchLaunchDelaySeconds = source.BatchLaunchDelaySeconds;
         target.UiSoundsEnabled = source.UiSoundsEnabled;
         target.UseLightTheme = source.UseLightTheme;
         target.StartupSound = source.StartupSound;

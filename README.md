@@ -59,8 +59,8 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
 - Keeps any number of Roblox sign-ins in separate local WebView2 profiles and
   lets you drag saved accounts into the order used by the account strip and
   batch launch.
-- Gives accounts custom labels and colors and remembers a destination per
-  account.
+- Gives accounts custom labels, colors, and optional groups, and remembers a
+  destination per account. Groups provide one-click selection in Batch launch.
 - Searches saved accounts by identity or destination and searches Recent and
   Favorites by name, place, account, destination, or tracked server. Press
   **Ctrl+F** to focus the search for the current workspace and **Escape** to
@@ -74,11 +74,14 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
 - Shares Recent and Favorites across accounts while preserving the account and
   public/private context of each launch.
 - Launches one account at a time or runs a best-effort pipelined batch with a
-  configurable delay. Batch mode verifies selected sign-ins before closing any
-  running clients, prepares the next isolated session while the current client
-  settles, requests each launch ticket only when it is ready to be used, can be
-  cancelled, and restores the previously selected account. Roblox still decides
-  whether multiple Players may run.
+  remembered configurable delay. Named presets save only the selected account
+  keys and delay, and failed accounts can be reviewed and retried without
+  reselecting successful ones. Batch mode verifies selected sign-ins before
+  closing any running clients, prepares the next isolated session while the
+  current client settles, requests each launch ticket only when it is ready to
+  be used, can be cancelled, and restores the previously selected account.
+  Starting a batch or retry closes currently running verified Roblox Player
+  clients; Roblox still decides whether multiple Players may run.
 - Closes all visible and background Roblox Player processes on request.
 - Provides optional interface sounds and a user-selected startup sound.
 - Provides an **About and diagnostics** panel with an exact, reviewable support

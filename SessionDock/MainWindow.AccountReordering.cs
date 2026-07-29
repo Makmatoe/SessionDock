@@ -393,7 +393,9 @@ public partial class MainWindow
         var enabled = !_operationBusy && !_accountReorderInProgress;
         var activeProfileVisible =
             _activeProfile is not null &&
-            _accountSearch.MatchesAccount(_activeProfile);
+            _accountSearch.MatchesAccount(
+                _activeProfile,
+                _activeProfile.Group);
         AccountsList.IsEnabled = enabled;
         AddAccountButton.IsEnabled =
             enabled && _pendingProfile is null;
@@ -410,7 +412,7 @@ public partial class MainWindow
             _activeProfile is not null && !activeProfileVisible;
         EditAccountButton.ToolTip = activeProfileFilteredOut
             ? "Clear the account search or select a visible account before editing."
-            : "Change the selected account label and color";
+            : "Change the selected account label, group, and color";
         ResetButton.ToolTip = activeProfileFilteredOut
             ? "Clear the account search or select a visible account before removing."
             : "Clear and remove the selected local account profile";
@@ -418,12 +420,14 @@ public partial class MainWindow
             EditAccountButton,
             activeProfileFilteredOut
                 ? "The selected account is hidden by account search. Clear the search or select a visible account before editing."
-                : "Change the selected account label and color.");
+                : "Change the selected account label, group, and color.");
         AutomationProperties.SetHelpText(
             ResetButton,
             activeProfileFilteredOut
                 ? "The selected account is hidden by account search. Clear the search or select a visible account before removing."
                 : "Clear and remove the selected local account profile.");
+        RetryFailedBatchButton.IsEnabled =
+            enabled && _batchRetryState is not null;
     }
 
     internal static int CalculateAccountDropInsertionIndex(

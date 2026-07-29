@@ -292,6 +292,8 @@ public partial class MainWindow : Window
                         .ToList();
                     _settings.Accounts.RemoveAll(account =>
                         journaledSet.Contains(account.Key));
+                    BatchLaunchPreferences.PrunePresetsForCurrentAccounts(
+                        _settings);
                     if (_settings.ActiveAccountKey is not null &&
                         journaledSet.Contains(_settings.ActiveAccountKey))
                     {
@@ -913,7 +915,9 @@ public partial class MainWindow : Window
         Button? focusedAccountButton = null;
         Button? activeAccountButton = null;
         var visibleAccounts = _settings.Accounts
-            .Where(account => _accountSearch.MatchesAccount(account))
+            .Where(account => _accountSearch.MatchesAccount(
+                account,
+                account.Group))
             .ToList();
 
         AccountStripHintText.Text = _accountSearch.IsActive
@@ -987,6 +991,7 @@ public partial class MainWindow : Window
         }
 
         UpdateAccountControlAvailability();
+        RefreshBatchRetryState();
 
         if (restoreKeyboardFocus)
         {
@@ -1038,6 +1043,12 @@ public partial class MainWindow : Window
         AutomationProperties.SetItemStatus(
             button,
             selected ? "Selected account" : "Not selected");
+        if (!string.IsNullOrWhiteSpace(account.Group))
+        {
+            AutomationProperties.SetHelpText(
+                button,
+                $"Account group: {account.Group}");
+        }
         if (!pending)
         {
             ConfigureAccountReordering(
@@ -1128,6 +1139,7 @@ public partial class MainWindow : Window
             return;
 
         var accountLabel = dialog.AccountLabel;
+        var accountGroup = dialog.AccountGroup;
         var selectedColor = dialog.SelectedColor;
         var mutationApplied = false;
         if (!await TryCommitSettingsMutationAsync(
@@ -1140,10 +1152,11 @@ public partial class MainWindow : Window
                     if (profile is null)
                         return;
                     profile.Label = accountLabel;
+                    profile.Group = accountGroup;
                     profile.ColorHex = selectedColor;
                     mutationApplied = true;
                 },
-                "Account appearance could not be saved",
+                "Account details could not be saved",
                 onCommitted: () =>
                 {
                     if (mutationApplied)
@@ -2077,6 +2090,8 @@ public partial class MainWindow : Window
                             .ToList();
                         _settings.Accounts.RemoveAll(
                             account => account.Key == profile.Key);
+                        BatchLaunchPreferences.PrunePresetsForCurrentAccounts(
+                            _settings);
                         _settings.ActiveAccountKey =
                             _settings.Accounts.FirstOrDefault()?.Key;
                     },
@@ -2714,6 +2729,10 @@ public partial class MainWindow : Window
         RecentExperiencesList.IsEnabled = !busy;
         UpdateClearHistoryButton();
         BatchLaunchButton.IsEnabled = !busy;
+        RetryFailedBatchButton.IsEnabled =
+            !busy &&
+            !_accountReorderInProgress &&
+            _batchRetryState is not null;
         ThemeToggleButton.IsEnabled = !busy;
         SoundSettingsButton.IsEnabled = !busy;
         IntegrationsButton.IsEnabled = !busy;

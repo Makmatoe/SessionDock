@@ -9,10 +9,13 @@ SessionDock stores application settings and isolated browser profiles under
 `%LOCALAPPDATA%\SessionDock`. Depending on features used, this can include:
 
 - local account-slot identifiers, Roblox user ID/username after Roblox reports
-  them, custom labels, and accent colors;
+  them, custom labels, optional groups, and accent colors;
 - a separate WebView2 profile per account, including Roblox cookies and browser
   storage controlled by Roblox;
 - each account's selected destination;
+- named batch presets containing only stable local account-slot keys and a
+  launch delay, plus the last selected batch delay; presets do not duplicate
+  destinations, private-server codes, server JobIds, cookies, or launch tickets;
 - shared Recent/Favorite metadata, timestamps, experience names, public/private
   classification, and a server JobId when a best-effort local match succeeds;
 - private-server codes only when the user explicitly saves or launches such a

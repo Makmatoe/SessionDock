@@ -277,10 +277,10 @@
                                      Style="{StaticResource EmbeddedTextBox}"
                                      MaxLength="256"
                                      TextChanged="AccountSearchBox_TextChanged"
-                                     ToolTip="Search by label, username, user ID, or saved destination (Ctrl+F; Escape clears)"
+                                     ToolTip="Search by label, group, username, user ID, or saved destination (Ctrl+F; Escape clears)"
                                      AutomationProperties.Name="Search saved accounts"
                                      AutomationProperties.LiveSetting="Polite"
-                                     AutomationProperties.HelpText="Filters saved accounts by label, username, user ID, or saved destination. Press Control F from Launch to focus this search, or Escape to clear it."/>
+                                     AutomationProperties.HelpText="Filters saved accounts by label, group, username, user ID, or saved destination. Press Control F from Launch to focus this search, or Escape to clear it."/>
                             <TextBlock Text="Search accounts..."
                                        Margin="10,0"
                                        VerticalAlignment="Center"
@@ -320,7 +320,7 @@
                                 Background="{DynamicResource ControlSurfaceBrush}" Foreground="{DynamicResource ControlTextBrush}"
                                 Click="EditAccountButton_Click"
                                 AutomationProperties.Name="Edit selected account"
-                                ToolTip="Change the selected account label and color">
+                                ToolTip="Change the selected account label, group, and color">
                             <Path Style="{StaticResource ButtonIcon}"
                                   Data="{StaticResource IconEdit}"/>
                         </Button>
@@ -784,6 +784,16 @@
                                        Foreground="{DynamicResource SuccessTextBrush}" FontSize="9"
                                        FontWeight="SemiBold"/>
                         </Border>
+                        <Button x:Name="RetryFailedBatchButton"
+                                Visibility="Collapsed" IsEnabled="False"
+                                Click="RetryFailedBatchButton_Click"
+                                Content="Retry failed only" Margin="0,5,0,0"
+                                Padding="8,5" FontSize="10"
+                                HorizontalAlignment="Right"
+                                Background="{DynamicResource WarningSurfaceBrush}"
+                                Foreground="{DynamicResource WarningTextBrush}"
+                                AutomationProperties.Name="Retry failed batch accounts"
+                                AutomationProperties.HelpText="Review only the accounts that failed in the last batch"/>
                         <Button x:Name="CancelBatchButton"
                                 Visibility="Collapsed" IsEnabled="False"
                                 Click="CancelBatchButton_Click"

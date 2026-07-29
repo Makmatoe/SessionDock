@@ -20,6 +20,7 @@ public partial class AccountAppearanceDialog : Window
         };
 
     public string? AccountLabel { get; private set; }
+    public string? AccountGroup { get; private set; }
     public string SelectedColor { get; private set; }
 
     public AccountAppearanceDialog(AccountProfile account)
@@ -28,6 +29,7 @@ public partial class AccountAppearanceDialog : Window
         WindowLayoutService.FitToWorkArea(this);
         AccountIdentityText.Text = $"@{account.Username}  •  User ID {account.UserId}";
         LabelBox.Text = account.Label ?? string.Empty;
+        GroupBox.Text = account.Group ?? string.Empty;
         SelectedColor = SettingsService.AccountColors.Contains(account.ColorHex)
             ? account.ColorHex!
             : SettingsService.AccountColors[0];
@@ -75,6 +77,8 @@ public partial class AccountAppearanceDialog : Window
         AccountLabel = string.IsNullOrWhiteSpace(LabelBox.Text)
             ? null
             : LabelBox.Text.Trim();
+        AccountGroup = BatchLaunchPreferences.NormalizeAccountGroup(
+            GroupBox.Text);
         DialogResult = true;
     }
 
