@@ -93,12 +93,20 @@ public sealed class AppSettingsSnapshotTests
             "Destination",
             "LockedUserId",
             "LockedUsername",
+            "MainWindowPlacement",
             "PendingProfileDeletionKeys",
             "PlaceId",
             "RecentExperiences",
             "StartupSound",
             "UseLightTheme",
             "UiSoundsEnabled");
+        AssertPublicProperties<WindowPlacementSettings>(
+            "Height",
+            "IsMaximized",
+            "MonitorDeviceName",
+            "OffsetX",
+            "OffsetY",
+            "Width");
         AssertPublicProperties<AccountProfile>(
             "ColorHex",
             "Destination",
@@ -142,6 +150,9 @@ public sealed class AppSettingsSnapshotTests
         AssertEveryPropertyHasNonDefaultFixtureValue(
             settings.BatchLaunchPresets[0],
             new BatchLaunchPreset());
+        AssertEveryPropertyHasNonDefaultFixtureValue(
+            settings.MainWindowPlacement!,
+            new WindowPlacementSettings());
     }
 
     private static AppSettings CreateSettings()
@@ -197,6 +208,15 @@ public sealed class AppSettingsSnapshotTests
                 }
             ],
             BatchLaunchDelaySeconds = 15,
+            MainWindowPlacement = new WindowPlacementSettings
+            {
+                MonitorDeviceName = @"\\.\DISPLAY2",
+                OffsetX = 120,
+                OffsetY = 80,
+                Width = 1080,
+                Height = 720,
+                IsMaximized = true
+            },
             UiSoundsEnabled = false,
             UseLightTheme = true,
             StartupSound = "bright",
@@ -243,6 +263,7 @@ public sealed class AppSettingsSnapshotTests
         settings.BatchLaunchPresets[0].DelaySeconds = 3;
         settings.BatchLaunchPresets = [new BatchLaunchPreset()];
         settings.BatchLaunchDelaySeconds = 3;
+        settings.MainWindowPlacement = null;
 
         settings.UiSoundsEnabled = true;
         settings.UseLightTheme = false;

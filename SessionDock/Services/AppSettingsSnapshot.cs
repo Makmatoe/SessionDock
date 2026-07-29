@@ -91,6 +91,18 @@ internal static class AppSettingsSnapshot
             DelaySeconds = source.DelaySeconds
         };
 
+    internal static WindowPlacementSettings Clone(
+        WindowPlacementSettings source) =>
+        new()
+        {
+            MonitorDeviceName = source.MonitorDeviceName,
+            OffsetX = source.OffsetX,
+            OffsetY = source.OffsetY,
+            Width = source.Width,
+            Height = source.Height,
+            IsMaximized = source.IsMaximized
+        };
+
     internal static void Copy(RecentExperience source, RecentExperience target)
     {
         target.Destination = source.Destination;
@@ -111,6 +123,9 @@ internal static class AppSettingsSnapshot
     {
         target.ActiveAccountKey = source.ActiveAccountKey;
         target.BatchLaunchDelaySeconds = source.BatchLaunchDelaySeconds;
+        target.MainWindowPlacement = source.MainWindowPlacement is null
+            ? null
+            : Clone(source.MainWindowPlacement);
         target.UiSoundsEnabled = source.UiSoundsEnabled;
         target.UseLightTheme = source.UseLightTheme;
         target.StartupSound = source.StartupSound;

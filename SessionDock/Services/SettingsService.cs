@@ -1162,6 +1162,7 @@ public sealed class SettingsService
         var originalBatchLaunchPresets = settings.BatchLaunchPresets;
         var originalBatchLaunchDelaySeconds =
             settings.BatchLaunchDelaySeconds;
+        var originalMainWindowPlacement = settings.MainWindowPlacement;
         var originalPendingDeletionKeys =
             settings.PendingProfileDeletionKeys ?? [];
         settings.PendingProfileDeletionKeys = originalPendingDeletionKeys
@@ -1183,6 +1184,8 @@ public sealed class SettingsService
         settings.BatchLaunchDelaySeconds =
             BatchLaunchPreferences.NormalizeDelaySeconds(
                 settings.BatchLaunchDelaySeconds);
+        settings.MainWindowPlacement = WindowPlacementPolicy.Normalize(
+            settings.MainWindowPlacement);
         settings.BatchLaunchPresets = BatchLaunchPreferences.NormalizePresets(
                 settings.BatchLaunchPresets,
                 settings.Accounts)
@@ -1196,6 +1199,9 @@ public sealed class SettingsService
             !BatchLaunchPreferences.AreEquivalent(
                 originalBatchLaunchPresets,
                 settings.BatchLaunchPresets) ||
+            !WindowPlacementPolicy.AreEquivalent(
+                originalMainWindowPlacement,
+                settings.MainWindowPlacement) ||
             !originalAccountGroups.SequenceEqual(
                 settings.Accounts.Select(account => account.Group),
                 StringComparer.Ordinal);

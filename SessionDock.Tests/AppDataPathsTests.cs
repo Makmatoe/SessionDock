@@ -709,6 +709,61 @@ public sealed class AppDataPathsTests : IDisposable
         Assert.True(File.Exists(Path.Combine(legacy, "settings.json")));
     }
 
+    [Theory]
+    [InlineData("batch-delay")]
+    [InlineData("window-placement")]
+    public void ResolveForDirectories_NewPreferences_AreNotTreatedAsPristine(
+        string preference)
+    {
+        var preferred = Path.Combine(_root, "SessionDock");
+        var legacy = Path.Combine(_root, "RobloxOne");
+        var current = new AppSettings();
+        if (preference == "batch-delay")
+        {
+            current.BatchLaunchDelaySeconds = 15;
+        }
+        else
+        {
+            current.MainWindowPlacement = new WindowPlacementSettings
+            {
+                MonitorDeviceName = @"\\.\DISPLAY2",
+                OffsetX = 120,
+                OffsetY = 80,
+                Width = 1080,
+                Height = 720,
+                IsMaximized = true
+            };
+        }
+
+        Directory.CreateDirectory(preferred);
+        File.WriteAllText(
+            Path.Combine(preferred, "settings.json"),
+            JsonSerializer.Serialize(current));
+        CreateVelopackInstallLayout(legacy);
+        WriteSettings(
+            legacy,
+            Guid.NewGuid().ToString("N"),
+            101,
+            "legacy-user");
+
+        var resolved = AppDataPaths.ResolveForDirectories(
+            preferred,
+            legacy,
+            protectedInstallDirectory: legacy);
+        var loaded = new SettingsService(resolved).Load();
+
+        Assert.Equal(preferred, resolved);
+        Assert.Empty(loaded.Accounts);
+        if (preference == "batch-delay")
+            Assert.Equal(15, loaded.BatchLaunchDelaySeconds);
+        else
+            Assert.NotNull(loaded.MainWindowPlacement);
+        Assert.True(File.Exists(Path.Combine(
+            preferred,
+            AppDataPaths.MigrationConflictFileName)));
+        Assert.True(File.Exists(Path.Combine(legacy, "settings.json")));
+    }
+
     [Fact]
     public void ResolveForDirectories_MatchingReceiptWithMissingDestinationSettings_RestoresSettings()
     {

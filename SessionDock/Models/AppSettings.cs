@@ -7,6 +7,7 @@ public sealed class AppSettings
     public List<RecentExperience> RecentExperiences { get; set; } = [];
     public List<BatchLaunchPreset> BatchLaunchPresets { get; set; } = [];
     public int BatchLaunchDelaySeconds { get; set; } = 8;
+    public WindowPlacementSettings? MainWindowPlacement { get; set; }
     public bool UiSoundsEnabled { get; set; } = true;
     public bool UseLightTheme { get; set; }
     public string StartupSound { get; set; } = "soft";
@@ -18,6 +19,16 @@ public sealed class AppSettings
     public string? LockedUsername { get; set; }
     public long? PlaceId { get; set; }
     public string? Destination { get; set; }
+}
+
+public sealed class WindowPlacementSettings
+{
+    public string? MonitorDeviceName { get; set; }
+    public double OffsetX { get; set; }
+    public double OffsetY { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+    public bool IsMaximized { get; set; }
 }
 
 public sealed class AccountProfile

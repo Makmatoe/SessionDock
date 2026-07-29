@@ -154,12 +154,17 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         CaptionControls.AttachToWindow(this);
-        WindowLayoutService.FitToWorkArea(this);
         var app = (App)Application.Current;
         _soundService = app.SoundService;
         InstallUpdateButton.ToolTip =
             $"Check for signed updates (current {_updateService.CurrentVersion})";
         _settings = _settingsService.Load();
+        if (!WindowLayoutService.RestoreMainWindowPlacement(
+                this,
+                _settings.MainWindowPlacement))
+        {
+            WindowLayoutService.FitToWorkArea(this);
+        }
         app.ThemeService.ApplyPreference(_settings.UseLightTheme);
         UpdateThemeTogglePresentation();
         app.ThemeService.ThemeChanged += ThemeService_ThemeChanged;
@@ -2760,12 +2765,15 @@ public partial class MainWindow : Window
         DisarmWatchdogOnApplicationExit(shutdownWatchdog);
 
         var destinationRequest = CaptureShutdownDestinationRequest();
+        var mainWindowPlacement =
+            WindowLayoutService.CaptureMainWindowPlacement(this);
         var shutdownFailures = new List<Exception>();
         var settingsCompletion = _settingsMutations.CompleteAsync(() =>
             ShutdownSettingsSnapshot.Create(
                 _settings,
                 destinationRequest,
-                CaptureShutdownDestinationRequest()));
+                CaptureShutdownDestinationRequest(),
+                mainWindowPlacement));
         ObserveShutdownSettingsCompletion(settingsCompletion);
         _destinationTrackingEnabled = false;
         IsEnabled = false;

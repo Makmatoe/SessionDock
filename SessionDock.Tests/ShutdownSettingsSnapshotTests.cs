@@ -91,4 +91,38 @@ public sealed class ShutdownSettingsSnapshotTests
             "newer-committed",
             Assert.Single(snapshot.Accounts).Destination);
     }
+
+    [Fact]
+    public void Create_OverlaysCapturedWindowPlacementWithoutSharingIt()
+    {
+        var settings = new AppSettings
+        {
+            MainWindowPlacement = new WindowPlacementSettings
+            {
+                Width = 900,
+                Height = 600
+            }
+        };
+        var capturedPlacement = new WindowPlacementSettings
+        {
+            MonitorDeviceName = @"\\.\DISPLAY2",
+            OffsetX = 120,
+            OffsetY = 80,
+            Width = 1080,
+            Height = 720,
+            IsMaximized = true
+        };
+
+        var snapshot = ShutdownSettingsSnapshot.Create(
+            settings,
+            capturedDestinationRequest: null,
+            currentDestinationRequest: null,
+            capturedPlacement);
+        capturedPlacement.Width = 1400;
+
+        Assert.NotNull(snapshot.MainWindowPlacement);
+        Assert.NotSame(capturedPlacement, snapshot.MainWindowPlacement);
+        Assert.Equal(1080, snapshot.MainWindowPlacement.Width);
+        Assert.True(snapshot.MainWindowPlacement.IsMaximized);
+    }
 }
