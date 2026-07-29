@@ -167,8 +167,11 @@ Full compatibility example:
 
 `{SESSION_ID}` is replaced with the Windows session ID of the exact Roblox PID
 that was just launched. SessionDock first performs a dry run against that PID,
-then closes only the matching handle. If `allProcesses` is enabled, it performs
-one separately dry-run-checked sweep after the launched PID succeeds.
+requires the canonical single-use plan ID returned by that dry run, and forwards
+that ID only to the immediately corresponding execution request. It then closes
+only the matching handle. Missing or malformed plan IDs stop the operation. If
+`allProcesses` is enabled, SessionDock obtains a separate plan ID for one
+independently dry-run-checked sweep after the launched PID succeeds.
 
 Each operation reloads `%LOCALAPPDATA%\HandleScope\connection.json`. Only an
 exact v1 discovery document for `http://127.0.0.1:<port>/` and a live,
