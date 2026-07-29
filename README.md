@@ -61,6 +61,10 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   batch launch.
 - Gives accounts custom labels and colors and remembers a destination per
   account.
+- Searches saved accounts by identity or destination and searches Recent and
+  Favorites by name, place, account, destination, or tracked server. Press
+  **Ctrl+F** to focus the search for the current workspace and **Escape** to
+  clear it.
 - Opens public places, official private-server links or codes, and supported
   server IDs recovered from recent launches.
 - Joins an online Roblox user by exact username, user ID, or official profile

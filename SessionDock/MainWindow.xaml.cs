@@ -912,17 +912,34 @@ public partial class MainWindow : Window
             ((Keyboard.FocusedElement as Button)?.Tag as string);
         Button? focusedAccountButton = null;
         Button? activeAccountButton = null;
+        var visibleAccounts = _settings.Accounts
+            .Where(account => _accountSearch.MatchesAccount(account))
+            .ToList();
+
+        AccountStripHintText.Text = _accountSearch.IsActive
+            ? "Reorder paused"
+            : "Drag to reorder";
+        AutomationProperties.SetName(
+            AccountStripHintText,
+            _accountSearch.IsActive
+                ? "Account reordering is paused while search is active. Clear the account search to reorder."
+                : "Drag saved accounts to reorder them.");
+        AutomationProperties.SetItemStatus(
+            AccountSearchBox,
+            _accountSearch.IsActive
+                ? $"{visibleAccounts.Count} of {_settings.Accounts.Count} saved accounts shown"
+                : $"{_settings.Accounts.Count} saved accounts");
 
         AccountsList.Children.Clear();
-        for (var index = 0; index < _settings.Accounts.Count; index++)
+        for (var index = 0; index < visibleAccounts.Count; index++)
         {
-            var account = _settings.Accounts[index];
+            var account = visibleAccounts[index];
             var isActive = account.Key == _settings.ActiveAccountKey;
             var accountButton = CreateAccountButton(
                 account,
                 isActive,
                 positionInSet: index + 1,
-                sizeOfSet: _settings.Accounts.Count);
+                sizeOfSet: visibleAccounts.Count);
             AccountsList.Children.Add(accountButton);
             if (account.Key.Equals(
                     focusedAccountKey,
@@ -949,23 +966,49 @@ public partial class MainWindow : Window
             }
         }
 
+        if (visibleAccounts.Count == 0 &&
+            _pendingProfile is null &&
+            _accountSearch.IsActive)
+        {
+            var emptyState = new TextBlock
+            {
+                Text = "No saved accounts match your search.",
+                FontSize = 11,
+                Margin = new Thickness(4, 0, 8, 0),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            emptyState.SetResourceReference(
+                TextBlock.ForegroundProperty,
+                "SubtleBrush");
+            AutomationProperties.SetLiveSetting(
+                emptyState,
+                AutomationLiveSetting.Polite);
+            AccountsList.Children.Add(emptyState);
+        }
+
         UpdateAccountControlAvailability();
 
         if (restoreKeyboardFocus)
-            RestoreKeyboardFocus(focusedAccountButton ?? activeAccountButton);
+        {
+            Control? accountFocusTarget =
+                focusedAccountButton ?? activeAccountButton;
+            if (accountFocusTarget is null && _accountSearch.IsActive)
+                accountFocusTarget = AccountSearchBox;
+            RestoreKeyboardFocus(accountFocusTarget);
+        }
     }
 
-    private static void RestoreKeyboardFocus(Button? button)
+    private static void RestoreKeyboardFocus(Control? control)
     {
-        if (button is null)
+        if (control is null)
             return;
 
-        _ = button.Dispatcher.BeginInvoke(() =>
+        _ = control.Dispatcher.BeginInvoke(() =>
         {
-            if (!button.IsVisible || !button.IsEnabled)
+            if (!control.IsVisible || !control.IsEnabled)
                 return;
-            button.Focus();
-            button.BringIntoView();
+            control.Focus();
+            control.BringIntoView();
         });
     }
 

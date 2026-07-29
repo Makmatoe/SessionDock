@@ -74,9 +74,15 @@ public partial class MainWindow
         RecentExperiencesList.Children.Clear();
         var filtered = _settings.RecentExperiences
             .Where(MatchesRecentFilters)
+            .Where(_recentSearch.MatchesRecent)
             .OrderByDescending(item => item.IsPinned)
             .ThenByDescending(item => item.LastLaunchedAt)
             .ToList();
+        AutomationProperties.SetItemStatus(
+            RecentSearchBox,
+            _recentSearch.IsActive
+                ? $"{filtered.Count} of {_settings.RecentExperiences.Count(MatchesRecentFilters)} saved experiences shown"
+                : $"{filtered.Count} saved experiences shown");
 
         if (filtered.Count == 0)
         {
@@ -84,6 +90,8 @@ public partial class MainWindow
             {
                 Text = _settings.RecentExperiences.Count == 0
                     ? "Experiences you successfully launch will appear here."
+                    : _recentSearch.IsActive
+                        ? "No Recent or Favorite items match your search and filters."
                     : "No saved experiences match these filters.",
                 FontSize = 13,
                 Margin = new Thickness(2, 18, 0, 0)
@@ -120,7 +128,7 @@ public partial class MainWindow
         if (!shouldRestore || destinationKey is null)
             return;
 
-        Button? focusTarget = null;
+        Control? focusTarget = null;
         foreach (var card in RecentExperiencesList.Children.OfType<Border>())
         {
             if (card.Child is not Grid grid)
@@ -149,7 +157,9 @@ public partial class MainWindow
             break;
         }
 
-        RestoreKeyboardFocus(focusTarget ?? RecentTabButton);
+        RestoreKeyboardFocus(
+            focusTarget ??
+            (_recentSearch.IsActive ? RecentSearchBox : RecentTabButton));
     }
 
     private void AddRecentSection(string title, IReadOnlyList<RecentExperience> items)

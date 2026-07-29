@@ -10,6 +10,7 @@
         Background="{DynamicResource BackgroundBrush}"
         FontFamily="Segoe UI Variable Text"
         UseLayoutRounding="True"
+        PreviewKeyDown="Window_PreviewKeyDown"
         TextOptions.TextFormattingMode="Display">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="64"
@@ -213,11 +214,16 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Width="58" VerticalAlignment="Center">
                         <TextBlock Text="ACCOUNT" Style="{StaticResource SectionLabel}"/>
-                        <TextBlock Text="Drag to reorder" Foreground="{DynamicResource SubtleBrush}"
-                                   FontSize="9" Margin="0,2,0,0"/>
+                        <TextBlock x:Name="AccountStripHintText"
+                                   Text="Drag to reorder"
+                                   Foreground="{DynamicResource SubtleBrush}"
+                                   FontSize="9" Margin="0,2,0,0"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite"/>
                     </StackPanel>
                     <Grid x:Name="AccountsViewport" Grid.Column="1"
                           Margin="8,0,12,0" ClipToBounds="True">
@@ -249,7 +255,40 @@
                             </Border.RenderTransform>
                         </Border>
                     </Grid>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                    <Border Grid.Column="2" Width="154" Height="34"
+                            Margin="0,0,12,0"
+                            VerticalAlignment="Center"
+                            Style="{StaticResource TextFieldShell}">
+                        <Grid>
+                            <TextBox x:Name="AccountSearchBox"
+                                     Style="{StaticResource EmbeddedTextBox}"
+                                     MaxLength="256"
+                                     TextChanged="AccountSearchBox_TextChanged"
+                                     ToolTip="Search by label, username, user ID, or saved destination (Ctrl+F; Escape clears)"
+                                     AutomationProperties.Name="Search saved accounts"
+                                     AutomationProperties.LiveSetting="Polite"
+                                     AutomationProperties.HelpText="Filters saved accounts by label, username, user ID, or saved destination. Press Control F from Launch to focus this search, or Escape to clear it."/>
+                            <TextBlock Text="Search accounts..."
+                                       Margin="10,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SubtleBrush}"
+                                       FontSize="11"
+                                       IsHitTestVisible="False">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=AccountSearchBox}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </Border>
+                    <StackPanel Grid.Column="3" Orientation="Horizontal"
                                 VerticalAlignment="Center">
                         <Button x:Name="AddAccountButton"
                                 Style="{StaticResource IconOnlyButton}"
@@ -572,6 +611,39 @@
                                             Padding="10,7"
                                             AutomationProperties.ItemStatus="Not selected"/>
                                 </StackPanel>
+                                <Border Grid.Column="1" Height="34"
+                                        MinWidth="120" MaxWidth="280"
+                                        Margin="12,0"
+                                        Style="{StaticResource TextFieldShell}">
+                                    <Grid>
+                                        <TextBox x:Name="RecentSearchBox"
+                                                 Style="{StaticResource EmbeddedTextBox}"
+                                                 MaxLength="256"
+                                                 TextChanged="RecentSearchBox_TextChanged"
+                                                 ToolTip="Search Recent and Favorites by name, place, account, destination, or server JobId (Ctrl+F; Escape clears)"
+                                                 AutomationProperties.Name="Search Recent and Favorites"
+                                                 AutomationProperties.LiveSetting="Polite"
+                                                 AutomationProperties.HelpText="Filters Recent and Favorites by custom name, Roblox name, Place ID, account username, destination, or server JobId. Press Control F from Recent to focus this search, or Escape to clear it."/>
+                                        <TextBlock Text="Search saved experiences..."
+                                                   Margin="10,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource SubtleBrush}"
+                                                   FontSize="11"
+                                                   IsHitTestVisible="False">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=RecentSearchBox}"
+                                                                     Value="">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Grid>
+                                </Border>
                                 <ComboBox x:Name="AccountFilterCombo" Grid.Column="2"
                                           Width="168" Height="34"
                                           SelectionChanged="AccountFilterCombo_SelectionChanged"
