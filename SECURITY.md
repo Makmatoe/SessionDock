@@ -70,6 +70,12 @@ SessionDock is designed around these boundaries:
   SessionDock integration.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content.
+- Safe metadata transfer uses a small versioned allowlist and bounded strict
+  JSON parser. Export shows the exact file first and excludes authentication,
+  local account keys/paths, destinations, private-server material, JobIds, and
+  integration data. Import requires a reviewed confirmation, matches only
+  existing accounts by Roblox user ID, and commits as one rollback-protected
+  settings mutation; a transfer file can never create a signed-in profile.
 
 Please report any path that bypasses these boundaries, including unsafe URI
 handling, navigation outside official Roblox domains, profile-crossing session

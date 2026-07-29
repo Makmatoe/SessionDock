@@ -2778,6 +2778,7 @@ public partial class MainWindow : Window
             _batchRetryState is not null;
         ThemeToggleButton.IsEnabled = !busy;
         SoundSettingsButton.IsEnabled = !busy;
+        MetadataTransferButton.IsEnabled = !busy;
         IntegrationsButton.IsEnabled = !busy;
         AboutDiagnosticsButton.IsEnabled = !busy;
         ReleaseNotesButton.IsEnabled = !busy;

@@ -115,6 +115,16 @@
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconLanguage}"/>
                     </Button>
+                    <Button x:Name="MetadataTransferButton"
+                            Style="{StaticResource RailIconButton}"
+                            Click="MetadataTransferButton_Click"
+                            Margin="0,0,0,6"
+                            AutomationProperties.Name="{DynamicResource Main.MetadataTransfer}"
+                            AutomationProperties.HelpText="{DynamicResource Main.MetadataTransferHelp}"
+                            ToolTip="{DynamicResource Main.MetadataTransferTooltip}">
+                        <Path Style="{StaticResource ButtonIcon}"
+                              Data="{StaticResource IconTransfer}"/>
+                    </Button>
                     <Button x:Name="IntegrationsButton"
                             Style="{StaticResource RailIconButton}"
                             Click="IntegrationsButton_Click"

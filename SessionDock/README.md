@@ -36,6 +36,14 @@ sounds, and isolated WebView2 profiles under `%LOCALAPPDATA%\SessionDock`.
 Batch presets do not copy destinations or server identifiers. No account data, cookies,
 passwords, tokens, or private-server codes are compiled into the application.
 
+The sidebar's safe metadata transfer panel can write a user-reviewed JSON file
+containing Roblox user IDs, account labels/groups/colors/order, and pinned
+public place IDs/names. It never exports local account keys, usernames,
+destinations, timestamps, private-server details, server JobIds, browser data,
+settings internals, or integrations. Import validates the complete bounded
+schema, previews all applicable/skipped counts, requires confirmation, and only
+merges into accounts already present on this computer.
+
 The app is single-instance for each Windows login session. Each saved account
 has its own WebView2 profile. Roblox credentials are entered only on official
 Roblox pages and are not read or stored by SessionDock.
@@ -50,6 +58,8 @@ Roblox pages and are not read or stored by SessionDock.
   Roblox Player processes.
 - `Services/SupportDiagnosticsService.cs` creates the bounded allowlisted text
   shown, copied, and exported by the About and diagnostics panel.
+- `Services/MetadataTransferService.cs` owns the versioned allowlist, bounded
+  validation, preview plan, and safe metadata merge.
 - `Services/SessionDockUpdateService.cs` coordinates the manual Velopack updater and
   requires a descriptor authorized by the pinned release key.
 - `SystemProcesses/` contains optional, loopback-only post-launch connectors.

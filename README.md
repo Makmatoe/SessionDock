@@ -95,12 +95,20 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   summary that can be copied or exported as text. The summary contains bounded
   counts and system/component states, never settings files, logs, paths,
   account details, destinations, browser data, cookies, or tokens.
+- Exports and imports a separate, exact-preview **safe metadata** JSON file for
+  account appearance/order and pinned public favorites. Import requires a
+  validated preview and confirmation, matches Roblox user IDs only to accounts
+  that already exist locally, and never moves sign-ins, account-slot keys,
+  usernames, destinations, private-server details, JobIds, or local paths.
 
 ## Local by design
 
 SessionDock has no cloud backend, advertising, or telemetry. It does not ask
 for, read, or store Roblox passwords. Account browser profiles, settings,
 favorites, and recent-launch metadata remain under `%LOCALAPPDATA%\SessionDock`.
+The optional safe metadata export is written only to the file the user chooses;
+SessionDock never sends it. It contains Roblox user IDs so account appearance
+can be matched, and should be reviewed before it is stored or shared.
 
 SessionDock's direct Roblox API requests and top-level sign-in navigation are
 limited to official Roblox HTTPS endpoints. Embedded Roblox pages may still

@@ -36,6 +36,7 @@
         <Geometry x:Key="IconReleaseNotes">M 6,3 H 16 L 20,7 V 21 H 6 Z M 16,3 V 7 H 20 M 9,11 H 17 M 9,15 H 17 M 9,19 H 14</Geometry>
         <Geometry x:Key="IconUpdate">M 12,4 V 15 M 7.5,11 L 12,15.5 L 16.5,11 M 5,20 H 19</Geometry>
         <Geometry x:Key="IconIntegration">M 8,3 V 8 M 16,3 V 8 M 6,8 H 18 V 11 A 6,6 0 0 1 12,17 V 21 M 9,12 H 15</Geometry>
+        <Geometry x:Key="IconTransfer">M 4,7 H 18 M 14,3 L 18,7 L 14,11 M 20,17 H 6 M 10,13 L 6,17 L 10,21</Geometry>
         <Geometry x:Key="IconRefresh">M 19,7 V 3 M 19,3 H 15 M 18.5,3.5 A 9,9 0 1 0 21,14</Geometry>
         <Geometry x:Key="IconSun">M 12,7 A 5,5 0 1 1 11.9,7 M 12,2 V 4 M 12,20 V 22 M 2,12 H 4 M 20,12 H 22 M 4.9,4.9 L 6.3,6.3 M 17.7,17.7 L 19.1,19.1 M 19.1,4.9 L 17.7,6.3 M 6.3,17.7 L 4.9,19.1</Geometry>
         <Geometry x:Key="IconMoon">M 19.5,15.5 A 8,8 0 0 1 8.5,4.5 A 8.5,8.5 0 1 0 19.5,15.5</Geometry>

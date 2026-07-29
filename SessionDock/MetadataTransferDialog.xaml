@@ -1,0 +1,187 @@
+<Window x:Class="SessionDock.MetadataTransferDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Safe metadata transfer" Width="820" Height="720"
+        MinWidth="620" MinHeight="560"
+        ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable Text"
+        UseLayoutRounding="True" ShowInTaskbar="False"
+        AutomationProperties.Name="Export or import privacy-safe SessionDock metadata">
+    <Border Style="{StaticResource DialogShell}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Text="Safe metadata transfer"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="23" FontWeight="SemiBold"/>
+                <TextBlock Margin="0,5,0,0"
+                           Text="Move account appearance, order, and pinned public favorites without moving sign-ins."
+                           Foreground="{DynamicResource MutedBrush}"
+                           FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <Border Grid.Row="1" Margin="0,14,0,12" Padding="12,10"
+                    Background="{DynamicResource InfoSurfaceBrush}"
+                    BorderBrush="{DynamicResource InfoBorderBrush}"
+                    BorderThickness="1" CornerRadius="9">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="25"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Data="{StaticResource IconLock}"
+                          Width="15" Height="15" Stretch="Uniform"
+                          Fill="Transparent"
+                          Stroke="{DynamicResource InfoTextBrush}"
+                          StrokeThickness="1.8"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round"
+                          StrokeLineJoin="Round"
+                          VerticalAlignment="Top"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Sign-ins and private destinations never transfer"
+                                   Foreground="{DynamicResource InfoTextBrush}"
+                                   FontSize="12" FontWeight="SemiBold"/>
+                        <TextBlock Margin="0,4,0,0"
+                                   Foreground="{DynamicResource InfoTextBrush}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Text="Files exclude browser profiles, cookies, tokens, tickets, usernames, local account keys and paths, private-server links or codes, server JobIds, logs, settings internals, and integration configuration. Import only updates accounts that already exist in this SessionDock."/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <TabControl Grid.Row="2"
+                        AutomationProperties.Name="Metadata transfer action">
+                <TabItem Header="Export safe metadata"
+                         AutomationProperties.Name="Export safe metadata">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock x:Name="ExportSummaryText"
+                                   Foreground="{DynamicResource MutedBrush}"
+                                   FontSize="11" TextWrapping="Wrap"
+                                   Margin="0,0,0,8"/>
+                        <Border Grid.Row="1" Padding="10"
+                                Background="{DynamicResource InsetSurfaceBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="9">
+                            <TextBox x:Name="ExportPreviewBox"
+                                     IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="True"
+                                     TextWrapping="NoWrap" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     HorizontalScrollBarVisibility="Auto"
+                                     Background="Transparent" BorderThickness="0"
+                                     Padding="2"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     FontFamily="Consolas" FontSize="11"
+                                     TextBlock.LineHeight="17"
+                                     AutomationProperties.Name="Exact safe metadata export preview"
+                                     AutomationProperties.HelpText="This is the complete JSON that Export reviewed JSON will save."/>
+                        </Border>
+                        <Grid Grid.Row="2" Margin="0,10,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ExportStatusText"
+                                       Text="Nothing is exported until you choose a file."
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Margin="0,0,12,0"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                            <Button x:Name="ExportButton" Grid.Column="1"
+                                    Content="Export reviewed JSON"
+                                    Padding="14,9"
+                                    Click="ExportButton_Click"
+                                    AutomationProperties.Name="Export reviewed safe metadata JSON"
+                                    AutomationProperties.HelpText="Choose where to save exactly the JSON shown in the preview."/>
+                        </Grid>
+                    </Grid>
+                </TabItem>
+
+                <TabItem Header="Import safe metadata"
+                         AutomationProperties.Name="Import safe metadata">
+                    <Grid Margin="10">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock x:Name="ImportStatusText"
+                                       Text="Choose a SessionDock metadata JSON file to validate and preview."
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap"
+                                       VerticalAlignment="Center" Margin="0,0,12,0"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                            <Button x:Name="ChooseImportButton" Grid.Column="1"
+                                    Content="Choose JSON file"
+                                    Padding="14,9"
+                                    Background="{DynamicResource ControlSurfaceBrush}"
+                                    Foreground="{DynamicResource ControlTextBrush}"
+                                    Click="ChooseImportButton_Click"
+                                    AutomationProperties.Name="Choose safe metadata JSON to import"/>
+                        </Grid>
+                        <Border Grid.Row="1" Padding="10"
+                                Background="{DynamicResource InsetSurfaceBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="9">
+                            <TextBox x:Name="ImportPreviewBox"
+                                     IsReadOnly="True"
+                                     IsReadOnlyCaretVisible="True"
+                                     TextWrapping="Wrap" AcceptsReturn="True"
+                                     VerticalScrollBarVisibility="Auto"
+                                     Background="Transparent" BorderThickness="0"
+                                     Padding="2"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     FontFamily="Consolas" FontSize="11"
+                                     TextBlock.LineHeight="17"
+                                     Text="No file has been selected. Nothing will be changed."
+                                     AutomationProperties.Name="Validated metadata import preview"
+                                     AutomationProperties.HelpText="Review all planned changes and skipped items before confirming import."/>
+                        </Border>
+                        <CheckBox x:Name="ImportConfirmationCheckBox"
+                                  Grid.Row="2" Margin="0,10,0,0"
+                                  IsEnabled="False"
+                                  Checked="ImportConfirmationCheckBox_Changed"
+                                  Unchecked="ImportConfirmationCheckBox_Changed"
+                                  Content="I reviewed this preview and want to update matched metadata only."
+                                  AutomationProperties.Name="Confirm reviewed metadata import"/>
+                        <Button x:Name="ConfirmImportButton"
+                                Grid.Row="3" Margin="0,10,0,0"
+                                HorizontalAlignment="Right"
+                                Content="Import reviewed metadata"
+                                Padding="14,9" IsEnabled="False"
+                                Click="ConfirmImportButton_Click"
+                                AutomationProperties.Name="Import the reviewed safe metadata"
+                                AutomationProperties.HelpText="Applies only the validated changes shown above to existing accounts."/>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+
+            <Button x:Name="DoneButton" Grid.Row="3"
+                    Content="Done" IsCancel="True"
+                    HorizontalAlignment="Right" Margin="0,14,0,0"
+                    Padding="15,9"
+                    Background="{DynamicResource ControlSurfaceBrush}"
+                    Foreground="{DynamicResource ControlTextBrush}"
+                    AutomationProperties.Name="Close safe metadata transfer"/>
+        </Grid>
+    </Border>
+</Window>

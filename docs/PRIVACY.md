@@ -56,6 +56,36 @@ destinations, place/server/private-server details, cookies, tokens, URLs, and
 exception details. SessionDock does not send the summary automatically. Users
 should still review the complete preview before sharing it.
 
+## Safe metadata transfer
+
+The **Safe metadata transfer** sidebar panel creates a separate, versioned JSON
+document from a fixed allowlist. Its exact export preview contains Roblox user
+IDs (needed to match existing accounts), account labels, optional groups,
+approved accent colors, account order, and pinned public place IDs with their
+display and custom names. The file is written only after the user selects
+**Export reviewed JSON** and chooses a destination; SessionDock does not send
+it. Roblox user IDs and user-written labels are still personal metadata, so the
+complete preview should be reviewed before the file is stored or shared.
+
+The transfer file never contains local account-slot keys, usernames, active
+account state, selected account destinations, Recent timestamps, private-server
+links or codes, server JobIds, session/profile folder names, WebView2 data,
+cookies, passwords, authentication/launch tickets, sound files or preferences,
+pending-deletion state, settings/backup files, logs, local paths, or integration
+configuration and secrets. A public Favorite is eligible only when its stored
+destination parses to the same plain public place ID, has no private-server
+material, and has no server JobId.
+
+Import reads at most 256 KiB from a regular file, rejects unsupported versions,
+unknown or duplicate JSON fields, duplicate account/favorite entries, invalid
+types, out-of-range counts, unsupported colors, and unbounded/control text. It
+then shows a human-readable plan and skipped-item counts. The import button
+remains disabled until the user selects a confirmation checkbox. Import matches
+by Roblox user ID only to account slots already present on this computer; it
+does not create accounts or browser profiles. Unmatched accounts and their
+favorites are skipped. The settings change is saved as one mutation and is
+fully rolled back if persistence fails.
+
 When upgrading from the historic Roblox One package identity, SessionDock may
 copy recognized settings, browser profiles, sounds, and local integration
 configuration from `%LOCALAPPDATA%\RobloxOne` into
