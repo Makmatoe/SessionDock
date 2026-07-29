@@ -58,6 +58,15 @@ public partial class MainWindow
         if (startupFailure is not null || _operationLifetime.IsShuttingDown)
             return;
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        if (IsAutoJoinWatchActive)
+        {
+            AnnounceAutoJoinState(
+                "external-link-blocked",
+                "External Roblox link was not opened",
+                "Stop the active auto-join watch before opening another Roblox destination.",
+                "WATCHING");
+            return;
+        }
         if (!ExternalRobloxLinkPolicy.TryParse(
                 externalLink,
                 out var link,
@@ -171,7 +180,7 @@ public partial class MainWindow
         ExternalRobloxLink link,
         CancellationToken cancellationToken)
     {
-        if (_operationBusy || _launchInProgress)
+        if (_operationBusy || _launchInProgress || IsAutoJoinWatchActive)
             return;
         SetOperationBusy(true);
         try
@@ -183,10 +192,8 @@ public partial class MainWindow
             _launchInProgress = false;
             if (!_operationLifetime.IsShuttingDown)
             {
-                LaunchButtonLabel.Text = _joinUserMode
-                    ? Localize("Main.JoinUserButton")
-                    : Localize("Main.Launch");
                 SetOperationBusy(false);
+                UpdateAutoJoinActionPresentation();
             }
         }
     }

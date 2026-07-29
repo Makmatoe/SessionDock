@@ -7,7 +7,36 @@ internal enum JoinUserAvailability
     Offline,
     NotInExperience,
     NotJoinable,
+    RateLimited,
+    SessionUnavailable,
     ServiceUnavailable
+}
+
+internal enum JoinUserIdentityAvailability
+{
+    Available,
+    UserNotFound,
+    RateLimited,
+    SessionUnavailable,
+    ServiceUnavailable
+}
+
+internal sealed record JoinUserIdentity(
+    long UserId,
+    string Username,
+    string DisplayName);
+
+internal sealed record JoinUserIdentityLookupResult(
+    JoinUserIdentityAvailability Availability,
+    JoinUserIdentity? Identity,
+    TimeSpan? RetryAfter = null)
+{
+    internal static JoinUserIdentityLookupResult Unavailable(
+        JoinUserIdentityAvailability availability,
+        TimeSpan? retryAfter = null) => new(
+            availability,
+            null,
+            retryAfter);
 }
 
 internal sealed record JoinUserResolution(
@@ -19,8 +48,13 @@ internal sealed record JoinUserResolution(
 
 internal sealed record JoinUserLookupResult(
     JoinUserAvailability Availability,
-    JoinUserResolution? Resolution)
+    JoinUserResolution? Resolution,
+    TimeSpan? RetryAfter = null)
 {
     internal static JoinUserLookupResult Unavailable(
-        JoinUserAvailability availability) => new(availability, null);
+        JoinUserAvailability availability,
+        TimeSpan? retryAfter = null) => new(
+            availability,
+            null,
+            retryAfter);
 }

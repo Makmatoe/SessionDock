@@ -324,20 +324,128 @@ public sealed class RobloxWebSessionService : IDisposable
         WebSessionToken token,
         CancellationToken cancellationToken = default)
     {
+        var identity = await ResolveJoinUserIdentityAsync(
+            identifier,
+            token,
+            cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (identity.Identity is null)
+            return MapJoinUserIdentityFailure(identity);
+
+        return await GetJoinUserPresenceAsync(
+            identity.Identity,
+            token,
+            cancellationToken);
+    }
+
+    internal async Task<JoinUserIdentityLookupResult> ResolveJoinUserIdentityAsync(
+        JoinUserIdentifier identifier,
+        WebSessionToken token,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(identifier);
         var requestId = Guid.NewGuid().ToString("N");
         var message = await RunMessageScriptAsync(
             requestId,
-            RobloxWebScripts.ResolveJoinUser(requestId, identifier),
+            RobloxWebScripts.ResolveJoinUserIdentity(requestId, identifier),
             ApiTimeout,
             token,
             cancellationToken);
-        return ParseJoinUserResponse(message);
+        return ParseJoinUserIdentityResponse(message, identifier);
     }
 
-    internal static JoinUserLookupResult ParseJoinUserResponse(
-        JsonElement? message)
+    internal async Task<JoinUserLookupResult> GetJoinUserPresenceAsync(
+        JoinUserIdentity identity,
+        WebSessionToken token,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(identity);
+        var requestId = Guid.NewGuid().ToString("N");
+        var message = await RunMessageScriptAsync(
+            requestId,
+            RobloxWebScripts.GetJoinUserPresence(
+                requestId,
+                identity.UserId),
+            ApiTimeout,
+            token,
+            cancellationToken);
+        return ParseJoinUserPresenceResponse(message, identity);
+    }
+
+    internal static JoinUserIdentityLookupResult ParseJoinUserIdentityResponse(
+        JsonElement? message,
+        JoinUserIdentifier identifier)
+    {
+        ArgumentNullException.ThrowIfNull(identifier);
+        if (message is null ||
+            !message.Value.TryGetProperty("status", out var statusElement) ||
+            statusElement.ValueKind != JsonValueKind.String)
+        {
+            return JoinUserIdentityLookupResult.Unavailable(
+                JoinUserIdentityAvailability.ServiceUnavailable);
+        }
+
+        var status = statusElement.GetString();
+        var unavailable = status switch
+        {
+            "available" => JoinUserIdentityAvailability.Available,
+            "user-not-found" => JoinUserIdentityAvailability.UserNotFound,
+            "rate-limited" => JoinUserIdentityAvailability.RateLimited,
+            "session-unavailable" =>
+                JoinUserIdentityAvailability.SessionUnavailable,
+            _ => JoinUserIdentityAvailability.ServiceUnavailable
+        };
+        if (unavailable != JoinUserIdentityAvailability.Available)
+        {
+            return JoinUserIdentityLookupResult.Unavailable(
+                unavailable,
+                ParseRetryAfter(message.Value));
+        }
+
+        if (!message.Value.TryGetProperty("user", out var user) ||
+            user.ValueKind != JsonValueKind.Object ||
+            !user.TryGetProperty("id", out var userIdElement) ||
+            !userIdElement.TryGetInt64(out var userId) ||
+            userId <= 0 ||
+            !user.TryGetProperty("name", out var usernameElement) ||
+            usernameElement.ValueKind != JsonValueKind.String)
+        {
+            return JoinUserIdentityLookupResult.Unavailable(
+                JoinUserIdentityAvailability.ServiceUnavailable);
+        }
+
+        var username = usernameElement.GetString();
+        var displayName = user.TryGetProperty("displayName", out var displayNameElement) &&
+                          displayNameElement.ValueKind == JsonValueKind.String
+            ? displayNameElement.GetString()
+            : username;
+        if (!IsBoundedDisplayText(username, 50) ||
+            !IsBoundedDisplayText(displayName, 200) ||
+            identifier.UserId is long requestedUserId &&
+            requestedUserId != userId ||
+            identifier.Username is { } requestedUsername &&
+            !string.Equals(
+                requestedUsername,
+                username,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return JoinUserIdentityLookupResult.Unavailable(
+                JoinUserIdentityAvailability.ServiceUnavailable);
+        }
+
+        return new JoinUserIdentityLookupResult(
+            JoinUserIdentityAvailability.Available,
+            new JoinUserIdentity(
+                userId,
+                username!,
+                displayName!));
+    }
+
+    internal static JoinUserLookupResult ParseJoinUserPresenceResponse(
+        JsonElement? message,
+        JoinUserIdentity identity)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
         if (message is null ||
             !message.Value.TryGetProperty("status", out var statusElement) ||
             statusElement.ValueKind != JsonValueKind.String)
@@ -349,42 +457,30 @@ public sealed class RobloxWebSessionService : IDisposable
         var status = statusElement.GetString();
         var unavailable = status switch
         {
-            "user-not-found" => JoinUserAvailability.UserNotFound,
+            "available" => JoinUserAvailability.Available,
             "offline" => JoinUserAvailability.Offline,
             "not-in-experience" => JoinUserAvailability.NotInExperience,
             "not-joinable" => JoinUserAvailability.NotJoinable,
-            "available" => JoinUserAvailability.Available,
+            "rate-limited" => JoinUserAvailability.RateLimited,
+            "session-unavailable" => JoinUserAvailability.SessionUnavailable,
             _ => JoinUserAvailability.ServiceUnavailable
         };
         if (unavailable != JoinUserAvailability.Available)
-            return JoinUserLookupResult.Unavailable(unavailable);
+        {
+            return JoinUserLookupResult.Unavailable(
+                unavailable,
+                ParseRetryAfter(message.Value));
+        }
 
-        if (!message.Value.TryGetProperty("user", out var user) ||
-            user.ValueKind != JsonValueKind.Object ||
-            !user.TryGetProperty("id", out var userIdElement) ||
+        if (!message.Value.TryGetProperty("userId", out var userIdElement) ||
             !userIdElement.TryGetInt64(out var userId) ||
-            userId <= 0 ||
-            !user.TryGetProperty("name", out var usernameElement) ||
-            usernameElement.ValueKind != JsonValueKind.String ||
+            userId != identity.UserId ||
             !message.Value.TryGetProperty("placeId", out var placeIdElement) ||
             !placeIdElement.TryGetInt64(out var placeId) ||
             placeId <= 0 ||
             !message.Value.TryGetProperty("gameId", out var gameIdElement) ||
-            gameIdElement.ValueKind != JsonValueKind.String)
-        {
-            return JoinUserLookupResult.Unavailable(
-                JoinUserAvailability.ServiceUnavailable);
-        }
-
-        var username = usernameElement.GetString();
-        var displayName = user.TryGetProperty("displayName", out var displayNameElement) &&
-                          displayNameElement.ValueKind == JsonValueKind.String
-            ? displayNameElement.GetString()
-            : username;
-        var gameId = gameIdElement.GetString();
-        if (!IsBoundedDisplayText(username, 50) ||
-            !IsBoundedDisplayText(displayName, 200) ||
-            !Guid.TryParse(gameId, out var parsedGameId))
+            gameIdElement.ValueKind != JsonValueKind.String ||
+            !Guid.TryParse(gameIdElement.GetString(), out var parsedGameId))
         {
             return JoinUserLookupResult.Unavailable(
                 JoinUserAvailability.ServiceUnavailable);
@@ -393,11 +489,45 @@ public sealed class RobloxWebSessionService : IDisposable
         return new JoinUserLookupResult(
             JoinUserAvailability.Available,
             new JoinUserResolution(
-                userId,
-                username!,
-                displayName!,
+                identity.UserId,
+                identity.Username,
+                identity.DisplayName,
                 placeId,
                 parsedGameId.ToString("D")));
+    }
+
+    internal static JoinUserLookupResult MapJoinUserIdentityFailure(
+        JoinUserIdentityLookupResult result)
+    {
+        var availability = result.Availability switch
+        {
+            JoinUserIdentityAvailability.UserNotFound =>
+                JoinUserAvailability.UserNotFound,
+            JoinUserIdentityAvailability.RateLimited =>
+                JoinUserAvailability.RateLimited,
+            JoinUserIdentityAvailability.SessionUnavailable =>
+                JoinUserAvailability.SessionUnavailable,
+            _ => JoinUserAvailability.ServiceUnavailable
+        };
+        return JoinUserLookupResult.Unavailable(
+            availability,
+            result.RetryAfter);
+    }
+
+    private static TimeSpan? ParseRetryAfter(JsonElement message)
+    {
+        if (!message.TryGetProperty(
+                "retryAfterSeconds",
+                out var retryAfterElement) ||
+            retryAfterElement.ValueKind != JsonValueKind.Number ||
+            !retryAfterElement.TryGetDouble(out var seconds) ||
+            !double.IsFinite(seconds) ||
+            seconds <= 0)
+        {
+            return null;
+        }
+
+        return TimeSpan.FromSeconds(Math.Clamp(seconds, 15, 300));
     }
 
     internal async Task<bool> ClearProfileAsync(

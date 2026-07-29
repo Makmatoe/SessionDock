@@ -107,6 +107,16 @@ looks up experience metadata, or requests a launch ticket. The embedded Roblox
 pages may also load subresources selected by Roblox. Roblox receives data
 according to its own privacy policy and account settings.
 
+The optional **Watch and auto-join** action is off until the user explicitly
+starts it. While armed, SessionDock resolves and pins the requested user's
+stable numeric ID, retrying temporary identity failures with bounded backoff,
+then sends bounded repeated presence requests through the selected account's
+isolated Roblox session. The watch is memory-only, expires after four hours,
+stops after one launch attempt, and is never restored after restart. Failed
+checks, observed locations, presence timelines, and watch state are not added
+to diagnostics or sent as telemetry. A successful launch may create the same
+ordinary Recent entry as a manual Join User launch.
+
 When the user explicitly checks for an application update, SessionDock connects
 to GitHub Releases for `Makmatoe/SessionDock`. GitHub receives ordinary request
 metadata such as the source IP address and user agent under GitHub's policies.

@@ -72,6 +72,11 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   URL when that user's privacy settings and current experience allow the
   selected account to follow them. Roblox rechecks the user when Player starts;
   user destinations currently use single launch rather than batch launch.
+- An explicit **Watch and auto-join** option checks that user with the selected
+  account immediately and then at a bounded, backoff-aware rate. When Roblox
+  reports a usable current server it starts Player at most once; Player makes
+  the final access check. The watch remains cancelable, expires after four
+  hours, and is never saved or resumed automatically.
 - Shares Recent and Favorites across accounts while preserving the account and
   public/private context of each launch.
 - Launches one account at a time or runs a best-effort pipelined batch with a

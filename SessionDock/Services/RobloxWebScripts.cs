@@ -175,7 +175,7 @@ internal static class RobloxWebScripts
             """;
     }
 
-    public static string ResolveJoinUser(
+    public static string ResolveJoinUserIdentity(
         string requestId,
         JoinUserIdentifier identifier)
     {
@@ -188,80 +188,144 @@ internal static class RobloxWebScripts
             (async () => {
                 let status = 'service-unavailable';
                 let user = null;
-                let placeId = 0;
-                let gameId = null;
+                let retryAfterSeconds = null;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
                 try {
                     const requestedUserId = {{requestedUserId}};
                     const requestedUsername = {{requestedUsername}};
+                    let userResponse;
                     if (requestedUserId) {
-                        const userResponse = await fetch(
+                        userResponse = await fetch(
                             `https://users.roblox.com/v1/users/${requestedUserId}`,
-                            { credentials: 'include' });
-                        if (!userResponse.ok) {
-                            status = userResponse.status === 404
-                                ? 'user-not-found'
-                                : 'service-unavailable';
-                        } else {
-                            user = await userResponse.json();
-                        }
+                            {
+                                credentials: 'include',
+                                signal: controller.signal
+                            });
                     } else {
-                        const userResponse = await fetch(
+                        userResponse = await fetch(
                             'https://users.roblox.com/v1/usernames/users',
                             {
                                 method: 'POST',
                                 credentials: 'include',
                                 headers: { 'Content-Type': 'application/json' },
+                                signal: controller.signal,
                                 body: JSON.stringify({
                                     usernames: [requestedUsername],
                                     excludeBannedUsers: true
                                 })
                             });
-                        if (userResponse.ok) {
-                            const users = await userResponse.json();
-                            user = users?.data?.[0] ?? null;
-                            if (!user)
-                                status = 'user-not-found';
-                        }
                     }
 
-                    if (user?.id) {
-                        const presenceResponse = await fetch(
-                            'https://presence.roblox.com/v1/presence/users',
-                            {
-                                method: 'POST',
-                                credentials: 'include',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ userIds: [user.id] })
-                            });
-                        if (presenceResponse.ok) {
-                            const presences = await presenceResponse.json();
-                            const presence = presences?.userPresences?.[0] ?? null;
-                            const presenceType = Number(presence?.userPresenceType ?? 0);
-                            if (!presence || presenceType === 0) {
-                                status = 'offline';
-                            } else if (presenceType !== 2) {
-                                status = 'not-in-experience';
-                            } else {
-                                placeId = Number(presence.placeId ?? 0);
-                                gameId = typeof presence.gameId === 'string'
-                                    ? presence.gameId
-                                    : null;
-                                status = placeId > 0 && gameId
-                                    ? 'available'
-                                    : 'not-joinable';
-                            }
+                    if (userResponse.status === 401 || userResponse.status === 403) {
+                        status = 'session-unavailable';
+                    } else if (userResponse.status === 404) {
+                        status = 'user-not-found';
+                    } else if (userResponse.status === 429) {
+                        status = 'rate-limited';
+                        const retryAfter = Number(
+                            userResponse.headers.get('Retry-After'));
+                        retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+                            ? Math.min(retryAfter, 300)
+                            : null;
+                    } else if (userResponse.ok) {
+                        if (requestedUserId) {
+                            user = await userResponse.json();
+                        } else {
+                            const users = await userResponse.json();
+                            user = users?.data?.[0] ?? null;
                         }
+                        status = user?.id ? 'available' : 'user-not-found';
                     }
-                } catch {}
+                } catch {
+                    status = 'service-unavailable';
+                } finally {
+                    clearTimeout(timeoutId);
+                }
 
                 window.chrome.webview.postMessage({
                     requestId: {{id}},
                     status,
+                    retryAfterSeconds,
                     user: user ? {
                         id: user.id,
                         name: user.name,
                         displayName: user.displayName
-                    } : null,
+                    } : null
+                });
+            })();
+            """;
+    }
+
+    public static string GetJoinUserPresence(
+        string requestId,
+        long userId)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(userId);
+        var id = JsonSerializer.Serialize(requestId);
+        var requestedUserId = JsonSerializer.Serialize(userId);
+        return $$"""
+            (async () => {
+                let status = 'service-unavailable';
+                let placeId = 0;
+                let gameId = null;
+                let retryAfterSeconds = null;
+                const userId = {{requestedUserId}};
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                try {
+                    const presenceResponse = await fetch(
+                        'https://presence.roblox.com/v1/presence/users',
+                        {
+                            method: 'POST',
+                            credentials: 'include',
+                            headers: { 'Content-Type': 'application/json' },
+                            signal: controller.signal,
+                            body: JSON.stringify({ userIds: [userId] })
+                        });
+                    if (presenceResponse.status === 401 ||
+                        presenceResponse.status === 403) {
+                        status = 'session-unavailable';
+                    } else if (presenceResponse.status === 429) {
+                        status = 'rate-limited';
+                        const retryAfter = Number(
+                            presenceResponse.headers.get('Retry-After'));
+                        retryAfterSeconds = Number.isFinite(retryAfter) && retryAfter > 0
+                            ? Math.min(retryAfter, 300)
+                            : null;
+                    } else if (presenceResponse.ok) {
+                        const presences = await presenceResponse.json();
+                        const presence = presences?.userPresences?.[0] ?? null;
+                        const responseUserId = Number(presence?.userId ?? 0);
+                        const presenceType = Number(
+                            presence?.userPresenceType ?? 0);
+                        if (!presence || responseUserId !== userId) {
+                            status = 'service-unavailable';
+                        } else if (presenceType === 0) {
+                            status = 'offline';
+                        } else if (presenceType !== 2) {
+                            status = 'not-in-experience';
+                        } else {
+                            placeId = Number(presence.placeId ?? 0);
+                            gameId = typeof presence.gameId === 'string'
+                                ? presence.gameId
+                                : null;
+                            status = placeId > 0 && gameId
+                                ? 'available'
+                                : 'not-joinable';
+                        }
+                    }
+                } catch {
+                    status = 'service-unavailable';
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+
+                window.chrome.webview.postMessage({
+                    requestId: {{id}},
+                    status,
+                    userId,
+                    retryAfterSeconds,
                     placeId,
                     gameId
                 });

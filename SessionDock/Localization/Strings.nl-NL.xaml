@@ -89,6 +89,17 @@
     <sys:String x:Key="Main.LaunchRoblox">Roblox starten</sys:String>
     <sys:String x:Key="Main.LaunchTooltip">Direct starten met het geselecteerde account</sys:String>
     <sys:String x:Key="Main.JoinUserButton">Gebruiker volgen</sys:String>
+    <sys:String x:Key="Main.AutoJoinLabel">Wachten en automatisch deelnemen</sys:String>
+    <sys:String x:Key="Main.AutoJoinName">Op deze Roblox-gebruiker wachten en automatisch deelnemen</sys:String>
+    <sys:String x:Key="Main.AutoJoinHelp">Controleert direct en daarna meestal ongeveer elke 30 seconden, en vertraagt indien nodig, maximaal vier uur via het geselecteerde account. Player start één keer zodra Roblox een bruikbare huidige server meldt en controleert daarna definitief de toegang. Tijdens het wachten blijft Stoppen beschikbaar.</sys:String>
+    <sys:String x:Key="Main.AutoJoinStart">Wachten starten</sys:String>
+    <sys:String x:Key="Main.AutoJoinStartName">Op deze Roblox-gebruiker wachten en automatisch deelnemen</sys:String>
+    <sys:String x:Key="Main.AutoJoinStartTooltip">Wachten via het geselecteerde account en Roblox Player starten zodra Roblox een huidige server meldt; Player controleert de toegang opnieuw</sys:String>
+    <sys:String x:Key="Main.AutoJoinStop">Wachten stoppen</sys:String>
+    <sys:String x:Key="Main.AutoJoinStopName">De actieve automatische deelname stoppen</sys:String>
+    <sys:String x:Key="Main.AutoJoinStopTooltip">Stoppen met wachten zonder een nieuwe Roblox Player-start uit te voeren</sys:String>
+    <sys:String x:Key="Main.AutoJoinStopping">Stoppen...</sys:String>
+    <sys:String x:Key="Main.AutoJoinStoppingName">De actieve automatische deelname wordt gestopt</sys:String>
     <sys:String x:Key="Main.RecentExperiences">Recente experiences</sys:String>
     <sys:String x:Key="Main.RecentSubtitle">Gebruik een bestemming opnieuw met het geselecteerde account.</sys:String>
     <sys:String x:Key="Main.Public">Openbaar</sys:String>

@@ -30,6 +30,7 @@ public partial class MainWindow
         CancellationToken cancellationToken)
     {
         if (_operationBusy ||
+            IsAutoJoinWatchActive ||
             _accountReorderInProgress ||
             _pendingProfile is not null)
             return;
@@ -38,6 +39,7 @@ public partial class MainWindow
             return;
         cancellationToken.ThrowIfCancellationRequested();
         if (_operationBusy ||
+            IsAutoJoinWatchActive ||
             _accountReorderInProgress ||
             _pendingProfile is not null)
             return;
@@ -112,6 +114,7 @@ public partial class MainWindow
 
         cancellationToken.ThrowIfCancellationRequested();
         if (_operationBusy ||
+            IsAutoJoinWatchActive ||
             _accountReorderInProgress ||
             _pendingProfile is not null)
             return;
@@ -566,7 +569,9 @@ public partial class MainWindow
             effectiveDestinations);
         RetryFailedBatchButton.Visibility = Visibility.Visible;
         RetryFailedBatchButton.IsEnabled =
-            !_operationBusy && !_accountReorderInProgress;
+            !_operationBusy &&
+            !IsAutoJoinWatchActive &&
+            !_accountReorderInProgress;
         System.Windows.Automation.AutomationProperties.SetHelpText(
             RetryFailedBatchButton,
             $"Review and retry {accountKeys.Count} failed account(s). Starting the retry closes currently running verified Roblox Player clients.");
@@ -603,7 +608,9 @@ public partial class MainWindow
             effectiveDestinations);
         RetryFailedBatchButton.Visibility = Visibility.Visible;
         RetryFailedBatchButton.IsEnabled =
-            !_operationBusy && !_accountReorderInProgress;
+            !_operationBusy &&
+            !IsAutoJoinWatchActive &&
+            !_accountReorderInProgress;
     }
 
     private void ClearBatchRetryState()

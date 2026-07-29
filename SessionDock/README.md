@@ -53,6 +53,9 @@ Roblox pages and are not read or stored by SessionDock.
 - `Services/DestinationParser.cs` validates supported Roblox destinations.
 - `Services/JoinUserDestination.cs` validates explicit user destinations so a
   numeric user ID cannot be confused with a Place ID.
+- `Services/AutoJoinWatchContext.cs`, `AutoJoinLaunchGate.cs`, and
+  `JoinUserWatchPolicy.cs` pin the selected context, enforce one-shot handoff,
+  and bound the explicit session-only watch, backoff, and four-hour expiry.
 - `Services/RobloxWebSessionService.cs` manages isolated browser sessions.
 - `Services/RobloxClientService.cs` discovers, verifies, launches, and closes
   Roblox Player processes.

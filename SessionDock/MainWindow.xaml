@@ -550,6 +550,28 @@
                                                Foreground="{DynamicResource ErrorMutedTextBrush}" FontSize="11"
                                                Margin="3,7,3,0" TextWrapping="Wrap"
                                                AutomationProperties.LiveSetting="Polite"/>
+                                    <Border x:Name="AutoJoinUserPanel"
+                                            Visibility="Collapsed"
+                                            Margin="0,9,0,0" Padding="11,9"
+                                            Background="{DynamicResource InsetSurfaceBrush}"
+                                            BorderBrush="{DynamicResource InsetBorderBrush}"
+                                            BorderThickness="1" CornerRadius="8">
+                                        <StackPanel>
+                                            <CheckBox x:Name="AutoJoinUserCheckBox"
+                                                      IsChecked="False"
+                                                      Content="{DynamicResource Main.AutoJoinLabel}"
+                                                      Checked="AutoJoinUserCheckBox_Changed"
+                                                      Unchecked="AutoJoinUserCheckBox_Changed"
+                                                      ToolTip="{DynamicResource Main.AutoJoinHelp}"
+                                                      AutomationProperties.Name="{DynamicResource Main.AutoJoinName}"
+                                                      AutomationProperties.HelpText="{DynamicResource Main.AutoJoinHelp}"/>
+                                            <TextBlock x:Name="AutoJoinWatchDetailText"
+                                                       Text="{DynamicResource Main.AutoJoinHelp}"
+                                                       Foreground="{DynamicResource SubtleBrush}"
+                                                       FontSize="11" Margin="25,4,0,0"
+                                                       TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                    </Border>
                                     <Border x:Name="ServerJobIdWarningPanel"
                                             Visibility="Collapsed"
                                             Margin="0,8,0,0" Padding="11,9"

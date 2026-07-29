@@ -129,6 +129,8 @@ public partial class MainWindow : Window
         SelectWithAutomation(UserDestinationModeButton);
         if (!_joinUserMode ||
             LaunchButtonLabel.Text != Localize("Main.JoinUserButton") ||
+            AutoJoinUserPanel.Visibility != Visibility.Visible ||
+            AutoJoinUserCheckBox.IsChecked == true ||
             UserDestinationModeButton.IsChecked != true ||
             ExperienceDestinationModeButton.IsChecked == true ||
             AutomationProperties.GetName(PlaceIdBox) !=
@@ -138,9 +140,20 @@ public partial class MainWindow : Window
                 "The join-user destination mode did not become active.");
         }
 
+        AutoJoinUserCheckBox.IsChecked = true;
+        if (LaunchButtonLabel.Text != Localize("Main.AutoJoinStart") ||
+            AutomationProperties.GetName(LaunchButton) !=
+            Localize("Main.AutoJoinStartName"))
+        {
+            throw new InvalidOperationException(
+                "The auto-join action did not become available.");
+        }
+        AutoJoinUserCheckBox.IsChecked = false;
+
         SelectWithAutomation(ExperienceDestinationModeButton);
         if (_joinUserMode ||
             LaunchButtonLabel.Text != Localize("Main.Launch") ||
+            AutoJoinUserPanel.Visibility != Visibility.Collapsed ||
             ExperienceDestinationModeButton.IsChecked != true ||
             UserDestinationModeButton.IsChecked == true ||
             AutomationProperties.GetName(PlaceIdBox) !=
@@ -473,6 +486,7 @@ public partial class MainWindow : Window
         bool showLogin,
         CancellationToken cancellationToken = default)
     {
+        CancelAutoJoinWatchSilently();
         _browserSwitchCancellation?.Cancel();
         _browserSwitchCancellation?.Dispose();
         _browserSwitchCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -590,6 +604,7 @@ public partial class MainWindow : Window
         if (!HasCurrentWebSessionAffinity(e.Token))
             return Task.CompletedTask;
 
+        CancelAutoJoinWatchSilently();
         _currentUser = null;
         LaunchButton.IsEnabled = false;
         SignInButton.Visibility = Visibility.Visible;
@@ -839,6 +854,7 @@ public partial class MainWindow : Window
 
     private void SetSignedOutState()
     {
+        CancelAutoJoinWatchSilently();
         var profile = _pendingProfile ?? _activeProfile;
         SetStatus(
             profile is null || _pendingProfile is not null
@@ -870,11 +886,7 @@ public partial class MainWindow : Window
             _launchInProgress ? "LAUNCHING" : "ACCOUNT VERIFIED");
         SignInButton.Visibility = Visibility.Collapsed;
         RefreshLaunchAvailability();
-        LaunchButtonLabel.Text = _launchInProgress
-            ? Localize("Main.Launching")
-            : _joinUserMode
-                ? Localize("Main.JoinUserButton")
-                : Localize("Main.Launch");
+        UpdateAutoJoinActionPresentation();
     }
 
     private void SetStatus(string title, string detail, string badge)
@@ -1758,34 +1770,58 @@ public partial class MainWindow : Window
             SetSignedOutState();
     }
 
-    private async void LaunchButton_Click(object sender, RoutedEventArgs e) =>
-        await RunWindowOperationAsync(LaunchButtonClickAsync);
-
-    private async Task LaunchButtonClickAsync(CancellationToken cancellationToken)
+    private async void LaunchButton_Click(object sender, RoutedEventArgs e)
     {
-        if (_operationBusy)
+        if (IsAutoJoinWatchActive)
+        {
+            RequestAutoJoinStop();
             return;
-        SetOperationBusy(true);
+        }
+
+        await RunWindowOperationAsync(
+            _joinUserMode && AutoJoinUserCheckBox.IsChecked == true
+                ? StartAutoJoinWatchAsync
+                : cancellationToken => LaunchButtonClickAsync(
+                    cancellationToken));
+    }
+
+    private async Task LaunchButtonClickAsync(
+        CancellationToken cancellationToken,
+        JoinUserResolution? preResolvedJoinUser = null,
+        string? expectedAccountKey = null,
+        long? expectedAccountUserId = null,
+        bool operationReserved = false)
+    {
+        if (IsAutoJoinWatchActive ||
+            !operationReserved && _operationBusy)
+            return;
+        if (!operationReserved)
+            SetOperationBusy(true);
         try
         {
-            await LaunchAsync(cancellationToken);
+            await LaunchAsync(
+                cancellationToken,
+                preResolvedJoinUser: preResolvedJoinUser,
+                expectedAccountKey: expectedAccountKey,
+                expectedAccountUserId: expectedAccountUserId);
         }
         finally
         {
             _launchInProgress = false;
             if (!_operationLifetime.IsShuttingDown)
             {
-                LaunchButtonLabel.Text = _joinUserMode
-                    ? Localize("Main.JoinUserButton")
-                    : Localize("Main.Launch");
                 SetOperationBusy(false);
+                UpdateAutoJoinActionPresentation();
             }
         }
     }
 
     private async Task LaunchAsync(
         CancellationToken cancellationToken,
-        ExternalRobloxLink? externalLink = null)
+        ExternalRobloxLink? externalLink = null,
+        JoinUserResolution? preResolvedJoinUser = null,
+        string? expectedAccountKey = null,
+        long? expectedAccountUserId = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var accountDestination = externalLink?.Destination ??
@@ -1844,6 +1880,19 @@ public partial class MainWindow : Window
             currentUser.Id != activeProfile.UserId ||
             !TryGetCurrentWebSessionToken(activeProfile, out var sessionToken))
             return;
+        if (expectedAccountKey is not null &&
+            (!string.Equals(
+                 activeProfile.Key,
+                 expectedAccountKey,
+                 StringComparison.Ordinal) ||
+             expectedAccountUserId != currentUser.Id))
+        {
+            SetStatus(
+                "Auto-join watch ended",
+                "The selected account changed before Roblox Player could start. No launch was attempted.",
+                "WATCH ENDED");
+            return;
+        }
 
         _launchInProgress = true;
         SetReadyState();
@@ -1851,26 +1900,37 @@ public partial class MainWindow : Window
         JoinUserResolution? joinUserResolution = null;
         if (joinUser is not null)
         {
-            SetStatus(
-                "Checking whether this user can be joined",
-                $"Resolving {joinUser.DisplayValue} through @{currentUser.Name}'s isolated Roblox session…",
-                "CHECKING USER");
-            LaunchButton.IsEnabled = false;
-            var lookup = await _webSession.ResolveJoinUserAsync(
-                joinUser,
-                sessionToken,
-                cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!IsCurrentWebSessionOwner(sessionToken))
-                return;
-            if (lookup.Resolution is null)
+            if (preResolvedJoinUser is not null &&
+                DoesJoinUserResolutionMatch(
+                    joinUser,
+                    preResolvedJoinUser))
             {
-                _launchInProgress = false;
-                ShowJoinUserUnavailable(joinUser, lookup.Availability);
-                return;
+                joinUserResolution = preResolvedJoinUser;
+            }
+            else
+            {
+                SetStatus(
+                    "Checking whether this user can be joined",
+                    $"Resolving {joinUser.DisplayValue} through @{currentUser.Name}'s isolated Roblox session…",
+                    "CHECKING USER");
+                LaunchButton.IsEnabled = false;
+                var lookup = await _webSession.ResolveJoinUserAsync(
+                    joinUser,
+                    sessionToken,
+                    cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsCurrentWebSessionOwner(sessionToken))
+                    return;
+                if (lookup.Resolution is null)
+                {
+                    _launchInProgress = false;
+                    ShowJoinUserUnavailable(joinUser, lookup.Availability);
+                    return;
+                }
+
+                joinUserResolution = lookup.Resolution;
             }
 
-            joinUserResolution = lookup.Resolution;
             target = new LaunchTarget(
                 joinUserResolution.PlaceId,
                 null,
@@ -1878,6 +1938,22 @@ public partial class MainWindow : Window
             destination = joinUserResolution.PlaceId.ToString(
                 CultureInfo.InvariantCulture);
             serverJobId = joinUserResolution.ServerJobId;
+        }
+
+        if (expectedAccountKey is not null &&
+            (!string.Equals(
+                 _activeProfile?.Key,
+                 expectedAccountKey,
+                 StringComparison.Ordinal) ||
+             _currentUser?.Id != expectedAccountUserId ||
+             !IsCurrentWebSessionOwner(sessionToken)))
+        {
+            _launchInProgress = false;
+            SetStatus(
+                "Auto-join watch ended",
+                "The selected account or Roblox session changed before a ticket was requested. No launch was attempted.",
+                "WATCH ENDED");
+            return;
         }
 
         if (target!.ShareCode is not null)
@@ -1992,6 +2068,16 @@ public partial class MainWindow : Window
                 ExternalRobloxLinkPolicy.ShouldSaveToHistory(externalLink));
     }
 
+    internal static bool DoesJoinUserResolutionMatch(
+        JoinUserIdentifier requestedUser,
+        JoinUserResolution resolution) =>
+        requestedUser.UserId is long userId
+            ? userId == resolution.UserId
+            : string.Equals(
+                requestedUser.Username,
+                resolution.Username,
+                StringComparison.OrdinalIgnoreCase);
+
     private void ShowJoinUserUnavailable(
         JoinUserIdentifier requestedUser,
         JoinUserAvailability availability)
@@ -2011,17 +2097,37 @@ public partial class MainWindow : Window
                 "They may only be online on the website or using Roblox Studio.",
                 "NOT IN GAME"),
             JoinUserAvailability.NotJoinable => (
-                $"{requestedUser.DisplayValue} cannot be joined by this account",
-                "Their join setting, the experience's permissions, or the current server prevents joining.",
+                $"{requestedUser.DisplayValue} has no usable current server",
+                "Privacy, experience, or current server details may be unavailable.",
                 "JOINS UNAVAILABLE"),
+            JoinUserAvailability.RateLimited => (
+                "Roblox asked SessionDock to check less often",
+                "Wait a moment before trying to join this user again.",
+                "USER CHECK LIMITED"),
+            JoinUserAvailability.SessionUnavailable => (
+                "The selected Roblox session is unavailable",
+                "Reconnect this account before trying to join a user.",
+                "SIGN-IN NEEDED"),
             _ => (
                 "Roblox could not check this user",
                 "The Roblox user or presence service did not return a usable result. Try again shortly.",
                 "USER CHECK ERROR")
         };
+        if (availability == JoinUserAvailability.SessionUnavailable)
+        {
+            _currentUser = null;
+            SetSignedOutState();
+            SignInButtonLabel.Text = Localize("Main.Reconnect");
+            AutomationProperties.SetName(
+                SignInButton,
+                Localize("Main.ReconnectName"));
+        }
         SetStatus(title, detail, badge);
-        LaunchButtonLabel.Text = Localize("Main.JoinUserButton");
-        LaunchButton.IsEnabled = true;
+        if (availability != JoinUserAvailability.SessionUnavailable)
+        {
+            LaunchButtonLabel.Text = Localize("Main.JoinUserButton");
+            LaunchButton.IsEnabled = true;
+        }
     }
 
     private async Task<string?> TryGetExperienceNameAsync(
@@ -2362,7 +2468,8 @@ public partial class MainWindow : Window
 
     private void ChangeDestinationMode(bool joinUser)
     {
-        if (_operationBusy || _launchInProgress || _joinUserMode == joinUser)
+        if (_operationBusy || _launchInProgress || IsAutoJoinWatchActive ||
+            _joinUserMode == joinUser)
             return;
 
         _destinationPersistence.Cancel();
@@ -2410,20 +2517,9 @@ public partial class MainWindow : Window
         BatchLaunchButton.ToolTip = _joinUserMode
             ? Localize("Main.BatchJoinUserTooltip")
             : Localize("Main.BatchTooltip");
-        LaunchButton.ToolTip = _joinUserMode
-            ? Localize("Main.JoinThisUserTooltip")
-            : Localize("Main.LaunchTooltip");
-        AutomationProperties.SetName(
-            LaunchButton,
-            _joinUserMode
-                ? Localize("Main.JoinRobloxUser")
-                : Localize("Main.LaunchRoblox"));
-        if (!_launchInProgress)
-        {
-            LaunchButtonLabel.Text = _joinUserMode
-                ? Localize("Main.JoinUserButton")
-                : Localize("Main.Launch");
-        }
+        if (!IsAutoJoinWatchActive)
+            AutoJoinWatchDetailText.Text = Localize("Main.AutoJoinHelp");
+        UpdateAutoJoinActionPresentation();
     }
 
     private async void PlaceIdBox_LostKeyboardFocus(
@@ -2448,7 +2544,8 @@ public partial class MainWindow : Window
 
     private async Task SetDestinationForAllButtonClickAsync()
     {
-        if (_operationBusy || _launchInProgress || _pendingProfile is not null)
+        if (_operationBusy || _launchInProgress || IsAutoJoinWatchActive ||
+            _pendingProfile is not null)
             return;
 
         if (_settings.Accounts.Count == 0)
@@ -2825,21 +2922,27 @@ public partial class MainWindow : Window
         SetDestinationForAllButton.IsEnabled =
             !_operationBusy &&
             !_launchInProgress &&
+            !IsAutoJoinWatchActive &&
             _pendingProfile is null &&
             _settings.Accounts.Count >= 2 &&
             destinationIsValid;
 
-        LaunchButton.IsEnabled =
-            !_operationBusy &&
-            !_launchInProgress &&
-            _currentUser?.Id == _activeProfile?.UserId &&
-            _activeProfile is not null &&
-            TryGetCurrentWebSessionToken(_activeProfile, out _) &&
-            destinationIsValid;
+        LaunchButton.IsEnabled = IsAutoJoinWatchActive
+            ? _autoJoinWatchCancellation is
+            {
+                IsCancellationRequested: false
+            }
+            : !_operationBusy &&
+              !_launchInProgress &&
+              _currentUser?.Id == _activeProfile?.UserId &&
+              _activeProfile is not null &&
+              TryGetCurrentWebSessionToken(_activeProfile, out _) &&
+              destinationIsValid;
         BatchLaunchButton.IsEnabled =
             !_operationBusy &&
             !_accountReorderInProgress &&
             !_launchInProgress &&
+            !IsAutoJoinWatchActive &&
             _pendingProfile is null &&
             _settings.Accounts.Count >= 2;
     }
@@ -2847,28 +2950,33 @@ public partial class MainWindow : Window
     private void SetOperationBusy(bool busy)
     {
         _operationBusy = busy;
+        var watchLocksContext = IsAutoJoinWatchActive;
+        var auxiliaryActionsEnabled = !busy && !watchLocksContext;
         UpdateAccountControlAvailability();
-        RunningClientsButton.IsEnabled = !busy;
-        SignInButton.IsEnabled = !busy;
-        PlaceIdBox.IsEnabled = !busy;
-        ExperienceDestinationModeButton.IsEnabled = !busy;
-        UserDestinationModeButton.IsEnabled = !busy;
-        LaunchTabButton.IsEnabled = !busy;
-        RecentTabButton.IsEnabled = !busy;
-        RecentExperiencesList.IsEnabled = !busy;
+        RunningClientsButton.IsEnabled = auxiliaryActionsEnabled;
+        SignInButton.IsEnabled = !busy && !watchLocksContext;
+        PlaceIdBox.IsEnabled = !busy && !watchLocksContext;
+        ExperienceDestinationModeButton.IsEnabled = !busy && !watchLocksContext;
+        UserDestinationModeButton.IsEnabled = !busy && !watchLocksContext;
+        LaunchTabButton.IsEnabled = !busy && !watchLocksContext;
+        RecentTabButton.IsEnabled = !busy && !watchLocksContext;
+        RecentExperiencesList.IsEnabled = !busy && !watchLocksContext;
         UpdateClearHistoryButton();
-        BatchLaunchButton.IsEnabled = !busy;
+        BatchLaunchButton.IsEnabled = !busy && !watchLocksContext;
         RetryFailedBatchButton.IsEnabled =
             !busy &&
+            !watchLocksContext &&
             !_accountReorderInProgress &&
             _batchRetryState is not null;
-        ThemeToggleButton.IsEnabled = !busy;
-        SoundSettingsButton.IsEnabled = !busy;
-        MetadataTransferButton.IsEnabled = !busy;
-        IntegrationsButton.IsEnabled = !busy;
-        AboutDiagnosticsButton.IsEnabled = !busy;
-        ReleaseNotesButton.IsEnabled = !busy;
-        InstallUpdateButton.IsEnabled = !busy;
+        ThemeToggleButton.IsEnabled = auxiliaryActionsEnabled;
+        SoundSettingsButton.IsEnabled = auxiliaryActionsEnabled;
+        LanguageSettingsButton.IsEnabled = auxiliaryActionsEnabled;
+        MetadataTransferButton.IsEnabled = auxiliaryActionsEnabled;
+        IntegrationsButton.IsEnabled = auxiliaryActionsEnabled;
+        AboutDiagnosticsButton.IsEnabled = auxiliaryActionsEnabled;
+        ReleaseNotesButton.IsEnabled = auxiliaryActionsEnabled;
+        InstallUpdateButton.IsEnabled = auxiliaryActionsEnabled;
+        UpdateAutoJoinActionPresentation();
         RefreshLaunchAvailability();
     }
 

@@ -69,6 +69,9 @@ public sealed class JoinUserFeatureContractTests : IDisposable
 
         Assert.Contains("x:Name=\"ExperienceDestinationModeButton\"", xaml);
         Assert.Contains("x:Name=\"UserDestinationModeButton\"", xaml);
+        Assert.Contains("x:Name=\"AutoJoinUserCheckBox\"", xaml);
+        Assert.Contains("IsChecked=\"False\"", xaml);
+        Assert.Contains("AutoJoinUserCheckBox_Changed", xaml);
         Assert.Contains(
             "AutomationProperties.Name=\"{DynamicResource Main.JoinUser}\"",
             xaml);
@@ -103,6 +106,54 @@ public sealed class JoinUserFeatureContractTests : IDisposable
             launchMethod.IndexOf("GetAuthenticationTicketAsync", StringComparison.Ordinal));
         Assert.Contains("IsCurrentWebSessionOwner(sessionToken)", launchMethod);
         Assert.Contains("RobloxLaunchUriBuilder.BuildFollowUser", launchMethod);
+    }
+
+    [Fact]
+    public void AutoJoinWatch_IsExplicitCancelableBoundedAndOneShot()
+    {
+        var root = FindRepositoryRoot();
+        var source = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.AutoJoin.cs"));
+        var externalLinks = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.ExternalLinks.cs"));
+        var batch = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.Batch.cs"));
+        var mainWindow = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.xaml.cs"));
+
+        Assert.Contains("CreateLinkedTokenSource", source);
+        Assert.Contains("CancelAfter", source);
+        Assert.Contains("ResolveJoinUserIdentityAsync", source);
+        Assert.Contains("GetJoinUserPresenceAsync", source);
+        Assert.Contains("RequestAutoJoinStop", source);
+        Assert.Contains("TryClaimLaunch", source);
+        Assert.Contains("ReserveAutoJoinLaunchAsync", source);
+        Assert.Contains("MaximumWatchDuration", File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "Services",
+            "JoinUserWatchPolicy.cs")));
+        Assert.Contains("CompleteAutoJoinWatch", source);
+        Assert.Contains("LaunchButtonClickAsync", source);
+        Assert.Contains("operationReserved: true", source);
+        Assert.Contains("IsAutoJoinWatchActive", externalLinks);
+        Assert.Contains("IsAutoJoinWatchActive", batch);
+        Assert.Contains(
+            "var auxiliaryActionsEnabled = !busy && !watchLocksContext;",
+            mainWindow);
+        Assert.Contains(
+            "LanguageSettingsButton.IsEnabled = auxiliaryActionsEnabled;",
+            mainWindow);
+        Assert.DoesNotContain("AppSettings", source);
+        Assert.DoesNotContain("SettingsService", source);
     }
 
     public void Dispose()
