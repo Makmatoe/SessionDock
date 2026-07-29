@@ -157,16 +157,18 @@ public sealed class ListSearchTests
             "Window_PreviewKeyDown",
             (string?)document.Root?.Attribute("PreviewKeyDown"));
 
-        foreach (var (name, changedHandler, accessibleName) in new[]
+        foreach (var (name, changedHandler, accessibleName, helpText) in new[]
                  {
                      (
                          "AccountSearchBox",
                          "AccountSearchBox_TextChanged",
-                         "Search saved accounts"),
+                         "{DynamicResource Main.AccountSearchName}",
+                         "{DynamicResource Main.AccountSearchHelp}"),
                      (
                          "RecentSearchBox",
                          "RecentSearchBox_TextChanged",
-                         "Search Recent and Favorites")
+                         "{DynamicResource Main.RecentSearchName}",
+                         "{DynamicResource Main.RecentSearchHelp}")
                  })
         {
             var searchBox = document
@@ -181,15 +183,18 @@ public sealed class ListSearchTests
             Assert.Equal(
                 accessibleName,
                 (string?)searchBox.Attribute("AutomationProperties.Name"));
-            Assert.Contains(
-                "Escape",
-                (string?)searchBox.Attribute("AutomationProperties.HelpText"),
-                StringComparison.Ordinal);
-            Assert.Contains(
-                "Control F",
-                (string?)searchBox.Attribute("AutomationProperties.HelpText"),
-                StringComparison.Ordinal);
+            Assert.Equal(
+                helpText,
+                (string?)searchBox.Attribute("AutomationProperties.HelpText"));
         }
+
+        var englishResources = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Localization",
+            "Strings.en-US.xaml"));
+        Assert.Contains("Escape", englishResources, StringComparison.Ordinal);
+        Assert.Contains("Control F", englishResources, StringComparison.Ordinal);
 
         var shortcutSource = File.ReadAllText(Path.Combine(
             FindRepositoryRoot(),

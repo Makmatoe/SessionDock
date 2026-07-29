@@ -211,14 +211,21 @@ public sealed class SupportDiagnosticsTests
 
         Assert.Contains("x:Name=\"AboutDiagnosticsButton\"", mainWindow);
         Assert.Contains(
-            "AutomationProperties.Name=\"About SessionDock and diagnostics\"",
+            "AutomationProperties.Name=\"{DynamicResource Main.AboutName}\"",
             mainWindow);
         Assert.Contains(
-            "AutomationProperties.Name=\"Privacy-safe diagnostics preview\"",
+            "AutomationProperties.Name=\"{DynamicResource About.PreviewName}\"",
             dialog);
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", dialog);
-        Assert.Contains("Copy diagnostics", dialog);
-        Assert.Contains("Export text file", dialog);
+        Assert.Contains("{DynamicResource About.Copy}", dialog);
+        Assert.Contains("{DynamicResource About.Export}", dialog);
+        var englishResources = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "Localization",
+            "Strings.en-US.xaml"));
+        Assert.Contains(">Copy diagnostics<", englishResources);
+        Assert.Contains(">Export text file<", englishResources);
         Assert.Contains("Clipboard.SetText(_document.Text)", dialogCode);
         Assert.Contains("_document);", dialogCode);
         Assert.DoesNotContain("settings.json", dialogCode, StringComparison.OrdinalIgnoreCase);

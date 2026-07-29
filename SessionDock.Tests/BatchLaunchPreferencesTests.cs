@@ -318,7 +318,7 @@ public sealed class BatchLaunchPreferencesTests : IDisposable
 
         Assert.Contains("x:Name=\"GroupBox\"", appearanceXaml, StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.Name=\"Account group\"",
+            "AutomationProperties.Name=\"{DynamicResource Account.Group}\"",
             appearanceXaml,
             StringComparison.Ordinal);
         Assert.Contains("x:Name=\"PresetComboBox\"", batchXaml, StringComparison.Ordinal);
@@ -327,7 +327,7 @@ public sealed class BatchLaunchPreferencesTests : IDisposable
         Assert.Contains("Click=\"DeletePresetButton_Click\"", batchXaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"SelectGroupButton_Click\"", batchXaml, StringComparison.Ordinal);
         Assert.Contains(
-            "Starting the batch closes every currently running verified Roblox Player instance.",
+            "Text=\"{DynamicResource Batch.Warning}\"",
             batchXaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -339,8 +339,21 @@ public sealed class BatchLaunchPreferencesTests : IDisposable
             mainWindowXaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "AutomationProperties.HelpText=\"Review only the accounts that failed in the last batch\"",
+            "AutomationProperties.HelpText=\"{DynamicResource Main.RetryFailedHelp}\"",
             mainWindowXaml,
+            StringComparison.Ordinal);
+        var englishResources = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "Localization",
+            "Strings.en-US.xaml"));
+        Assert.Contains(
+            ">Starting the batch closes every currently running verified Roblox Player instance.<",
+            englishResources,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ">Review only the accounts that failed in the last batch<",
+            englishResources,
             StringComparison.Ordinal);
     }
 

@@ -31,9 +31,9 @@ integrity checks.
 ## Local data
 
 SessionDock keeps account-slot metadata, optional account groups, batch preset
-account keys and delays, launch history, preferences, imported sounds, and
-isolated WebView2 profiles under `%LOCALAPPDATA%\SessionDock`. Batch presets do
-not copy destinations or server identifiers. No account data, cookies,
+account keys and delays, launch history, theme/language preferences, imported
+sounds, and isolated WebView2 profiles under `%LOCALAPPDATA%\SessionDock`.
+Batch presets do not copy destinations or server identifiers. No account data, cookies,
 passwords, tokens, or private-server codes are compiled into the application.
 
 The app is single-instance for each Windows login session. Each saved account

@@ -1,7 +1,7 @@
 <Window x:Class="SessionDock.AccountAppearanceDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Edit account" Width="520" SizeToContent="Height"
+        Title="{DynamicResource Account.Title}" Width="520" SizeToContent="Height"
         MinWidth="400" MinHeight="430"
         ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}"
@@ -20,7 +20,7 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Text="Edit account"
+            <TextBlock Text="{DynamicResource Account.Heading}"
                            Foreground="{DynamicResource TextBrush}"
                            FontSize="22" FontWeight="SemiBold"/>
                 <TextBlock x:Name="AccountIdentityText" Grid.Row="1"
@@ -29,22 +29,22 @@
                            TextWrapping="Wrap"/>
 
                 <StackPanel Grid.Row="2" Margin="0,20,0,0">
-                    <TextBlock Text="Custom label"
+                <TextBlock Text="{DynamicResource Account.Label}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="12" FontWeight="SemiBold"/>
                     <Border Height="48" Margin="0,7,0,0"
                             Style="{StaticResource TextFieldShell}">
                         <TextBox x:Name="LabelBox" MaxLength="40"
                                  Style="{StaticResource EmbeddedTextBox}"
-                                 AutomationProperties.Name="Account label"/>
+                         AutomationProperties.Name="{DynamicResource Account.LabelName}"/>
                     </Border>
                 </StackPanel>
 
                 <StackPanel Grid.Row="3" Margin="0,18,0,0">
-                    <TextBlock Text="Account group"
+                <TextBlock Text="{DynamicResource Account.Group}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="12" FontWeight="SemiBold"/>
-                    <TextBlock Text="Optional. Accounts with the same group can be selected together in Batch launch."
+                <TextBlock Text="{DynamicResource Account.GroupDetail}"
                                Foreground="{DynamicResource MutedBrush}"
                                FontSize="11" Margin="0,4,0,0"
                                TextWrapping="Wrap"/>
@@ -52,16 +52,16 @@
                             Style="{StaticResource TextFieldShell}">
                         <TextBox x:Name="GroupBox" MaxLength="40"
                                  Style="{StaticResource EmbeddedTextBox}"
-                                 AutomationProperties.Name="Account group"
-                                 AutomationProperties.HelpText="Optional group used for quick account selection in Batch launch"/>
+                         AutomationProperties.Name="{DynamicResource Account.Group}"
+                         AutomationProperties.HelpText="{DynamicResource Account.GroupHelp}"/>
                     </Border>
                 </StackPanel>
 
                 <StackPanel Grid.Row="4" Margin="0,18,0,0">
-                    <TextBlock Text="Account color"
+                <TextBlock Text="{DynamicResource Account.Color}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="12" FontWeight="SemiBold"/>
-                    <TextBlock Text="Choose the accent used by this account card."
+                <TextBlock Text="{DynamicResource Account.ColorDetail}"
                                Foreground="{DynamicResource MutedBrush}"
                                FontSize="11" Margin="0,4,0,0"
                                TextWrapping="Wrap"/>
@@ -71,37 +71,37 @@
                                 Background="#7C5CFC"
                                 Foreground="{DynamicResource OnAccountColorBrush}" FontSize="18"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                AutomationProperties.Name="Purple"/>
+                            AutomationProperties.Name="{DynamicResource Account.Purple}"/>
                         <Button Tag="#4D8DFF" Click="ColorButton_Click"
                                 Width="44" Height="38" Padding="0" Margin="0,0,8,8"
                                 Background="#4D8DFF"
                                 Foreground="{DynamicResource OnAccountColorBrush}" FontSize="18"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                AutomationProperties.Name="Blue"/>
+                            AutomationProperties.Name="{DynamicResource Account.Blue}"/>
                         <Button Tag="#27B58A" Click="ColorButton_Click"
                                 Width="44" Height="38" Padding="0" Margin="0,0,8,8"
                                 Background="#27B58A"
                                 Foreground="{DynamicResource OnAccountColorBrush}" FontSize="18"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                AutomationProperties.Name="Green"/>
+                            AutomationProperties.Name="{DynamicResource Account.Green}"/>
                         <Button Tag="#E0A33A" Click="ColorButton_Click"
                                 Width="44" Height="38" Padding="0" Margin="0,0,8,8"
                                 Background="#E0A33A"
                                 Foreground="{DynamicResource OnAccountColorBrush}" FontSize="18"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                AutomationProperties.Name="Gold"/>
+                            AutomationProperties.Name="{DynamicResource Account.Gold}"/>
                         <Button Tag="#E36B8D" Click="ColorButton_Click"
                                 Width="44" Height="38" Padding="0" Margin="0,0,8,8"
                                 Background="#E36B8D"
                                 Foreground="{DynamicResource OnAccountColorBrush}" FontSize="18"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                AutomationProperties.Name="Rose"/>
+                            AutomationProperties.Name="{DynamicResource Account.Rose}"/>
                         <Button Tag="#A56DE2" Click="ColorButton_Click"
                                 Width="44" Height="38" Padding="0" Margin="0,0,8,8"
                                 Background="#A56DE2"
                                 Foreground="{DynamicResource OnAccountColorBrush}" FontSize="18"
                                 HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
-                                AutomationProperties.Name="Violet"/>
+                            AutomationProperties.Name="{DynamicResource Account.Violet}"/>
                     </WrapPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
                         <Border x:Name="SelectedColorPreview" Width="30" Height="30"
@@ -117,13 +117,13 @@
 
                 <WrapPanel Grid.Row="5" HorizontalAlignment="Right"
                            Margin="0,20,0,0">
-                    <Button Content="Cancel" Click="CancelButton_Click" IsCancel="True"
+            <Button Content="{DynamicResource Common.Cancel}" Click="CancelButton_Click" IsCancel="True"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
                             Padding="16,9" Margin="0,0,8,0"/>
-                    <Button Content="Save changes" Click="SaveButton_Click" IsDefault="True"
+            <Button Content="{DynamicResource Account.SaveChanges}" Click="SaveButton_Click" IsDefault="True"
                             Padding="22,9"
-                            AutomationProperties.Name="Save account details"/>
+                    AutomationProperties.Name="{DynamicResource Account.SaveName}"/>
                 </WrapPanel>
             </Grid>
         </Border>

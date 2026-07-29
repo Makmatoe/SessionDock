@@ -10,6 +10,7 @@ public sealed class AppSettings
     public WindowPlacementSettings? MainWindowPlacement { get; set; }
     public bool UiSoundsEnabled { get; set; } = true;
     public bool UseLightTheme { get; set; }
+    public string Language { get; set; } = "system";
     public string StartupSound { get; set; } = "soft";
     public string? CustomStartupSoundFileName { get; set; }
     public List<string> PendingProfileDeletionKeys { get; set; } = [];

@@ -1,7 +1,7 @@
 <Window x:Class="SessionDock.BatchLaunchDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Batch launch" Width="680" Height="720"
+        Title="{DynamicResource Batch.Title}" Width="680" Height="720"
         MinWidth="560" MinHeight="520"
         ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BackgroundBrush}"
@@ -21,19 +21,19 @@
             </Grid.RowDefinitions>
 
             <StackPanel>
-                <TextBlock x:Name="DialogTitleText" Text="Batch launch"
+                <TextBlock x:Name="DialogTitleText" Text="{DynamicResource Batch.Title}"
                            Foreground="{DynamicResource TextBrush}"
                            FontSize="22" FontWeight="SemiBold"/>
                 <TextBlock x:Name="DialogIntroText"
-                           Text="Each account uses its own saved destination. A blank account uses the first selected account's destination."
+                           Text="{DynamicResource Batch.Detail}"
                            Foreground="{DynamicResource MutedBrush}" FontSize="13"
                            Margin="0,6,0,0" TextWrapping="Wrap"/>
                 <TextBlock x:Name="CloseClientsWarningText"
-                           Text="Starting the batch closes every currently running verified Roblox Player instance."
+                           Text="{DynamicResource Batch.Warning}"
                            Foreground="{DynamicResource WarningTextBrush}"
                            FontSize="12" FontWeight="SemiBold"
                            Margin="0,9,0,0" TextWrapping="Wrap"/>
-                <TextBlock Text="SessionDock verifies every selected sign-in first, so an unavailable account cannot close your clients before the batch starts."
+                <TextBlock Text="{DynamicResource Batch.Verification}"
                            Foreground="{DynamicResource MutedBrush}" FontSize="11"
                            Margin="0,6,0,0" TextWrapping="Wrap"/>
             </StackPanel>
@@ -54,7 +54,7 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.ColumnSpan="3" Orientation="Horizontal">
-                        <TextBlock Text="SAVED PRESETS"
+                        <TextBlock Text="{DynamicResource Batch.Presets}"
                                    Foreground="{DynamicResource SubtleBrush}"
                                    FontSize="11" FontWeight="Bold"
                                    VerticalAlignment="Center"/>
@@ -67,20 +67,20 @@
                               Height="38" Margin="0,9,8,0"
                               DisplayMemberPath="Name"
                               VerticalContentAlignment="Center"
-                              AutomationProperties.Name="Saved batch preset"
-                              AutomationProperties.HelpText="Choose a saved account selection and delay"/>
-                    <Button Grid.Row="1" Grid.Column="1" Content="Load"
+                              AutomationProperties.Name="{DynamicResource Batch.PresetName}"
+                              AutomationProperties.HelpText="{DynamicResource Batch.PresetHelp}"/>
+                    <Button Grid.Row="1" Grid.Column="1" Content="{DynamicResource Common.Load}"
                             Click="LoadPresetButton_Click"
                             Margin="0,9,8,0" Padding="12,7"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
-                            AutomationProperties.Name="Load selected batch preset"/>
-                    <Button Grid.Row="1" Grid.Column="2" Content="Delete"
+                            AutomationProperties.Name="{DynamicResource Batch.LoadPresetName}"/>
+                    <Button Grid.Row="1" Grid.Column="2" Content="{DynamicResource Common.Delete}"
                             Click="DeletePresetButton_Click"
                             Margin="0,9,0,0" Padding="12,7"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
-                            AutomationProperties.Name="Delete selected batch preset"/>
+                            AutomationProperties.Name="{DynamicResource Batch.DeletePresetName}"/>
 
                     <Grid Grid.Row="2" Grid.ColumnSpan="3" Margin="0,9,0,0">
                         <Grid.ColumnDefinitions>
@@ -90,13 +90,13 @@
                         <Border Height="38" Style="{StaticResource TextFieldShell}">
                             <TextBox x:Name="PresetNameBox" MaxLength="40"
                                      Style="{StaticResource EmbeddedTextBox}"
-                                     AutomationProperties.Name="New batch preset name"
-                                     AutomationProperties.HelpText="Saving an existing name replaces that preset"/>
+                                     AutomationProperties.Name="{DynamicResource Batch.NewPresetName}"
+                                     AutomationProperties.HelpText="{DynamicResource Batch.NewPresetHelp}"/>
                         </Border>
-                        <Button Grid.Column="1" Content="Save current"
+                        <Button Grid.Column="1" Content="{DynamicResource Batch.SaveCurrent}"
                                 Click="SavePresetButton_Click"
                                 Margin="8,0,0,0" Padding="14,7"
-                                AutomationProperties.Name="Save current account selection as preset"/>
+                                AutomationProperties.Name="{DynamicResource Batch.SaveCurrentName}"/>
                     </Grid>
                 </Grid>
             </Border>
@@ -106,30 +106,30 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="ACCOUNTS"
+                <TextBlock Text="{DynamicResource Batch.Accounts}"
                            Foreground="{DynamicResource SubtleBrush}" FontSize="11"
                            FontWeight="Bold" VerticalAlignment="Center"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
                     <ComboBox x:Name="GroupComboBox" Width="150" Height="34"
                               Margin="0,0,6,0" DisplayMemberPath="Name"
                               VerticalContentAlignment="Center"
-                              AutomationProperties.Name="Account group"
-                              AutomationProperties.HelpText="Choose a group to select only its accounts"/>
-                    <Button Content="Select group" Click="SelectGroupButton_Click"
+                              AutomationProperties.Name="{DynamicResource Batch.GroupName}"
+                              AutomationProperties.HelpText="{DynamicResource Batch.GroupHelp}"/>
+                    <Button Content="{DynamicResource Batch.SelectGroup}" Click="SelectGroupButton_Click"
                             Background="Transparent"
                             Foreground="{DynamicResource InfoTextBrush}"
                             Padding="8,4" FontSize="12"
-                            AutomationProperties.Name="Select only accounts in chosen group"/>
-                    <Button Content="All" Click="SelectAllButton_Click"
+                            AutomationProperties.Name="{DynamicResource Batch.SelectGroupName}"/>
+                    <Button Content="{DynamicResource Common.All}" Click="SelectAllButton_Click"
                             Background="Transparent"
                             Foreground="{DynamicResource InfoTextBrush}"
                             Padding="8,4" FontSize="12"
-                            AutomationProperties.Name="Select all accounts"/>
-                    <Button Content="None" Click="SelectNoneButton_Click"
+                            AutomationProperties.Name="{DynamicResource Batch.SelectAllName}"/>
+                    <Button Content="{DynamicResource Common.None}" Click="SelectNoneButton_Click"
                             Background="Transparent"
                             Foreground="{DynamicResource SubtleBrush}"
                             Padding="8,4" FontSize="12"
-                            AutomationProperties.Name="Clear account selection"/>
+                            AutomationProperties.Name="{DynamicResource Batch.SelectNoneName}"/>
                 </StackPanel>
             </Grid>
 
@@ -140,7 +140,7 @@
                     BorderThickness="1" Padding="8">
                 <ListBox x:Name="AccountsList" Background="Transparent"
                          BorderThickness="0"
-                         AutomationProperties.Name="Accounts selected for this batch"
+                         AutomationProperties.Name="{DynamicResource Batch.SelectedAccountsName}"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem">
@@ -203,24 +203,24 @@
                     <ColumnDefinition Width="190"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Delay between launches"
+                    <TextBlock Text="{DynamicResource Batch.Delay}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="13" FontWeight="SemiBold"/>
-                    <TextBlock Text="Saved as the default after you start."
+                    <TextBlock Text="{DynamicResource Batch.DelayDetail}"
                                Foreground="{DynamicResource MutedBrush}" FontSize="11"
                                Margin="0,4,12,0" TextWrapping="Wrap"/>
                 </StackPanel>
                 <ComboBox x:Name="DelayComboBox" Grid.Column="1"
                           Height="40" VerticalContentAlignment="Center"
-                          AutomationProperties.Name="Delay between batch launches"
-                          AutomationProperties.HelpText="Wait after a launch and its optional hooks finish">
-                    <ComboBoxItem Content="3 seconds" Tag="3"/>
-                    <ComboBoxItem Content="5 seconds" Tag="5"/>
-                    <ComboBoxItem Content="8 seconds (recommended)" Tag="8"/>
-                    <ComboBoxItem Content="10 seconds" Tag="10"/>
-                    <ComboBoxItem Content="15 seconds" Tag="15"/>
-                    <ComboBoxItem Content="20 seconds" Tag="20"/>
-                    <ComboBoxItem Content="30 seconds" Tag="30"/>
+                          AutomationProperties.Name="{DynamicResource Batch.DelayName}"
+                          AutomationProperties.HelpText="{DynamicResource Batch.DelayHelp}">
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay3}" Tag="3"/>
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay5}" Tag="5"/>
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay8}" Tag="8"/>
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay10}" Tag="10"/>
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay15}" Tag="15"/>
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay20}" Tag="20"/>
+                    <ComboBoxItem Content="{DynamicResource Batch.Delay30}" Tag="30"/>
                 </ComboBox>
             </Grid>
 
@@ -235,13 +235,13 @@
                            AutomationProperties.LiveSetting="Polite"/>
                 <StackPanel Grid.Row="1" Orientation="Horizontal"
                             HorizontalAlignment="Right" Margin="0,8,0,0">
-                    <Button Content="Cancel" Click="CancelButton_Click" IsCancel="True"
+                    <Button Content="{DynamicResource Common.Cancel}" Click="CancelButton_Click" IsCancel="True"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
                             Padding="16,9" Margin="0,0,8,0"/>
-                    <Button x:Name="StartButton" Content="Start batch"
+                    <Button x:Name="StartButton" Content="{DynamicResource Batch.Start}"
                             Click="StartButton_Click" IsDefault="True"
-                            Padding="22,9" AutomationProperties.Name="Start batch launch"/>
+                            Padding="22,9" AutomationProperties.Name="{DynamicResource Batch.StartName}"/>
                 </StackPanel>
             </Grid>
         </Grid>

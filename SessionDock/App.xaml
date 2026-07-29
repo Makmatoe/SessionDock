@@ -7,6 +7,9 @@
                 <!-- Dark remains the no-settings/default palette. AppThemeService
                      replaces exactly this dictionary for live theme changes. -->
                 <ResourceDictionary Source="Themes/DarkTheme.xaml"/>
+                <!-- English is always retained as a safe fallback. The
+                     localization service adds a selected-language overlay. -->
+                <ResourceDictionary Source="Localization/Strings.en-US.xaml"/>
             </ResourceDictionary.MergedDictionaries>
 
         <!-- Shared 24px vector icon set. Keeping icons in XAML makes them DPI-safe
@@ -36,6 +39,7 @@
         <Geometry x:Key="IconRefresh">M 19,7 V 3 M 19,3 H 15 M 18.5,3.5 A 9,9 0 1 0 21,14</Geometry>
         <Geometry x:Key="IconSun">M 12,7 A 5,5 0 1 1 11.9,7 M 12,2 V 4 M 12,20 V 22 M 2,12 H 4 M 20,12 H 22 M 4.9,4.9 L 6.3,6.3 M 17.7,17.7 L 19.1,19.1 M 19.1,4.9 L 17.7,6.3 M 6.3,17.7 L 4.9,19.1</Geometry>
         <Geometry x:Key="IconMoon">M 19.5,15.5 A 8,8 0 0 1 8.5,4.5 A 8.5,8.5 0 1 0 19.5,15.5</Geometry>
+        <Geometry x:Key="IconLanguage">M 3,12 H 21 M 12,3 A 9,9 0 1 1 11.9,3 M 12,3 C 8.5,6 8.5,18 12,21 M 12,3 C 15.5,6 15.5,18 12,21</Geometry>
 
         <Style x:Key="KeyboardFocusVisual">
             <Setter Property="Control.Template">

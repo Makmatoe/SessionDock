@@ -22,6 +22,10 @@ SessionDock stores application settings and isolated browser profiles under
   destination;
 - sound preferences, generated built-in sound files, and a local copy under the
   `Sounds` folder of any startup sound the user explicitly imports;
+- the selected display-language preference (`system`, `en-US`, or `nl-NL`);
+  changing it only swaps bundled text resources and culture-aware display
+  formatting, without contacting a translation service or changing the stable
+  JSON representation of stored dates and numbers;
 - the current settings, the prior successful settings backup, and timestamped
   preserved copies of settings files that could not be read;
 - small recovery markers that keep automatic browser-profile cleanup paused

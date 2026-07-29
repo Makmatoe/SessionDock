@@ -76,7 +76,7 @@
                 </Grid.RowDefinitions>
                 <Border Width="40" Height="40" CornerRadius="10"
                         Background="{DynamicResource AccentBrush}"
-                        ToolTip="SessionDock — local Roblox launcher">
+                        ToolTip="{DynamicResource Main.AppTooltip}">
                     <TextBlock Text="SD" Foreground="{DynamicResource OnAccentTextBrush}" FontSize="13"
                                FontWeight="Bold" HorizontalAlignment="Center"
                                VerticalAlignment="Center"/>
@@ -88,9 +88,9 @@
                                   IsChecked="True"
                                   Click="ThemeToggleButton_Click"
                                   Margin="0,0,0,6"
-                                  AutomationProperties.Name="Dark theme on — switch to light"
-                                  AutomationProperties.HelpText="Switch SessionDock between dark and light appearance"
-                                  ToolTip="Dark theme on — switch to light">
+                                  AutomationProperties.Name="{DynamicResource Main.ThemeDarkToLight}"
+                                  AutomationProperties.HelpText="{DynamicResource Main.ThemeHelp}"
+                                  ToolTip="{DynamicResource Main.ThemeDarkToLight}">
                         <Path x:Name="ThemeToggleIcon"
                               Style="{StaticResource ButtonIcon}"
                               Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}"
@@ -100,17 +100,27 @@
                             Style="{StaticResource RailIconButton}"
                             Click="SoundSettingsButton_Click"
                             Margin="0,0,0,6"
-                            AutomationProperties.Name="Sound settings"
-                            ToolTip="Sound settings">
+                            AutomationProperties.Name="{DynamicResource Main.SoundSettings}"
+                            ToolTip="{DynamicResource Main.SoundSettings}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconSound}"/>
+                    </Button>
+                    <Button x:Name="LanguageSettingsButton"
+                            Style="{StaticResource RailIconButton}"
+                            Click="LanguageSettingsButton_Click"
+                            Margin="0,0,0,6"
+                            AutomationProperties.Name="{DynamicResource Main.LanguageSettings}"
+                            AutomationProperties.HelpText="{DynamicResource Main.LanguageSettingsHelp}"
+                            ToolTip="{DynamicResource Main.LanguageSettings}">
+                        <Path Style="{StaticResource ButtonIcon}"
+                              Data="{StaticResource IconLanguage}"/>
                     </Button>
                     <Button x:Name="IntegrationsButton"
                             Style="{StaticResource RailIconButton}"
                             Click="IntegrationsButton_Click"
                             Margin="0,0,0,6"
-                            AutomationProperties.Name="Manage integrations"
-                            ToolTip="Manage integrations">
+                            AutomationProperties.Name="{DynamicResource Main.ManageIntegrations}"
+                            ToolTip="{DynamicResource Main.ManageIntegrations}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconIntegration}"/>
                     </Button>
@@ -118,16 +128,16 @@
                             Style="{StaticResource RailIconButton}"
                             Click="RunningClientsButton_Click"
                             Margin="0,0,0,10"
-                            AutomationProperties.Name="Manage running Roblox clients"
-                            AutomationProperties.HelpText="View and close individual verified Roblox Player processes"
-                            ToolTip="View and close running Roblox clients">
+                            AutomationProperties.Name="{DynamicResource Main.ManageClients}"
+                            AutomationProperties.HelpText="{DynamicResource Main.ManageClientsHelp}"
+                            ToolTip="{DynamicResource Main.ViewClients}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconClients}"/>
                     </Button>
                     <Border Height="1" Background="{DynamicResource CardBorderBrush}" Margin="4,0,4,10"/>
                     <Border Width="40" Height="32" CornerRadius="8"
                             Background="{DynamicResource PrivacySurfaceBrush}"
-                            ToolTip="Accounts, history, and sessions stay on this PC">
+                            ToolTip="{DynamicResource Main.PrivacyTooltip}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconLock}"
                               Width="14" Height="14" Stroke="{DynamicResource PrivacyIconBrush}"
@@ -154,10 +164,10 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Choose where to play"
+                    <TextBlock Text="{DynamicResource Main.Heading}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="22" FontWeight="SemiBold"/>
-                    <TextBlock Text="Select an account, enter a destination, and launch."
+                    <TextBlock Text="{DynamicResource Main.Subtitle}"
                                Foreground="{DynamicResource MutedBrush}"
                                FontSize="11" Margin="0,2,0,0"/>
                 </StackPanel>
@@ -170,9 +180,9 @@
                             Background="{DynamicResource UtilitySurfaceBrush}" Foreground="{DynamicResource UtilityTextBrush}"
                             Click="AboutDiagnosticsButton_Click"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            AutomationProperties.Name="About SessionDock and diagnostics"
-                            AutomationProperties.HelpText="Review and copy privacy-safe support information"
-                            ToolTip="About SessionDock and privacy-safe diagnostics">
+                            AutomationProperties.Name="{DynamicResource Main.AboutName}"
+                            AutomationProperties.HelpText="{DynamicResource Main.AboutHelp}"
+                            ToolTip="{DynamicResource Main.AboutTooltip}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconActivity}"/>
                     </Button>
@@ -183,9 +193,9 @@
                             Background="{DynamicResource UtilitySurfaceBrush}" Foreground="{DynamicResource UtilityTextBrush}"
                             Click="ReleaseNotesButton_Click"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            AutomationProperties.Name="View current and previous release notes"
-                            AutomationProperties.HelpText="Shows changes in the installed release and the release before it"
-                            ToolTip="View included SessionDock release notes">
+                            AutomationProperties.Name="{DynamicResource Main.ReleaseNotesName}"
+                            AutomationProperties.HelpText="{DynamicResource Main.ReleaseNotesHelp}"
+                            ToolTip="{DynamicResource Main.ReleaseNotesTooltip}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconReleaseNotes}"/>
                     </Button>
@@ -196,8 +206,8 @@
                             Background="{DynamicResource UtilitySurfaceBrush}" Foreground="{DynamicResource UtilityTextBrush}"
                             Click="InstallUpdateButton_Click"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            AutomationProperties.Name="Check for signed updates"
-                            ToolTip="Check GitHub for a signed SessionDock update">
+                            AutomationProperties.Name="{DynamicResource Main.UpdateName}"
+                            ToolTip="{DynamicResource Main.UpdateTooltip}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconUpdate}"/>
                     </Button>
@@ -208,7 +218,7 @@
                             <Border Width="6" Height="6" CornerRadius="3"
                                     Background="{DynamicResource SuccessTextBrush}" Margin="0,0,7,0"
                                     VerticalAlignment="Center"/>
-                            <TextBlock Text="LOCAL" Foreground="{DynamicResource BadgeTextBrush}"
+                            <TextBlock Text="{DynamicResource Main.Local}" Foreground="{DynamicResource BadgeTextBrush}"
                                        FontSize="9" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
@@ -230,9 +240,9 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Width="58" VerticalAlignment="Center">
-                        <TextBlock Text="ACCOUNT" Style="{StaticResource SectionLabel}"/>
+                        <TextBlock Text="{DynamicResource Main.Account}" Style="{StaticResource SectionLabel}"/>
                         <TextBlock x:Name="AccountStripHintText"
-                                   Text="Drag to reorder"
+                                   Text="{DynamicResource Main.DragToReorder}"
                                    Foreground="{DynamicResource SubtleBrush}"
                                    FontSize="9" Margin="0,2,0,0"
                                    TextWrapping="Wrap"
@@ -250,7 +260,7 @@
                                       PreviewDragOver="AccountsScrollViewer_PreviewDragOver"
                                       PreviewDrop="AccountsScrollViewer_PreviewDrop"
                                       DragLeave="AccountsScrollViewer_DragLeave"
-                                      AutomationProperties.Name="Saved accounts">
+                                      AutomationProperties.Name="{DynamicResource Main.SavedAccounts}">
                             <StackPanel x:Name="AccountsList"
                                         Orientation="Horizontal"/>
                         </ScrollViewer>
@@ -277,11 +287,11 @@
                                      Style="{StaticResource EmbeddedTextBox}"
                                      MaxLength="256"
                                      TextChanged="AccountSearchBox_TextChanged"
-                                     ToolTip="Search by label, group, username, user ID, or saved destination (Ctrl+F; Escape clears)"
-                                     AutomationProperties.Name="Search saved accounts"
+                                     ToolTip="{DynamicResource Main.AccountSearchTooltip}"
+                                     AutomationProperties.Name="{DynamicResource Main.AccountSearchName}"
                                      AutomationProperties.LiveSetting="Polite"
-                                     AutomationProperties.HelpText="Filters saved accounts by label, group, username, user ID, or saved destination. Press Control F from Launch to focus this search, or Escape to clear it."/>
-                            <TextBlock Text="Search accounts..."
+                                     AutomationProperties.HelpText="{DynamicResource Main.AccountSearchHelp}"/>
+                            <TextBlock Text="{DynamicResource Main.AccountSearchPlaceholder}"
                                        Margin="10,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource SubtleBrush}"
@@ -308,8 +318,8 @@
                                 Width="34" Height="34" Padding="8"
                                 Background="{DynamicResource ControlSurfaceBrush}" Foreground="{DynamicResource InfoTextBrush}"
                                 Click="AddAccountButton_Click"
-                                AutomationProperties.Name="Add account"
-                                ToolTip="Add another isolated Roblox account">
+                            AutomationProperties.Name="{DynamicResource Main.AddAccount}"
+                            ToolTip="{DynamicResource Main.AddAccountTooltip}">
                             <Path Style="{StaticResource ButtonIcon}"
                                   Data="{StaticResource IconAdd}"/>
                         </Button>
@@ -319,8 +329,8 @@
                                 Margin="6,0,0,0"
                                 Background="{DynamicResource ControlSurfaceBrush}" Foreground="{DynamicResource ControlTextBrush}"
                                 Click="EditAccountButton_Click"
-                                AutomationProperties.Name="Edit selected account"
-                                ToolTip="Change the selected account label, group, and color">
+                            AutomationProperties.Name="{DynamicResource Main.EditAccount}"
+                            ToolTip="{DynamicResource Main.EditAccountTooltip}">
                             <Path Style="{StaticResource ButtonIcon}"
                                   Data="{StaticResource IconEdit}"/>
                         </Button>
@@ -330,8 +340,8 @@
                                 Margin="6,0,0,0"
                                 Background="{DynamicResource ErrorSurfaceBrush}" Foreground="{DynamicResource ErrorMutedTextBrush}"
                                 Click="ResetButton_Click"
-                                AutomationProperties.Name="Remove selected account"
-                                ToolTip="Clear and remove the selected local account profile">
+                            AutomationProperties.Name="{DynamicResource Main.RemoveAccount}"
+                            ToolTip="{DynamicResource Main.RemoveAccountTooltip}">
                             <Path Style="{StaticResource ButtonIcon}"
                                   Data="{StaticResource IconTrash}"/>
                         </Button>
@@ -363,32 +373,32 @@
                                         Click="LaunchTabButton_Click"
                                         Background="{DynamicResource SelectedControlSurfaceBrush}" Foreground="{DynamicResource SelectedControlTextBrush}"
                                         Margin="0,0,6,0"
-                                        AutomationProperties.Name="Launch"
-                                        AutomationProperties.ItemStatus="Selected"
-                                        ToolTip="Open the launch destination workspace">
+                            AutomationProperties.Name="{DynamicResource Main.Launch}"
+                            AutomationProperties.ItemStatus="{DynamicResource Main.SelectedStatus}"
+                            ToolTip="{DynamicResource Main.LaunchTabTooltip}">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource ButtonIcon}"
                                               Data="{StaticResource IconLaunch}"
                                               Width="14" Height="14" Margin="0,0,7,0"/>
-                                        <TextBlock Text="Launch"/>
+                        <TextBlock Text="{DynamicResource Main.Launch}"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="RecentTabButton"
                                         Style="{StaticResource SegmentButton}"
                                         Click="RecentTabButton_Click"
-                                        AutomationProperties.Name="Recent"
-                                        AutomationProperties.ItemStatus="Not selected"
-                                        ToolTip="Show recently launched experiences">
+                            AutomationProperties.Name="{DynamicResource Main.Recent}"
+                            AutomationProperties.ItemStatus="{DynamicResource Main.NotSelectedStatus}"
+                            ToolTip="{DynamicResource Main.RecentTabTooltip}">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Style="{StaticResource ButtonIcon}"
                                               Data="{StaticResource IconHistory}"
                                               Width="14" Height="14" Margin="0,0,7,0"/>
-                                        <TextBlock Text="Recent"/>
+                        <TextBlock Text="{DynamicResource Main.Recent}"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
                             <TextBlock Grid.Column="2"
-                                       Text="Destination saved per account"
+                               Text="{DynamicResource Main.DestinationSaved}"
                                        Foreground="{DynamicResource SubtleBrush}"
                                        FontSize="10" VerticalAlignment="Center"/>
                         </Grid>
@@ -406,31 +416,31 @@
                                 </Grid.RowDefinitions>
 
                                 <StackPanel>
-                                    <TextBlock Text="Destination"
+                            <TextBlock Text="{DynamicResource Main.Destination}"
                                                Foreground="{DynamicResource TextBrush}"
                                                FontSize="16" FontWeight="SemiBold"/>
                                     <TextBlock x:Name="DestinationHelpText"
-                                               Text="Place ID, Roblox URL, private-server link, share code, or tracked Job ID."
+                                       Text="{DynamicResource Main.DestinationHelp}"
                                                Foreground="{DynamicResource MutedBrush}"
                                                FontSize="12" Margin="0,4,0,0"
                                                TextWrapping="Wrap"/>
                                     <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
                                         <Button x:Name="ExperienceDestinationModeButton"
-                                                Content="Experience"
+                                          Content="{DynamicResource Main.Experience}"
                                                 Style="{StaticResource SegmentButton}"
                                                 Click="ExperienceDestinationModeButton_Click"
                                                 Background="{DynamicResource SelectedControlSurfaceBrush}"
                                                 Foreground="{DynamicResource SelectedControlTextBrush}"
                                                 Padding="10,7" Margin="0,0,4,0"
-                                                AutomationProperties.Name="Join an experience"
-                                                AutomationProperties.ItemStatus="Selected"/>
+                                          AutomationProperties.Name="{DynamicResource Main.JoinExperience}"
+                                          AutomationProperties.ItemStatus="{DynamicResource Main.SelectedStatus}"/>
                                         <Button x:Name="UserDestinationModeButton"
-                                                Content="User"
+                                          Content="{DynamicResource Main.User}"
                                                 Style="{StaticResource SegmentButton}"
                                                 Click="UserDestinationModeButton_Click"
                                                 Padding="10,7"
-                                                AutomationProperties.Name="Join a user"
-                                                AutomationProperties.ItemStatus="Not selected"/>
+                                          AutomationProperties.Name="{DynamicResource Main.JoinUser}"
+                                          AutomationProperties.ItemStatus="{DynamicResource Main.NotSelectedStatus}"/>
                                     </StackPanel>
                                 </StackPanel>
 
@@ -450,8 +460,8 @@
                                                      TextChanged="PlaceIdBox_TextChanged"
                                                      LostKeyboardFocus="PlaceIdBox_LostKeyboardFocus"
                                                      KeyDown="PlaceIdBox_KeyDown"
-                                                     ToolTip="Place ID, official Roblox URL, private-server link, share code, or tracked Server JobId"
-                                                     AutomationProperties.Name="Roblox destination"/>
+                                         ToolTip="{DynamicResource Main.DestinationInputTooltip}"
+                                         AutomationProperties.Name="{DynamicResource Main.DestinationInputName}"/>
                                         </Border>
                                         <Button x:Name="SetDestinationForAllButton"
                                                 Grid.Column="1" Height="46" MinWidth="116"
@@ -459,13 +469,13 @@
                                                 Style="{StaticResource QuietButton}"
                                                 IsEnabled="False"
                                                 Click="SetDestinationForAllButton_Click"
-                                                ToolTip="Copy this valid destination to every saved account"
-                                                AutomationProperties.Name="Set destination for all accounts">
+                                    ToolTip="{DynamicResource Main.SetForAllTooltip}"
+                                    AutomationProperties.Name="{DynamicResource Main.SetForAllName}">
                                             <StackPanel Orientation="Horizontal">
                                                 <Path Style="{StaticResource ButtonIcon}"
                                                       Data="{StaticResource IconBatch}"
                                                       Width="14" Height="14" Margin="0,0,6,0"/>
-                                                <TextBlock Text="Set for all"/>
+                                <TextBlock Text="{DynamicResource Main.SetForAll}"/>
                                             </StackPanel>
                                         </Button>
                                     </Grid>
@@ -493,7 +503,7 @@
                                                   StrokeLineJoin="Round"
                                                   VerticalAlignment="Top"/>
                                             <TextBlock Grid.Column="1"
-                                                       Text="Tracked Job ID: Roblox may close the Player if this server is no longer available."
+                                           Text="{DynamicResource Main.TrackedJobWarning}"
                                                        Foreground="{DynamicResource WarningMutedTextBrush}" FontSize="11"
                                                        TextWrapping="Wrap"
                                                        AutomationProperties.LiveSetting="Polite"/>
@@ -521,10 +531,10 @@
                                         </Border>
                                         <StackPanel Grid.Column="1" Margin="9,0,0,0"
                                                     VerticalAlignment="Center">
-                                            <TextBlock Text="Launching with the selected account"
+                                        <TextBlock Text="{DynamicResource Main.LaunchingSelected}"
                                                        Foreground="{DynamicResource ControlTextBrush}" FontSize="12"
                                                        FontWeight="SemiBold"/>
-                                            <TextBlock Text="Each account remembers its own destination; history remains shared."
+                                        <TextBlock Text="{DynamicResource Main.PerAccountHistory}"
                                                        Foreground="{DynamicResource SubtleBrush}"
                                                        FontSize="10" Margin="0,2,0,0"
                                                        TextWrapping="Wrap"/>
@@ -542,13 +552,13 @@
                                             Click="SignInButton_Click"
                                             Visibility="Collapsed"
                                             HorizontalAlignment="Left"
-                                            AutomationProperties.Name="Sign in to Roblox"
-                                            ToolTip="Open the official Roblox sign-in page for this account">
+                                    AutomationProperties.Name="{DynamicResource Main.SignInName}"
+                                    ToolTip="{DynamicResource Main.SignInTooltip}">
                                         <StackPanel Orientation="Horizontal">
                                             <Path Style="{StaticResource ButtonIcon}"
                                                   Data="{StaticResource IconBrowser}"
                                                   Width="15" Height="15" Margin="0,0,7,0"/>
-                                            <TextBlock x:Name="SignInButtonLabel" Text="Sign in"/>
+                                <TextBlock x:Name="SignInButtonLabel" Text="{DynamicResource Main.SignIn}"/>
                                         </StackPanel>
                                     </Button>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -557,25 +567,25 @@
                                                 Click="BatchLaunchButton_Click"
                                                 MinWidth="118" IsEnabled="False"
                                                 Margin="0,0,8,0"
-                                                AutomationProperties.Name="Batch launch"
-                                                ToolTip="Launch each selected account's saved destination">
+                                    AutomationProperties.Name="{DynamicResource Main.BatchLaunch}"
+                                    ToolTip="{DynamicResource Main.BatchTooltip}">
                                             <StackPanel Orientation="Horizontal">
                                                 <Path Style="{StaticResource ButtonIcon}"
                                                       Data="{StaticResource IconBatch}"
                                                       Width="15" Height="15" Margin="0,0,7,0"/>
-                                                <TextBlock Text="Batch"/>
+                                <TextBlock Text="{DynamicResource Main.Batch}"/>
                                             </StackPanel>
                                         </Button>
                                         <Button x:Name="LaunchButton"
                                                 Click="LaunchButton_Click"
                                                 MinWidth="170" IsEnabled="False"
-                                                AutomationProperties.Name="Launch Roblox"
-                                                ToolTip="Launch immediately with the selected account">
+                                    AutomationProperties.Name="{DynamicResource Main.LaunchRoblox}"
+                                    ToolTip="{DynamicResource Main.LaunchTooltip}">
                                             <StackPanel Orientation="Horizontal">
                                                 <Path Style="{StaticResource ButtonIcon}"
                                                       Data="{StaticResource IconLaunch}"
                                                       Width="15" Height="15" Margin="0,0,7,0"/>
-                                                <TextBlock x:Name="LaunchButtonLabel" Text="Launch"/>
+                                <TextBlock x:Name="LaunchButtonLabel" Text="{DynamicResource Main.Launch}"/>
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>
@@ -592,10 +602,10 @@
                                 <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <StackPanel>
-                                <TextBlock Text="Recent experiences"
+                                <TextBlock Text="{DynamicResource Main.RecentExperiences}"
                                            Foreground="{DynamicResource TextBrush}"
                                            FontSize="16" FontWeight="SemiBold"/>
-                                <TextBlock Text="Reuse a destination with the currently selected account."
+                                <TextBlock Text="{DynamicResource Main.RecentSubtitle}"
                                            Foreground="{DynamicResource MutedBrush}"
                                            FontSize="12" Margin="0,4,0,0"/>
                             </StackPanel>
@@ -607,22 +617,22 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button x:Name="AllTypeFilterButton" Content="All"
+                                    <Button x:Name="AllTypeFilterButton" Content="{DynamicResource Common.All}"
                                             Style="{StaticResource SegmentButton}"
                                             Click="AllTypeFilterButton_Click"
                                             Background="{DynamicResource SelectedControlSurfaceBrush}" Foreground="{DynamicResource SelectedControlTextBrush}"
                                             Padding="10,7" Margin="0,0,4,0"
-                                            AutomationProperties.ItemStatus="Selected"/>
-                                    <Button x:Name="PublicFilterButton" Content="Public"
+                                            AutomationProperties.ItemStatus="{DynamicResource Main.SelectedStatus}"/>
+                                    <Button x:Name="PublicFilterButton" Content="{DynamicResource Main.Public}"
                                             Style="{StaticResource SegmentButton}"
                                             Click="PublicFilterButton_Click"
                                             Padding="10,7" Margin="0,0,4,0"
-                                            AutomationProperties.ItemStatus="Not selected"/>
-                                    <Button x:Name="PrivateFilterButton" Content="Private"
+                                            AutomationProperties.ItemStatus="{DynamicResource Main.NotSelectedStatus}"/>
+                                    <Button x:Name="PrivateFilterButton" Content="{DynamicResource Main.Private}"
                                             Style="{StaticResource SegmentButton}"
                                             Click="PrivateFilterButton_Click"
                                             Padding="10,7"
-                                            AutomationProperties.ItemStatus="Not selected"/>
+                                            AutomationProperties.ItemStatus="{DynamicResource Main.NotSelectedStatus}"/>
                                 </StackPanel>
                                 <Border Grid.Column="1" Height="34"
                                         MinWidth="120" MaxWidth="280"
@@ -633,11 +643,11 @@
                                                  Style="{StaticResource EmbeddedTextBox}"
                                                  MaxLength="256"
                                                  TextChanged="RecentSearchBox_TextChanged"
-                                                 ToolTip="Search Recent and Favorites by name, place, account, destination, or server JobId (Ctrl+F; Escape clears)"
-                                                 AutomationProperties.Name="Search Recent and Favorites"
+                                                 ToolTip="{DynamicResource Main.RecentSearchTooltip}"
+                                                 AutomationProperties.Name="{DynamicResource Main.RecentSearchName}"
                                                  AutomationProperties.LiveSetting="Polite"
-                                                 AutomationProperties.HelpText="Filters Recent and Favorites by custom name, Roblox name, Place ID, account username, destination, or server JobId. Press Control F from Recent to focus this search, or Escape to clear it."/>
-                                        <TextBlock Text="Search saved experiences..."
+                                                 AutomationProperties.HelpText="{DynamicResource Main.RecentSearchHelp}"/>
+                                        <TextBlock Text="{DynamicResource Main.RecentSearchPlaceholder}"
                                                    Margin="10,0"
                                                    VerticalAlignment="Center"
                                                    Foreground="{DynamicResource SubtleBrush}"
@@ -661,15 +671,15 @@
                                           Width="168" Height="34"
                                           SelectionChanged="AccountFilterCombo_SelectionChanged"
                                           Padding="8,4"
-                                          AutomationProperties.Name="Recent account filter"/>
+                                          AutomationProperties.Name="{DynamicResource Main.RecentAccountFilter}"/>
                                 <Button x:Name="ClearHistoryButton" Grid.Column="3"
                                         Style="{StaticResource IconOnlyButton}"
                                         Width="32" Height="32" Padding="7"
                                         Margin="8,0,0,0"
                                         Click="ClearHistoryButton_Click"
                                         Background="Transparent" Foreground="{DynamicResource MutedBrush}"
-                                        AutomationProperties.Name="Clear history"
-                                        ToolTip="Remove non-favorite history in the selected type">
+                                        AutomationProperties.Name="{DynamicResource Main.ClearHistory}"
+                                        ToolTip="{DynamicResource Main.ClearHistoryTooltip}">
                                     <Path Style="{StaticResource ButtonIcon}"
                                           Data="{StaticResource IconTrash}"/>
                                 </Button>
@@ -679,12 +689,12 @@
                                           VerticalScrollBarVisibility="Auto"
                                           HorizontalScrollBarVisibility="Disabled"
                                           PanningMode="VerticalOnly"
-                                          AutomationProperties.Name="Recent experiences list">
+                                          AutomationProperties.Name="{DynamicResource Main.RecentList}">
                                 <StackPanel x:Name="RecentExperiencesList"/>
                             </ScrollViewer>
                             <Grid Grid.Row="3">
                                 <TextBlock x:Name="RecentPrivacyText"
-                                           Text="Shared across accounts • stored only on this PC"
+                                           Text="{DynamicResource Main.SharedLocal}"
                                            Foreground="{DynamicResource SubtleBrush}"
                                            FontSize="10" VerticalAlignment="Center"/>
                             </Grid>
@@ -713,10 +723,10 @@
                                         Background="{DynamicResource AccentBrush}"
                                         Margin="0,0,9,0"/>
                                 <StackPanel>
-                                    <TextBlock Text="Official Roblox sign-in"
+                                    <TextBlock Text="{DynamicResource Main.OfficialSignIn}"
                                                Foreground="{DynamicResource TextBrush}"
                                                FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="Use Ctrl+V or right-click to paste"
+                                    <TextBlock Text="{DynamicResource Main.PasteHint}"
                                                Foreground="{DynamicResource SubtleBrush}"
                                                FontSize="9" Margin="0,2,0,0"/>
                                 </StackPanel>
@@ -724,14 +734,14 @@
                             <Button Grid.Column="1"
                                     Style="{StaticResource QuietButton}"
                                     Margin="0,9,10,9" Padding="13,7"
-                                    AutomationProperties.Name="Back to launcher"
-                                    ToolTip="Back to the launch workspace"
+                                    AutomationProperties.Name="{DynamicResource Main.BackName}"
+                                    ToolTip="{DynamicResource Main.BackTooltip}"
                                     Click="BrowserBackButton_Click">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource ButtonIcon}"
                                           Data="{StaticResource IconBack}"
                                           Width="14" Height="14" Margin="0,0,6,0"/>
-                                    <TextBlock Text="Back"/>
+                                    <TextBlock Text="{DynamicResource Main.Back}"/>
                                 </StackPanel>
                             </Button>
                         </Grid>
@@ -766,12 +776,12 @@
                     <StackPanel Grid.Column="1" Margin="10,0,14,0"
                                 VerticalAlignment="Center">
                         <TextBlock x:Name="StatusTitle"
-                                   Text="Checking your Roblox session…"
+                                   Text="{DynamicResource Main.CheckingSession}"
                                    Foreground="{DynamicResource TextBrush}"
                                    FontSize="13" FontWeight="SemiBold"
                                    TextWrapping="Wrap"/>
                         <TextBlock x:Name="StatusDetail"
-                                   Text="This normally takes only a moment."
+                                   Text="{DynamicResource Main.CheckingSessionDetail}"
                                    Foreground="{DynamicResource MutedBrush}"
                                    FontSize="10" Margin="0,2,0,0"
                                    TextWrapping="Wrap"/>
@@ -780,28 +790,28 @@
                         <Border x:Name="SessionBadgeBorder"
                                 Background="{DynamicResource SuccessSurfaceBrush}" CornerRadius="7"
                                 Padding="9,5" HorizontalAlignment="Right">
-                            <TextBlock x:Name="SessionBadge" Text="CHECKING SESSION"
+                            <TextBlock x:Name="SessionBadge" Text="{DynamicResource Main.CheckingSessionBadge}"
                                        Foreground="{DynamicResource SuccessTextBrush}" FontSize="9"
                                        FontWeight="SemiBold"/>
                         </Border>
                         <Button x:Name="RetryFailedBatchButton"
                                 Visibility="Collapsed" IsEnabled="False"
                                 Click="RetryFailedBatchButton_Click"
-                                Content="Retry failed only" Margin="0,5,0,0"
+                                Content="{DynamicResource Main.RetryFailed}" Margin="0,5,0,0"
                                 Padding="8,5" FontSize="10"
                                 HorizontalAlignment="Right"
                                 Background="{DynamicResource WarningSurfaceBrush}"
                                 Foreground="{DynamicResource WarningTextBrush}"
-                                AutomationProperties.Name="Retry failed batch accounts"
-                                AutomationProperties.HelpText="Review only the accounts that failed in the last batch"/>
+                                AutomationProperties.Name="{DynamicResource Main.RetryFailedName}"
+                                AutomationProperties.HelpText="{DynamicResource Main.RetryFailedHelp}"/>
                         <Button x:Name="CancelBatchButton"
                                 Visibility="Collapsed" IsEnabled="False"
                                 Click="CancelBatchButton_Click"
-                                Content="Cancel batch" Margin="0,5,0,0"
+                                Content="{DynamicResource Main.CancelBatch}" Margin="0,5,0,0"
                                 Padding="8,5" FontSize="10"
                                 HorizontalAlignment="Right"
                                 Background="{DynamicResource ErrorSurfaceBrush}" Foreground="{DynamicResource ErrorMutedTextBrush}"
-                                AutomationProperties.Name="Cancel batch launch"/>
+                                AutomationProperties.Name="{DynamicResource Main.CancelBatchName}"/>
                     </StackPanel>
                 </Grid>
             </Border>
@@ -811,11 +821,11 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="Roblox Player and Microsoft Edge WebView2 are required."
+                <TextBlock Text="{DynamicResource Main.Requirements}"
                            Foreground="{DynamicResource SubtleBrush}" FontSize="10"
                            TextTrimming="CharacterEllipsis"/>
                 <TextBlock Grid.Column="1"
-                           Text="Not affiliated with Roblox Corporation."
+                           Text="{DynamicResource Main.NotAffiliated}"
                            Foreground="{DynamicResource SubtleBrush}" FontSize="10"
                            Margin="14,0,0,0"/>
             </Grid>

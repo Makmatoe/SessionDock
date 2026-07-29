@@ -902,6 +902,9 @@ internal static class AppDataPaths
         settings.MainWindowPlacement is null &&
         settings.UiSoundsEnabled &&
         !settings.UseLightTheme &&
+        LocalizationPreference.System.Equals(
+            settings.Language,
+            StringComparison.Ordinal) &&
         "soft".Equals(settings.StartupSound, StringComparison.Ordinal) &&
         settings.CustomStartupSoundFileName is null &&
         settings.PendingProfileDeletionKeys is { Count: 0 } &&

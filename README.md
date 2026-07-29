@@ -85,6 +85,12 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   clients; Roblox still decides whether multiple Players may run.
 - Closes all visible and background Roblox Player processes on request.
 - Provides optional interface sounds and a user-selected startup sound.
+- Provides live **System default**, **English (United States)**, and
+  **Dutch (Netherlands)** display-language choices from the sidebar. System
+  default follows Dutch Windows installations and otherwise uses the complete
+  English fallback; the choice is remembered locally and does not require a
+  restart. Display dates and times follow the selected culture, while stored
+  data keeps its stable machine-readable format.
 - Provides an **About and diagnostics** panel with an exact, reviewable support
   summary that can be copied or exported as text. The summary contains bounded
   counts and system/component states, never settings files, logs, paths,

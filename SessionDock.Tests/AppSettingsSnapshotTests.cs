@@ -91,6 +91,7 @@ public sealed class AppSettingsSnapshotTests
             "BatchLaunchPresets",
             "CustomStartupSoundFileName",
             "Destination",
+            "Language",
             "LockedUserId",
             "LockedUsername",
             "MainWindowPlacement",
@@ -219,6 +220,7 @@ public sealed class AppSettingsSnapshotTests
             },
             UiSoundsEnabled = false,
             UseLightTheme = true,
+            Language = LocalizationPreference.Dutch,
             StartupSound = "bright",
             CustomStartupSoundFileName = "startup-custom.wav",
             PendingProfileDeletionKeys =
@@ -267,6 +269,7 @@ public sealed class AppSettingsSnapshotTests
 
         settings.UiSoundsEnabled = true;
         settings.UseLightTheme = false;
+        settings.Language = LocalizationPreference.English;
         settings.StartupSound = "soft";
         settings.CustomStartupSoundFileName = null;
         settings.PendingProfileDeletionKeys = [];

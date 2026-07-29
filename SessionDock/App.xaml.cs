@@ -2,8 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Shell;
 using System.Windows.Media;
+using System.Windows.Shell;
 using System.Windows.Threading;
 using SessionDock.Services;
 
@@ -18,6 +18,7 @@ public partial class App : Application
 #endif
     private SingleInstanceService? _singleInstance;
     private AppThemeService? _themeService;
+    private AppLocalizationService? _localizationService;
     public UiSoundService SoundService { get; private set; } = null!;
     public bool UiSoundsEnabled { get; set; } = true;
 #if SESSIONDOCK_SMOKE_HARNESS
@@ -26,6 +27,9 @@ public partial class App : Application
     internal AppThemeService ThemeService => _themeService ??
         throw new InvalidOperationException(
             "The application theme service has not started.");
+    internal AppLocalizationService LocalizationService =>
+        _localizationService ?? throw new InvalidOperationException(
+            "The application localization service has not started.");
 
     public App()
     {
@@ -69,6 +73,7 @@ public partial class App : Application
         base.OnStartup(e);
         _themeService = new AppThemeService(this);
         _themeService.ThemeChanged += ThemeService_ThemeChanged;
+        _localizationService = new AppLocalizationService(this);
 
         if (!ApplicationStartup.TryStart(
                 () =>
@@ -140,6 +145,7 @@ public partial class App : Application
         if (_themeService is not null)
             _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         _themeService?.Dispose();
+        _localizationService?.Dispose();
         SoundService?.Dispose();
         base.OnExit(e);
     }
@@ -231,6 +237,7 @@ public partial class App : Application
             }
             VerifyIntegratedWindowChrome(mainWindow);
             mainWindow.VerifyThemeSwitchForRuntimeSmoke();
+            mainWindow.VerifyLocalizationSwitchForRuntimeSmoke();
             mainWindow.VerifyJoinUserUiForRuntimeSmoke();
 
             void HandleShutdownCompleted(Exception? shutdownFailure)

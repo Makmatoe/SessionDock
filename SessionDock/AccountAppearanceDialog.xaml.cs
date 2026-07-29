@@ -11,12 +11,12 @@ public partial class AccountAppearanceDialog : Window
     private static readonly IReadOnlyDictionary<string, string> ColorNames =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            ["#7C5CFC"] = "Purple",
-            ["#4D8DFF"] = "Blue",
-            ["#27B58A"] = "Green",
-            ["#E0A33A"] = "Gold",
-            ["#E36B8D"] = "Rose",
-            ["#A56DE2"] = "Violet"
+            ["#7C5CFC"] = "Account.Purple",
+            ["#4D8DFF"] = "Account.Blue",
+            ["#27B58A"] = "Account.Green",
+            ["#E0A33A"] = "Account.Gold",
+            ["#E36B8D"] = "Account.Rose",
+            ["#A56DE2"] = "Account.Violet"
         };
 
     public string? AccountLabel { get; private set; }
@@ -27,7 +27,11 @@ public partial class AccountAppearanceDialog : Window
     {
         InitializeComponent();
         WindowLayoutService.FitToWorkArea(this);
-        AccountIdentityText.Text = $"@{account.Username}  •  User ID {account.UserId}";
+        var localization = ((App)Application.Current).LocalizationService;
+        AccountIdentityText.Text = localization.Format(
+            "Main.AccountIdentity",
+            account.Username,
+            account.UserId);
         LabelBox.Text = account.Label ?? string.Empty;
         GroupBox.Text = account.Group ?? string.Empty;
         SelectedColor = SettingsService.AccountColors.Contains(account.ColorHex)
@@ -57,7 +61,10 @@ public partial class AccountAppearanceDialog : Window
     {
         SelectedColorPreview.Background =
             new SolidColorBrush((Color)ColorConverter.ConvertFromString(SelectedColor));
-        SelectedColorText.Text = $"Selected: {ColorNames[SelectedColor]}";
+        var localization = ((App)Application.Current).LocalizationService;
+        SelectedColorText.Text = localization.Format(
+            "Account.SelectedColor",
+            localization.GetString(ColorNames[SelectedColor]));
         foreach (var button in ColorChoices.Children.OfType<Button>())
         {
             var selected = button.Tag is string color &&
@@ -68,7 +75,8 @@ public partial class AccountAppearanceDialog : Window
             button.Opacity = selected ? 1 : 0.72;
             System.Windows.Automation.AutomationProperties.SetItemStatus(
                 button,
-                selected ? "Selected" : "Not selected");
+                localization.GetString(
+                    selected ? "Common.Selected" : "Common.NotSelected"));
         }
     }
 

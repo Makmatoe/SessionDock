@@ -187,7 +187,9 @@ public partial class MainWindow
         var title = recent.CustomName
             ?? recent.Name
             ?? $"Place {recent.PlaceId}";
-        var timestamp = recent.LastLaunchedAt.ToLocalTime().ToString("g");
+        var timestamp = LocalizationCulture.FormatLocalDateTime(
+            recent.LastLaunchedAt,
+            Localization.EffectiveCulture);
         var type = recent.IsPrivateServer ? "Private server" : "Public";
         var account = string.IsNullOrWhiteSpace(recent.AccountUsername)
             ? "Unknown account"
@@ -758,7 +760,7 @@ public partial class MainWindow
         AccountFilterCombo.Items.Clear();
         AccountFilterCombo.Items.Add(new ComboBoxItem
         {
-            Content = "All accounts",
+            Content = Localize("Main.AllAccounts"),
             Tag = 0L
         });
         foreach (var account in accountIds)

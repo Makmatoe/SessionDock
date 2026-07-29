@@ -1163,6 +1163,7 @@ public sealed class SettingsService
         var originalBatchLaunchDelaySeconds =
             settings.BatchLaunchDelaySeconds;
         var originalMainWindowPlacement = settings.MainWindowPlacement;
+        var originalLanguage = settings.Language;
         var originalPendingDeletionKeys =
             settings.PendingProfileDeletionKeys ?? [];
         settings.PendingProfileDeletionKeys = originalPendingDeletionKeys
@@ -1190,12 +1191,18 @@ public sealed class SettingsService
                 settings.BatchLaunchPresets,
                 settings.Accounts)
             .ToList();
+        settings.Language = LocalizationPreference.Normalize(
+            settings.Language);
         pendingDeletionStateWasNormalized =
             !originalPendingDeletionKeys.SequenceEqual(
                 settings.PendingProfileDeletionKeys,
                 StringComparer.OrdinalIgnoreCase) ||
             originalBatchLaunchDelaySeconds !=
                 settings.BatchLaunchDelaySeconds ||
+            !string.Equals(
+                originalLanguage,
+                settings.Language,
+                StringComparison.Ordinal) ||
             !BatchLaunchPreferences.AreEquivalent(
                 originalBatchLaunchPresets,
                 settings.BatchLaunchPresets) ||

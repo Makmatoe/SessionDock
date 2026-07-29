@@ -138,6 +138,7 @@ public sealed class SettingsMutationTests
             ],
             UiSoundsEnabled = true,
             UseLightTheme = true,
+            Language = LocalizationPreference.Dutch,
             StartupSound = "soft"
         };
     }
@@ -157,6 +158,7 @@ public sealed class SettingsMutationTests
         settings.RecentExperiences.Clear();
         settings.UiSoundsEnabled = false;
         settings.UseLightTheme = false;
+        settings.Language = LocalizationPreference.English;
         settings.StartupSound = "bright";
         settings.CustomStartupSoundFileName = "startup-custom.wav";
         settings.PendingProfileDeletionKeys.Add(Guid.NewGuid().ToString("N"));
@@ -180,6 +182,7 @@ public sealed class SettingsMutationTests
         Assert.Equal("Original place", originalRecent.Name);
         Assert.True(settings.UiSoundsEnabled);
         Assert.True(settings.UseLightTheme);
+        Assert.Equal(LocalizationPreference.Dutch, settings.Language);
         Assert.Equal("soft", settings.StartupSound);
         Assert.Null(settings.CustomStartupSoundFileName);
         Assert.Empty(settings.PendingProfileDeletionKeys);

@@ -32,7 +32,8 @@ public partial class SoundSettingsDialog : Window
         UiSoundsCheckBox.IsChecked = uiSoundsEnabled;
         SelectStartupSound(StartupSound);
         ImportedSoundText.Text = customFileName is null
-            ? "No custom sound imported"
+            ? ((App)Application.Current).LocalizationService.GetString(
+                "Sound.NoCustom")
             : customFileName;
         Closed += (_, _) => _soundService.StopPreview();
     }
@@ -57,8 +58,10 @@ public partial class SoundSettingsDialog : Window
     {
         var dialog = new OpenFileDialog
         {
-            Title = "Import startup sound",
-            Filter = "Audio files (*.wav;*.mp3;*.wma;*.m4a)|*.wav;*.mp3;*.wma;*.m4a|All files (*.*)|*.*",
+            Title = ((App)Application.Current).LocalizationService.GetString(
+                "Sound.ImportTitle"),
+            Filter = ((App)Application.Current).LocalizationService.GetString(
+                "Sound.ImportFilter"),
             CheckFileExists = true,
             Multiselect = false
         };
@@ -109,7 +112,8 @@ public partial class SoundSettingsDialog : Window
             PendingCustomSourcePath is null &&
             !UiSoundService.IsValidImportedFileName(_existingCustomFileName))
         {
-            ValidationText.Text = "Import an audio file before selecting Imported sound.";
+            ValidationText.Text = ((App)Application.Current)
+                .LocalizationService.GetString("Sound.ImportRequired");
             return;
         }
 

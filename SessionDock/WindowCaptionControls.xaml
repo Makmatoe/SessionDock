@@ -89,8 +89,8 @@
         <Button x:Name="MinimizeButton"
                 Style="{StaticResource CaptionButton}"
                 Click="MinimizeButton_Click"
-                AutomationProperties.Name="Minimize window"
-                ToolTip="Minimize">
+                AutomationProperties.Name="{DynamicResource Caption.MinimizeName}"
+                ToolTip="{DynamicResource Caption.Minimize}">
             <Path Width="12" Height="12" Stretch="Uniform"
                   Data="M 2,8 H 14"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
@@ -100,8 +100,8 @@
         <Button x:Name="MaximizeButton"
                 Style="{StaticResource CaptionButton}"
                 Click="MaximizeButton_Click"
-                AutomationProperties.Name="Maximize window"
-                ToolTip="Maximize">
+                AutomationProperties.Name="{DynamicResource Caption.MaximizeName}"
+                ToolTip="{DynamicResource Caption.Maximize}">
             <Grid Width="12" Height="12" IsHitTestVisible="False">
                 <Path x:Name="MaximizeGlyph" Stretch="Uniform"
                       Data="M 2.5,2.5 H 13.5 V 13.5 H 2.5 Z"
@@ -116,8 +116,8 @@
         <Button x:Name="CloseButton"
                 Style="{StaticResource CloseCaptionButton}"
                 Click="CloseButton_Click"
-                AutomationProperties.Name="Close window"
-                ToolTip="Close">
+                AutomationProperties.Name="{DynamicResource Caption.CloseName}"
+                ToolTip="{DynamicResource Caption.Close}">
             <Path Width="12" Height="12" Stretch="Uniform"
                   Data="M 3,3 L 13,13 M 13,3 L 3,13"
                   Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"

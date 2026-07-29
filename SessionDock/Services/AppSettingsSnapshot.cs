@@ -128,6 +128,7 @@ internal static class AppSettingsSnapshot
             : Clone(source.MainWindowPlacement);
         target.UiSoundsEnabled = source.UiSoundsEnabled;
         target.UseLightTheme = source.UseLightTheme;
+        target.Language = source.Language;
         target.StartupSound = source.StartupSound;
         target.CustomStartupSoundFileName =
             source.CustomStartupSoundFileName;

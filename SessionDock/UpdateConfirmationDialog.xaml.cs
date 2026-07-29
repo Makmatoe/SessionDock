@@ -13,12 +13,21 @@ public partial class UpdateConfirmationDialog : Window
         ArgumentNullException.ThrowIfNull(update);
         InitializeComponent();
         WindowLayoutService.FitToWorkArea(this);
+        var localization = ((App)Application.Current).LocalizationService;
 
-        UpdateTitleText.Text = alreadyDownloaded
-            ? $"Restart to install SessionDock {update.Version.ToString(3)}?"
-            : $"Install SessionDock {update.Version.ToString(3)}?";
-        PublishedText.Text = $"Published {update.PublishedAt.ToLocalTime():g}";
-        SizeText.Text = $"{update.Descriptor.PackageSize / (1024d * 1024d):0.0} MB";
+        UpdateTitleText.Text = localization.Format(
+            alreadyDownloaded
+                ? "Update.RestartQuestion"
+                : "Update.InstallQuestion",
+            update.Version.ToString(3));
+        PublishedText.Text = localization.Format(
+            "Update.Published",
+            LocalizationCulture.FormatLocalDateTime(
+                update.PublishedAt,
+                localization.EffectiveCulture));
+        SizeText.Text = localization.Format(
+            "Update.SizeMegabytes",
+            update.Descriptor.PackageSize / (1024d * 1024d));
         ReleaseNotesBox.Text = ReleaseNotesTextFormatter.Format(
             update.Descriptor.ReleaseNotes);
         IntegrityText.Text = alreadyDownloaded

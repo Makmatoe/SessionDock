@@ -106,7 +106,8 @@ public partial class WindowCaptionControls : UserControl
             if (_window.WindowState != WindowState.Maximized ||
                 !string.Equals(
                     AutomationProperties.GetName(MaximizeButton),
-                    "Restore window",
+                    ((App)Application.Current).LocalizationService.GetString(
+                        "Caption.RestoreName"),
                     StringComparison.Ordinal) ||
                 RestoreGlyph.Visibility != Visibility.Visible)
             {
@@ -119,7 +120,8 @@ public partial class WindowCaptionControls : UserControl
             if (_window.WindowState != WindowState.Normal ||
                 !string.Equals(
                     AutomationProperties.GetName(MaximizeButton),
-                    "Maximize window",
+                    ((App)Application.Current).LocalizationService.GetString(
+                        "Caption.MaximizeName"),
                     StringComparison.Ordinal) ||
                 MaximizeGlyph.Visibility != Visibility.Visible)
             {
@@ -235,11 +237,17 @@ public partial class WindowCaptionControls : UserControl
         RestoreGlyph.Visibility = isMaximized
             ? Visibility.Visible
             : Visibility.Collapsed;
-        var action = isMaximized ? "Restore" : "Maximize";
-        MaximizeButton.ToolTip = action;
+        var localization = ((App)Application.Current).LocalizationService;
+        var actionKey = isMaximized
+            ? "Caption.Restore"
+            : "Caption.Maximize";
+        var nameKey = isMaximized
+            ? "Caption.RestoreName"
+            : "Caption.MaximizeName";
+        MaximizeButton.ToolTip = localization.GetString(actionKey);
         AutomationProperties.SetName(
             MaximizeButton,
-            $"{action} window");
+            localization.GetString(nameKey));
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)
