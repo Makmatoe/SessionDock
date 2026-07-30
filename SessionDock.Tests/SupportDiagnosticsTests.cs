@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using SessionDock.Services;
@@ -17,8 +18,8 @@ public sealed class SupportDiagnosticsTests
     {
         var snapshot = CreateSnapshot();
 
-        var first = SupportDiagnosticsService.BuildDocument(snapshot);
-        var second = SupportDiagnosticsService.BuildDocument(snapshot);
+        var first = BuildEnglishDocument(snapshot);
+        var second = BuildEnglishDocument(snapshot);
 
         Assert.Equal(first.Text, second.Text);
         Assert.DoesNotContain('\r', first.Text);
@@ -62,14 +63,14 @@ public sealed class SupportDiagnosticsTests
             context,
             () => sensitivePath,
             () => $"140.0.0.0 {SensitiveMachine}");
-        var pathDocument = SupportDiagnosticsService.BuildDocument(pathSnapshot);
+        var pathDocument = BuildEnglishDocument(pathSnapshot);
         var exceptionSnapshot = SupportDiagnosticsService.Capture(
             context,
             () => throw new IOException(
                 $"Could not inspect {sensitivePath}: {SensitiveToken}; {SensitiveAccount}; {SensitiveDestination}"),
             () => throw new InvalidOperationException(
                 $"Stack at {sensitivePath}: {SensitiveToken}"));
-        var exceptionDocument = SupportDiagnosticsService.BuildDocument(
+        var exceptionDocument = BuildEnglishDocument(
             exceptionSnapshot);
 
         foreach (var report in new[]
@@ -97,6 +98,53 @@ public sealed class SupportDiagnosticsTests
             exceptionDocument.Text);
     }
 
+    [Theory]
+    [InlineData(LocalizationPreference.English)]
+    [InlineData(LocalizationPreference.Dutch)]
+    [InlineData(LocalizationPreference.German)]
+    [InlineData(LocalizationPreference.French)]
+    [InlineData(LocalizationPreference.Spanish)]
+    public void BuildDocument_EveryLocaleKeepsDiagnosticFailuresPrivate(
+        string cultureName)
+    {
+        var sensitivePath = Path.Combine(
+            "C:" + Path.DirectorySeparatorChar,
+            "Users",
+            SensitiveUser,
+            SensitiveMachine,
+            SensitiveToken);
+        var context = new SupportDiagnosticsContext(
+            new Version(2, 7, 1),
+            CanSelfUpdate: true,
+            AccountCount: 1,
+            RecentCount: 1,
+            FavoriteCount: 1,
+            TrackedRunningClientCount: 1,
+            DiagnosticTheme.Dark,
+            UiSoundsEnabled: true);
+        var snapshot = SupportDiagnosticsService.Capture(
+            context,
+            () => throw new IOException(
+                $"{sensitivePath}; {SensitiveAccount}; {SensitiveDestination}"),
+            () => throw new InvalidOperationException(
+                $"{sensitivePath}; {SensitiveToken}"));
+
+        var document = SupportDiagnosticsService.BuildDocument(
+            snapshot,
+            SupportDiagnosticsService.CreateLocalizationSnapshot(
+                CultureInfo.GetCultureInfo(cultureName)));
+
+        Assert.DoesNotContain(SensitiveUser, document.Text);
+        Assert.DoesNotContain(SensitiveMachine, document.Text);
+        Assert.DoesNotContain(SensitiveToken, document.Text);
+        Assert.DoesNotContain(SensitiveAccount, document.Text);
+        Assert.DoesNotContain(SensitiveDestination, document.Text);
+        Assert.DoesNotContain(sensitivePath, document.Text);
+        Assert.DoesNotContain("Diagnostics.", document.Text);
+        Assert.True(
+            document.Text.Length <= SupportDiagnosticsService.MaximumReportLength);
+    }
+
     [Fact]
     public void SnapshotSchema_HasNoFreeFormStringFields()
     {
@@ -119,7 +167,7 @@ public sealed class SupportDiagnosticsTests
             TrackedRunningClientCount = int.MaxValue
         };
 
-        var document = SupportDiagnosticsService.BuildDocument(snapshot);
+        var document = BuildEnglishDocument(snapshot);
 
         Assert.DoesNotContain(SensitiveUser, document.Text);
         Assert.DoesNotContain(SensitiveToken, document.Text);
@@ -142,7 +190,7 @@ public sealed class SupportDiagnosticsTests
         Directory.CreateDirectory(directory);
         try
         {
-            var document = SupportDiagnosticsService.BuildDocument(
+            var document = BuildEnglishDocument(
                 CreateSnapshot());
             var destination = Path.Combine(
                 directory,
@@ -178,7 +226,7 @@ public sealed class SupportDiagnosticsTests
             Path.AltDirectorySeparatorChar,
             SupportDiagnosticsExporter.SuggestedFileName);
 
-        var document = SupportDiagnosticsService.BuildDocument(
+        var document = BuildEnglishDocument(
             CreateSnapshot());
         var destination = Path.Combine(
             Path.GetTempPath(),
@@ -219,6 +267,9 @@ public sealed class SupportDiagnosticsTests
         Assert.Contains("AutomationProperties.LiveSetting=\"Polite\"", dialog);
         Assert.Contains("{DynamicResource About.Copy}", dialog);
         Assert.Contains("{DynamicResource About.Export}", dialog);
+        Assert.Contains("x:Name=\"AboutActionArea\"", dialog);
+        Assert.Contains("<WrapPanel x:Name=\"AboutActionButtonsPanel\"", dialog);
+        Assert.Contains("Grid.Row=\"1\" Margin=\"0,8,0,0\"", dialog);
         var englishResources = File.ReadAllText(Path.Combine(
             root,
             "SessionDock",
@@ -249,6 +300,13 @@ public sealed class SupportDiagnosticsTests
             TrackedRunningClientCount: 1,
             DiagnosticTheme.Light,
             UiSoundsEnabled: false);
+
+    private static SupportDiagnosticsDocument BuildEnglishDocument(
+        SupportDiagnosticsSnapshot snapshot) =>
+        SupportDiagnosticsService.BuildDocument(
+            snapshot,
+            SupportDiagnosticsService.CreateLocalizationSnapshot(
+                CultureInfo.GetCultureInfo(LocalizationPreference.English)));
 
     private static string FindRepositoryRoot()
     {

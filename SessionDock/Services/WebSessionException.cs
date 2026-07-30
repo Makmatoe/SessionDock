@@ -14,6 +14,23 @@ internal static class WebSessionException
         WebSessionUnavailableReason reason) =>
         reason is WebSessionUnavailableReason.MissingRuntime or
             WebSessionUnavailableReason.RuntimeStartFailed;
+
+    internal static string GetLocalizationKey(
+        WebSessionUnavailableReason reason) =>
+        reason switch
+        {
+            WebSessionUnavailableReason.MissingRuntime =>
+                "WebSession.Error.MissingRuntime",
+            WebSessionUnavailableReason.RuntimeStartFailed =>
+                "WebSession.Error.RuntimeStartFailed",
+            WebSessionUnavailableReason.ProcessExited =>
+                "WebSession.Error.ProcessExited",
+            WebSessionUnavailableReason.Superseded =>
+                "WebSession.Error.Superseded",
+            WebSessionUnavailableReason.Closed =>
+                "WebSession.Error.Closed",
+            _ => throw new ArgumentOutOfRangeException(nameof(reason))
+        };
 }
 
 internal enum WebSessionUnavailableReason

@@ -27,7 +27,8 @@ public partial class MainWindow
             SetStatus(
                 Localize("Main.MetadataTransferClosedTitle"),
                 Localize("Main.MetadataTransferClosedDetail"),
-                "LOCAL ONLY");
+                Localize("Main.LocalOnlyBadge"),
+                StatusTone.Neutral);
             return;
         }
 
@@ -38,7 +39,7 @@ public partial class MainWindow
             if (!await TryCommitSettingsMutationAsync(
                     () => plan.Apply(_settings),
                     Localize("Main.MetadataImportFailureTitle"),
-                    "IMPORT ROLLED BACK",
+                    Localize("Main.MetadataImportRolledBackBadge"),
                     Localize("Main.MetadataImportFailureDetail"),
                     onCommitted: () =>
                     {
@@ -75,7 +76,8 @@ public partial class MainWindow
                     orderSummary,
                     addedSummary,
                     updatedSummary),
-                "IMPORTED");
+                Localize("Main.MetadataImportedBadge"),
+                StatusTone.Success);
         }
         finally
         {

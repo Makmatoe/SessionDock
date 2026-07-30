@@ -5,6 +5,16 @@ namespace SessionDock.Services;
 
 public static class DestinationParser
 {
+    internal const string RequiredErrorKey =
+        "Validation.Destination.Required";
+    internal const string TooLongErrorKey =
+        "Validation.Destination.TooLong";
+    internal const string OfficialLinksOnlyErrorKey =
+        "Validation.Destination.OfficialLinksOnly";
+    internal const string InvalidPrivateServerCodeErrorKey =
+        "Validation.Destination.InvalidPrivateServerCode";
+    internal const string MissingPlaceOrCodeErrorKey =
+        "Validation.Destination.MissingPlaceOrCode";
     private const int MaximumDestinationLength = 4096;
     private static readonly Regex GamePathPattern = new(
         @"/games/(?<id>\d+)",
@@ -20,10 +30,10 @@ public static class DestinationParser
     {
         ArgumentNullException.ThrowIfNull(input);
         target = null;
-        error = "Enter a Place ID, Roblox private-server link, or the value after code=.";
+        error = RequiredErrorKey;
         if (input.Length > MaximumDestinationLength)
         {
-            error = "The destination is too long.";
+            error = TooLongErrorKey;
             return false;
         }
 
@@ -31,6 +41,7 @@ public static class DestinationParser
         if (long.TryParse(value, out var numericPlaceId) && numericPlaceId > 0)
         {
             target = new LaunchTarget(numericPlaceId, null, null);
+            error = string.Empty;
             return true;
         }
 
@@ -47,7 +58,7 @@ public static class DestinationParser
                 uri.Scheme.Equals("roblox", StringComparison.OrdinalIgnoreCase);
             if (!trustedHttps && !trustedRobloxProtocol)
             {
-                error = "Only official roblox.com links are accepted.";
+                error = OfficialLinksOnlyErrorKey;
                 return false;
             }
 
@@ -56,11 +67,12 @@ public static class DestinationParser
             {
                 if (!IsValidCode(shareCode))
                 {
-                    error = "That Roblox URL contains an invalid private-server code.";
+                    error = InvalidPrivateServerCodeErrorKey;
                     return false;
                 }
 
                 target = new LaunchTarget(0, null, shareCode);
+                error = string.Empty;
                 return true;
             }
 
@@ -74,7 +86,7 @@ public static class DestinationParser
                     query.TryGetValue("linkCode", out legacyLinkCode);
                 if (legacyLinkCode is not null && !IsValidCode(legacyLinkCode))
                 {
-                    error = "That Roblox URL contains an invalid private-server code.";
+                    error = InvalidPrivateServerCodeErrorKey;
                     return false;
                 }
 
@@ -82,16 +94,18 @@ public static class DestinationParser
                     placeId,
                     legacyLinkCode,
                     null);
+                error = string.Empty;
                 return true;
             }
 
-            error = "That Roblox URL does not contain a Place ID or private-server code.";
+            error = MissingPlaceOrCodeErrorKey;
             return false;
         }
 
         if (IsValidCode(value))
         {
             target = new LaunchTarget(0, null, value);
+            error = string.Empty;
             return true;
         }
 

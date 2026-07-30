@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using SessionDock.Services;
 
@@ -57,6 +58,62 @@ public sealed class BundledReleaseNotesCatalogTests
     }
 
     [Fact]
+    public void Select_AllowsSameVersionInDifferentCultures()
+    {
+        var selected = BundledReleaseNotesCatalog.Select(
+            new Version(2, 3, 1),
+            [
+                CreateNote("2.3.1", LocalizationPreference.English),
+                CreateNote("2.3.1", LocalizationPreference.Dutch)
+            ],
+            LocalizationPreference.Dutch);
+
+        Assert.Equal(LocalizationPreference.Dutch, selected.Current.CultureName);
+        Assert.False(selected.Current.IsEnglishFallback);
+    }
+
+    [Fact]
+    public void Select_UsesEnglishFallbackAndMarksItExplicitly()
+    {
+        var selected = BundledReleaseNotesCatalog.Select(
+            new Version(2, 3, 1),
+            [CreateNote("2.3.1", LocalizationPreference.English)],
+            LocalizationPreference.French);
+
+        Assert.Equal(LocalizationPreference.English, selected.Current.CultureName);
+        Assert.True(selected.Current.IsEnglishFallback);
+    }
+
+    [Fact]
+    public void Select_ExplicitEnglishIsNotMarkedAsFallback()
+    {
+        var selected = BundledReleaseNotesCatalog.Select(
+            new Version(2, 3, 1),
+            [CreateNote("2.3.1", LocalizationPreference.English)],
+            LocalizationPreference.English);
+
+        Assert.False(selected.Current.IsEnglishFallback);
+    }
+
+    [Fact]
+    public void Select_LocalizesCurrentAndFallsBackPreviousIndependently()
+    {
+        var selected = BundledReleaseNotesCatalog.Select(
+            new Version(2, 3, 1),
+            [
+                CreateNote("2.3.0", LocalizationPreference.English),
+                CreateNote("2.3.1", LocalizationPreference.English),
+                CreateNote("2.3.1", LocalizationPreference.German)
+            ],
+            LocalizationPreference.German);
+
+        Assert.Equal(LocalizationPreference.German, selected.Current.CultureName);
+        Assert.False(selected.Current.IsEnglishFallback);
+        Assert.Equal(LocalizationPreference.English, selected.Previous!.CultureName);
+        Assert.True(selected.Previous.IsEnglishFallback);
+    }
+
+    [Fact]
     public void LoadForCurrentAssembly_ContainsReadableCurrentAndPreviousNotes()
     {
         var assemblyVersion = typeof(MainWindow).Assembly.GetName().Version!;
@@ -65,21 +122,30 @@ public sealed class BundledReleaseNotesCatalogTests
             assemblyVersion.Minor,
             assemblyVersion.Build);
 
-        var notes = BundledReleaseNotesCatalog.LoadForCurrentAssembly();
+        foreach (var cultureName in LocalizationPreference.SupportedValues.Skip(1))
+        {
+            var notes = BundledReleaseNotesCatalog.LoadForCurrentAssembly(
+                CultureInfo.GetCultureInfo(cultureName));
 
-        Assert.Equal(expectedCurrent, notes.Current.Version);
-        Assert.NotNull(notes.Previous);
-        Assert.True(notes.Previous.Version < notes.Current.Version);
-        Assert.Contains(
-            $"SessionDock {notes.Current.Version.ToString(3)}",
-            notes.Current.DisplayText);
-        Assert.Contains(
-            $"SessionDock {notes.Previous.Version.ToString(3)}",
-            notes.Previous.DisplayText);
-        Assert.DoesNotContain("# SessionDock", notes.Current.DisplayText);
-        Assert.DoesNotContain("**", notes.Current.DisplayText);
-        Assert.DoesNotContain("# SessionDock", notes.Previous.DisplayText);
-        Assert.DoesNotContain("**", notes.Previous.DisplayText);
+            Assert.Equal(expectedCurrent, notes.Current.Version);
+            Assert.Equal(cultureName, notes.Current.CultureName);
+            Assert.False(notes.Current.IsEnglishFallback);
+            Assert.NotNull(notes.Previous);
+            Assert.True(notes.Previous.Version < notes.Current.Version);
+            Assert.Contains(
+                $"SessionDock {notes.Current.Version.ToString(3)}",
+                notes.Current.DisplayText);
+            Assert.Contains(
+                $"SessionDock {notes.Previous.Version.ToString(3)}",
+                notes.Previous.DisplayText);
+            Assert.DoesNotContain("# SessionDock", notes.Current.DisplayText);
+            Assert.DoesNotContain("**", notes.Current.DisplayText);
+            Assert.DoesNotContain("# SessionDock", notes.Previous.DisplayText);
+            Assert.DoesNotContain("**", notes.Previous.DisplayText);
+            Assert.Equal(
+                cultureName != LocalizationPreference.English,
+                notes.Previous.IsEnglishFallback);
+        }
     }
 
     [Fact]
@@ -95,6 +161,11 @@ public sealed class BundledReleaseNotesCatalogTests
             new InvalidOperationException()));
     }
 
-    private static BundledReleaseNote CreateNote(string version) =>
-        new(new Version(version), $"Notes for {version}");
+    private static BundledReleaseNote CreateNote(
+        string version,
+        string cultureName = LocalizationPreference.English) =>
+        new(
+            new Version(version),
+            $"Notes for {version} ({cultureName})",
+            cultureName);
 }

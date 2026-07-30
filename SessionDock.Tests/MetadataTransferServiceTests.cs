@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using SessionDock.Models;
 using SessionDock.Services;
@@ -6,6 +7,9 @@ namespace SessionDock.Tests;
 
 public sealed class MetadataTransferServiceTests
 {
+    private static readonly Lazy<LocalizedTextSnapshot> EnglishLocalization =
+        new(() => MetadataTransferService.CreateLocalizationSnapshot(
+            CultureInfo.GetCultureInfo(LocalizationPreference.English)));
     private const string AccountKey = "0123456789abcdef0123456789abcdef";
     private const string SensitiveUsername = "PrivateUsernameCanary";
     private const string SensitiveSessionFolder =
@@ -133,7 +137,8 @@ public sealed class MetadataTransferServiceTests
 
         var plan = MetadataTransferService.CreateImportPlan(
             Encoding.UTF8.GetBytes(json),
-            settings);
+            settings,
+            EnglishLocalization.Value);
 
         Assert.True(plan.HasChanges);
         Assert.Equal(2, plan.AccountUpdateCount);
@@ -208,7 +213,8 @@ public sealed class MetadataTransferServiceTests
 
         var plan = MetadataTransferService.CreateImportPlan(
             Encoding.UTF8.GetBytes(json),
-            settings);
+            settings,
+            EnglishLocalization.Value);
         plan.Apply(settings);
 
         Assert.Equal(
@@ -371,7 +377,8 @@ public sealed class MetadataTransferServiceTests
 
         var plan = MetadataTransferService.CreateImportPlan(
             Encoding.UTF8.GetBytes(json),
-            settings);
+            settings,
+            EnglishLocalization.Value);
 
         Assert.Contains("Matched account appearance (current -> imported):", plan.Preview);
         Assert.Contains(

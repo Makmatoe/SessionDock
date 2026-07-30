@@ -44,6 +44,12 @@
                                   Tag="en-US"/>
                     <ComboBoxItem Content="{DynamicResource Language.Dutch}"
                                   Tag="nl-NL"/>
+                    <ComboBoxItem Content="{DynamicResource Language.German}"
+                                  Tag="de-DE"/>
+                    <ComboBoxItem Content="{DynamicResource Language.French}"
+                                  Tag="fr-FR"/>
+                    <ComboBoxItem Content="{DynamicResource Language.Spanish}"
+                                  Tag="es-ES"/>
                 </ComboBox>
                 <TextBlock Text="{DynamicResource Language.Fallback}"
                            Foreground="{DynamicResource SubtleBrush}"

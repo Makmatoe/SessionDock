@@ -18,7 +18,7 @@ public static class AccountDestinationService
         assignedCount = 0;
         if (accounts.Count == 0)
         {
-            error = "Add an account before setting a shared destination.";
+            error = "Validation.Destination.AccountRequired";
             return false;
         }
 

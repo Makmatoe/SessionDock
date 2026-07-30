@@ -142,6 +142,51 @@ public sealed class AccessibilityLiveRegionTests
     }
 
     [Fact]
+    public void Update_SuppressedRefreshChangesMetadataWithoutAnnouncing()
+    {
+        RunOnSta(() =>
+        {
+            Window? window = null;
+            try
+            {
+                var target = new TextBlock();
+                var announcements = new List<string>();
+                var liveRegion = new AccessibilityLiveRegion(
+                    target,
+                    element =>
+                    {
+                        announcements.Add(
+                            AutomationProperties.GetName(element));
+                        return true;
+                    });
+                window = CreateOffscreenWindow(target);
+                window.Show();
+                FlushDispatcher();
+
+                Assert.True(liveRegion.Update("Ready"));
+                Assert.Equal(["Ready"], announcements);
+
+                Assert.False(liveRegion.Update(
+                    "Bereit",
+                    "Bereit",
+                    announceChanges: false));
+                Assert.Equal("Bereit", target.Text);
+                Assert.Equal(
+                    "Bereit",
+                    AutomationProperties.GetName(target));
+                Assert.Equal(["Ready"], announcements);
+
+                Assert.True(liveRegion.Update("Complete"));
+                Assert.Equal(["Ready", "Complete"], announcements);
+            }
+            finally
+            {
+                window?.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void Update_DefaultAutomationPeerPathIsSafeOnALoadedTarget()
     {
         RunOnSta(() =>

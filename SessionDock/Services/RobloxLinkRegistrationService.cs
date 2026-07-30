@@ -14,8 +14,7 @@ internal enum RobloxLinkRegistrationState
 }
 
 internal sealed record RobloxLinkRegistrationStatus(
-    RobloxLinkRegistrationState State,
-    string Description);
+    RobloxLinkRegistrationState State);
 
 internal enum RobloxLinkRegistrationOwnership
 {
@@ -45,8 +44,13 @@ internal sealed class RobloxLinkRegistrationService
         _expectedCommand = BuildOpenCommand(resolvedExecutablePath);
     }
 
-    internal RobloxLinkRegistrationStatus Inspect()
+    internal RobloxLinkRegistrationStatus Inspect(
+        string progIdDescription,
+        string protocolDescription)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(progIdDescription);
+        ArgumentException.ThrowIfNullOrWhiteSpace(protocolDescription);
+
         try
         {
             using var progId = Registry.CurrentUser.OpenSubKey(ProgIdPath);
@@ -61,42 +65,35 @@ internal sealed class RobloxLinkRegistrationService
                 protocol is not null,
                 protocol?.GetValue(OwnerValueName) as string,
                 openWithValueExists);
-            if (ownership == RobloxLinkRegistrationOwnership.Empty)
-            {
-                return new RobloxLinkRegistrationStatus(
-                    RobloxLinkRegistrationState.Disabled,
-                    "Windows link handling is not enabled.");
-            }
-            if (ownership == RobloxLinkRegistrationOwnership.Conflict)
-            {
-                return new RobloxLinkRegistrationStatus(
-                    RobloxLinkRegistrationState.Conflict,
-                    "A registration at SessionDock's reserved names is not owned by this feature. It was preserved and cannot be changed here.");
-            }
-
-            if (progId is null || protocol is null || !openWithValueExists ||
-                !HasExpectedValues(progId) || !HasExpectedValues(protocol))
-            {
-                return new RobloxLinkRegistrationStatus(
-                    RobloxLinkRegistrationState.UpdateRequired,
-                    "SessionDock owns the registration, but it is incomplete or points to an older executable location.");
-            }
-
             return new RobloxLinkRegistrationStatus(
-                RobloxLinkRegistrationState.Enabled,
-                "The per-user Open with SessionDock handler is enabled.");
+                ClassifyRegistrationState(
+                    ownership,
+                    progId is not null,
+                    protocol is not null,
+                    openWithValueExists,
+                    ownership == RobloxLinkRegistrationOwnership.Owned &&
+                    progId is not null && HasExpectedValues(
+                        progId,
+                        progIdDescription),
+                    ownership == RobloxLinkRegistrationOwnership.Owned &&
+                    protocol is not null && HasExpectedValues(
+                        protocol,
+                        protocolDescription)));
         }
         catch (Exception exception) when (IsExpectedRegistryFailure(exception))
         {
             return new RobloxLinkRegistrationStatus(
-                RobloxLinkRegistrationState.Unavailable,
-                "Windows did not allow SessionDock to inspect this user's link-handler registration.");
+                RobloxLinkRegistrationState.Unavailable);
         }
     }
 
-    internal RobloxLinkRegistrationStatus Enable()
+    internal RobloxLinkRegistrationStatus Enable(
+        string progIdDescription,
+        string protocolDescription)
     {
-        var status = Inspect();
+        ArgumentException.ThrowIfNullOrWhiteSpace(progIdDescription);
+        ArgumentException.ThrowIfNullOrWhiteSpace(protocolDescription);
+        var status = Inspect(progIdDescription, protocolDescription);
         if (status.State is RobloxLinkRegistrationState.Conflict or
             RobloxLinkRegistrationState.Unavailable)
         {
@@ -105,26 +102,30 @@ internal sealed class RobloxLinkRegistrationService
 
         try
         {
-            WriteOwnedHandler(ProgIdPath, "URL:SessionDock Roblox link");
+            WriteOwnedHandler(ProgIdPath, progIdDescription);
             WriteOwnedHandler(
                 ProtocolPath,
-                "URL:Open Roblox link with SessionDock");
+                protocolDescription);
             using var openWith = Registry.CurrentUser.CreateSubKey(
                 RobloxOpenWithPath,
                 writable: true);
             openWith.SetValue(ProgId, string.Empty, RegistryValueKind.String);
-            return Inspect();
+            return Inspect(progIdDescription, protocolDescription);
         }
         catch (Exception exception) when (IsExpectedRegistryFailure(exception))
         {
             return new RobloxLinkRegistrationStatus(
-                RobloxLinkRegistrationState.Unavailable,
-                "Windows did not allow SessionDock to enable the per-user link handler. No elevation was attempted.");
+                RobloxLinkRegistrationState.Unavailable);
         }
     }
 
-    internal RobloxLinkRegistrationStatus Disable()
+    internal RobloxLinkRegistrationStatus Disable(
+        string progIdDescription,
+        string protocolDescription)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(progIdDescription);
+        ArgumentException.ThrowIfNullOrWhiteSpace(protocolDescription);
+
         try
         {
             bool progIdExists;
@@ -150,12 +151,11 @@ internal sealed class RobloxLinkRegistrationService
             }
 
             if (ownership == RobloxLinkRegistrationOwnership.Empty)
-                return Inspect();
+                return Inspect(progIdDescription, protocolDescription);
             if (ownership == RobloxLinkRegistrationOwnership.Conflict)
             {
                 return new RobloxLinkRegistrationStatus(
-                    RobloxLinkRegistrationState.Conflict,
-                    "The registration is not fully owned by SessionDock, so nothing was removed.");
+                    RobloxLinkRegistrationState.Conflict);
             }
 
             using (var writableOpenWith = Registry.CurrentUser.OpenSubKey(
@@ -177,13 +177,12 @@ internal sealed class RobloxLinkRegistrationService
                     throwOnMissingSubKey: false);
             }
 
-            return Inspect();
+            return Inspect(progIdDescription, protocolDescription);
         }
         catch (Exception exception) when (IsExpectedRegistryFailure(exception))
         {
             return new RobloxLinkRegistrationStatus(
-                RobloxLinkRegistrationState.Unavailable,
-                "Windows did not allow SessionDock to disable the per-user link handler. No elevation was attempted.");
+                RobloxLinkRegistrationState.Unavailable);
         }
     }
 
@@ -225,6 +224,39 @@ internal sealed class RobloxLinkRegistrationService
         return RobloxLinkRegistrationOwnership.Owned;
     }
 
+    internal static bool HasExpectedHandlerValues(
+        string? description,
+        string? owner,
+        string? urlProtocol,
+        string? command,
+        string expectedDescription,
+        string expectedCommand) =>
+        description?.Equals(
+            expectedDescription,
+            StringComparison.Ordinal) == true &&
+        HasOwnerMarker(owner) &&
+        urlProtocol is not null &&
+        command?.Equals(expectedCommand, StringComparison.Ordinal) == true;
+
+    internal static RobloxLinkRegistrationState ClassifyRegistrationState(
+        RobloxLinkRegistrationOwnership ownership,
+        bool progIdExists,
+        bool protocolExists,
+        bool openWithValueExists,
+        bool progIdHasExpectedValues,
+        bool protocolHasExpectedValues)
+    {
+        if (ownership == RobloxLinkRegistrationOwnership.Empty)
+            return RobloxLinkRegistrationState.Disabled;
+        if (ownership == RobloxLinkRegistrationOwnership.Conflict)
+            return RobloxLinkRegistrationState.Conflict;
+
+        return progIdExists && protocolExists && openWithValueExists &&
+               progIdHasExpectedValues && protocolHasExpectedValues
+            ? RobloxLinkRegistrationState.Enabled
+            : RobloxLinkRegistrationState.UpdateRequired;
+    }
+
     private void WriteOwnedHandler(string path, string description)
     {
         using (var existing = Registry.CurrentUser.OpenSubKey(path))
@@ -244,17 +276,18 @@ internal sealed class RobloxLinkRegistrationService
         command.SetValue(null, _expectedCommand, RegistryValueKind.String);
     }
 
-    private bool HasExpectedValues(RegistryKey key)
+    private bool HasExpectedValues(
+        RegistryKey key,
+        string expectedDescription)
     {
-        if (!HasOwnerMarker(key.GetValue(OwnerValueName) as string) ||
-            key.GetValue("URL Protocol") is not string)
-        {
-            return false;
-        }
-
         using var command = key.OpenSubKey(@"shell\open\command");
-        return command?.GetValue(null) is string value &&
-               value.Equals(_expectedCommand, StringComparison.Ordinal);
+        return HasExpectedHandlerValues(
+            key.GetValue(null) as string,
+            key.GetValue(OwnerValueName) as string,
+            key.GetValue("URL Protocol") as string,
+            command?.GetValue(null) as string,
+            expectedDescription,
+            _expectedCommand);
     }
 
     private static bool IsOwned(RegistryKey? key) =>

@@ -11,6 +11,18 @@ public sealed record JoinUserIdentifier(
 public static class JoinUserDestination
 {
     internal const string StoredPrefix = "user:";
+    internal const string RequiredErrorKey =
+        "Validation.JoinUser.Required";
+    internal const string TooLongErrorKey =
+        "Validation.JoinUser.TooLong";
+    internal const string OfficialProfileOnlyErrorKey =
+        "Validation.JoinUser.OfficialProfileOnly";
+    internal const string NotProfileUrlErrorKey =
+        "Validation.JoinUser.NotProfileUrl";
+    internal const string ExactUsernameErrorKey =
+        "Validation.JoinUser.ExactUsername";
+    internal const string NotSavedErrorKey =
+        "Validation.JoinUser.NotSaved";
     private const int MaximumInputLength = 512;
     private static readonly Regex UsernamePattern = new(
         "^[A-Za-z0-9_]{3,20}$",
@@ -28,14 +40,14 @@ public static class JoinUserDestination
     {
         ArgumentNullException.ThrowIfNull(input);
         identifier = null;
-        error = "Enter an exact Roblox username, user ID, or profile URL.";
+        error = RequiredErrorKey;
 
         var value = input.Trim();
         if (value.Length == 0)
             return false;
         if (value.Length > MaximumInputLength)
         {
-            error = "The user destination is too long.";
+            error = TooLongErrorKey;
             return false;
         }
 
@@ -58,7 +70,7 @@ public static class JoinUserDestination
                 !string.IsNullOrEmpty(uri.Query) ||
                 !string.IsNullOrEmpty(uri.Fragment))
             {
-                error = "Only an official Roblox profile URL is accepted.";
+                error = OfficialProfileOnlyErrorKey;
                 return false;
             }
 
@@ -66,7 +78,7 @@ public static class JoinUserDestination
             if (!match.Success ||
                 !TryParseUserId(match.Groups["id"].Value, out var profileUserId))
             {
-                error = "That Roblox URL is not a user profile URL.";
+                error = NotProfileUrlErrorKey;
                 return false;
             }
 
@@ -81,8 +93,7 @@ public static class JoinUserDestination
         var username = value.StartsWith('@') ? value[1..] : value;
         if (!UsernamePattern.IsMatch(username))
         {
-            error =
-                "Enter the exact username, not a display name. Roblox usernames use 3–20 letters, numbers, or underscores.";
+            error = ExactUsernameErrorKey;
             return false;
         }
 
@@ -100,7 +111,7 @@ public static class JoinUserDestination
         out string error)
     {
         identifier = null;
-        error = "This is not a saved user destination.";
+        error = NotSavedErrorKey;
         var value = destination?.Trim();
         return value is not null &&
                value.StartsWith(StoredPrefix, StringComparison.OrdinalIgnoreCase) &&

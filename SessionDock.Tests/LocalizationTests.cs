@@ -12,15 +12,34 @@ namespace SessionDock.Tests;
 [Collection(typeof(TimingSensitiveTestCollection))]
 public sealed class LocalizationTests : IDisposable
 {
+    private static readonly string[] SupportedCultureNames =
+    [
+        LocalizationPreference.English,
+        LocalizationPreference.Dutch,
+        LocalizationPreference.German,
+        LocalizationPreference.French,
+        LocalizationPreference.Spanish
+    ];
+
     private static readonly string[] UserFacingAttributeNames =
     [
         "Title",
         "Text",
         "Content",
+        "Header",
         "ToolTip",
         "AutomationProperties.Name",
         "AutomationProperties.HelpText",
         "AutomationProperties.ItemStatus"
+    ];
+
+    private static readonly string[] LanguageAutonymKeys =
+    [
+        "Language.English",
+        "Language.Dutch",
+        "Language.German",
+        "Language.French",
+        "Language.Spanish"
     ];
 
     private readonly string _storageDirectory = Path.Combine(
@@ -33,7 +52,10 @@ public sealed class LocalizationTests : IDisposable
     [InlineData(" SYSTEM ", "system")]
     [InlineData("EN-us", "en-US")]
     [InlineData(" nl-nl ", "nl-NL")]
-    [InlineData("fr-FR", "system")]
+    [InlineData("DE-de", "de-DE")]
+    [InlineData(" fr-fr ", "fr-FR")]
+    [InlineData("ES-es", "es-ES")]
+    [InlineData("pt-BR", "system")]
     [InlineData("nl", "system")]
     [InlineData("../../nl-NL.xaml", "system")]
     public void Normalize_AllowsOnlySupportedCanonicalPreferences(
@@ -45,9 +67,13 @@ public sealed class LocalizationTests : IDisposable
 
     [Theory]
     [InlineData("system", "nl-BE", "nl-NL")]
-    [InlineData("system", "de-DE", "en-US")]
+    [InlineData("system", "de-AT", "de-DE")]
+    [InlineData("system", "fr-CA", "fr-FR")]
+    [InlineData("system", "es-MX", "es-ES")]
+    [InlineData("system", "pt-BR", "en-US")]
     [InlineData("en-US", "nl-NL", "en-US")]
     [InlineData("nl-NL", "en-US", "nl-NL")]
+    [InlineData("de-DE", "fr-FR", "de-DE")]
     public void Resolve_UsesSupportedSystemLanguageOrEnglishFallback(
         string preference,
         string systemCulture,
@@ -58,6 +84,22 @@ public sealed class LocalizationTests : IDisposable
             LocalizationPreference.Resolve(
                 preference,
                 CultureInfo.GetCultureInfo(systemCulture)));
+    }
+
+    [Fact]
+    public void SupportedValues_AreCanonicalAndOrdered()
+    {
+        Assert.Equal(
+            new[]
+            {
+                LocalizationPreference.System,
+                LocalizationPreference.English,
+                LocalizationPreference.Dutch,
+                LocalizationPreference.German,
+                LocalizationPreference.French,
+                LocalizationPreference.Spanish
+            },
+            LocalizationPreference.SupportedValues);
     }
 
     [Fact]
@@ -82,6 +124,9 @@ public sealed class LocalizationTests : IDisposable
     [Theory]
     [InlineData("nl-NL", "nl-NL")]
     [InlineData("EN-us", "en-US")]
+    [InlineData("de-DE", "de-DE")]
+    [InlineData("FR-fr", "fr-FR")]
+    [InlineData(" es-es ", "es-ES")]
     [InlineData("unsupported", "system")]
     public void SettingsLoad_StrictlyNormalizesAndPersistsLanguage(
         string stored,
@@ -132,17 +177,150 @@ public sealed class LocalizationTests : IDisposable
         var english = ReadStrings(Path.Combine(
             directory,
             "Strings.en-US.xaml"));
-        var dutch = ReadStrings(Path.Combine(
-            directory,
-            "Strings.nl-NL.xaml"));
+
+        Assert.Equal(
+            SupportedCultureNames.Select(name => $"Strings.{name}.xaml")
+                .Order(StringComparer.Ordinal),
+            Directory.EnumerateFiles(
+                    directory,
+                    "Strings.*.xaml",
+                    SearchOption.TopDirectoryOnly)
+                .Select(Path.GetFileName)
+                .Order(StringComparer.Ordinal));
 
         Assert.True(english.Count >= 250);
-        Assert.Equal(
-            english.Keys.Order(StringComparer.Ordinal),
-            dutch.Keys.Order(StringComparer.Ordinal));
         Assert.DoesNotContain(english.Values, string.IsNullOrWhiteSpace);
-        Assert.DoesNotContain(dutch.Values, string.IsNullOrWhiteSpace);
-        Assert.NotEqual(english["Language.Title"], dutch["Language.Title"]);
+        foreach (var cultureName in SupportedCultureNames)
+        {
+            var localized = ReadStrings(Path.Combine(
+                directory,
+                $"Strings.{cultureName}.xaml"));
+            Assert.Equal(
+                english.Keys.Order(StringComparer.Ordinal),
+                localized.Keys.Order(StringComparer.Ordinal));
+            Assert.DoesNotContain(localized.Values, string.IsNullOrWhiteSpace);
+            foreach (var key in LanguageAutonymKeys)
+                Assert.Equal(english[key], localized[key]);
+        }
+
+        Assert.NotEqual(
+            english["Language.Title"],
+            ReadStrings(Path.Combine(directory, "Strings.nl-NL.xaml"))[
+                "Language.Title"]);
+    }
+
+    [Fact]
+    public void LocalizationDictionaries_HaveMatchingFormatPlaceholders()
+    {
+        var directory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Localization");
+        var english = ReadStrings(Path.Combine(
+            directory,
+            "Strings.en-US.xaml"));
+        foreach (var cultureName in SupportedCultureNames.Skip(1))
+        {
+            var localized = ReadStrings(Path.Combine(
+                directory,
+                $"Strings.{cultureName}.xaml"));
+            foreach (var (key, englishValue) in english)
+            {
+                Assert.Equal(
+                    ReadPlaceholderIndexes(englishValue),
+                    ReadPlaceholderIndexes(localized[key]));
+            }
+        }
+    }
+
+    [Fact]
+    public void LocalizationDictionaries_FormatEveryParameterizedMessage()
+    {
+        var directory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Localization");
+        var arguments = Enumerable.Range(1, 12)
+            .Select(value => (object)value)
+            .ToArray();
+
+        foreach (var cultureName in SupportedCultureNames)
+        {
+            var culture = CultureInfo.GetCultureInfo(cultureName);
+            var localized = ReadStrings(Path.Combine(
+                directory,
+                $"Strings.{cultureName}.xaml"));
+            foreach (var (key, value) in localized.Where(pair =>
+                         ReadPlaceholderIndexes(pair.Value).Length > 0))
+            {
+                var formatted = string.Format(culture, value, arguments);
+                Assert.False(
+                    string.IsNullOrWhiteSpace(formatted),
+                    $"{cultureName}:{key} formatted to an empty value.");
+                Assert.Empty(ReadPlaceholderIndexes(formatted));
+            }
+        }
+    }
+
+    [Fact]
+    public void LocalizationDictionaries_KeepExplicitSingularAndPluralPairs()
+    {
+        var directory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Localization");
+        var english = ReadStrings(Path.Combine(
+            directory,
+            "Strings.en-US.xaml"));
+        var singularKeys = english.Keys
+            .Where(key => key.EndsWith("One", StringComparison.Ordinal))
+            .ToArray();
+
+        Assert.True(singularKeys.Length >= 20);
+        foreach (var singularKey in singularKeys)
+        {
+            var pluralKey = singularKey[..^"One".Length] + "Many";
+            Assert.True(
+                english.ContainsKey(pluralKey),
+                $"Missing plural resource for {singularKey}.");
+        }
+
+        var grammaticalPairs = new[]
+        {
+            "Main.DurationSecond",
+            "Clients.Refresh",
+            "Main.BatchCompleteTitle",
+            "Metadata.Preview.SkippedAccount"
+        };
+        foreach (var cultureName in SupportedCultureNames)
+        {
+            var localized = ReadStrings(Path.Combine(
+                directory,
+                $"Strings.{cultureName}.xaml"));
+            foreach (var pair in grammaticalPairs)
+            {
+                Assert.NotEqual(
+                    localized[$"{pair}One"],
+                    localized[$"{pair}Many"]);
+            }
+        }
+    }
+
+    [Fact]
+    public void LanguageSelector_OffersEverySupportedPreference()
+    {
+        var document = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "LanguageSettingsDialog.xaml"));
+        var tags = document.Descendants()
+            .Where(element => element.Name.LocalName == "ComboBoxItem")
+            .Select(element => (string?)element.Attribute("Tag"))
+            .Where(tag => tag is not null)
+            .Cast<string>()
+            .ToArray();
+
+        Assert.Equal(LocalizationPreference.SupportedValues, tags);
     }
 
     [Fact]
@@ -155,9 +333,15 @@ public sealed class LocalizationTests : IDisposable
         foreach (var path in Directory.EnumerateFiles(
                      applicationDirectory,
                      "*.xaml",
-                     SearchOption.TopDirectoryOnly))
+                     SearchOption.AllDirectories))
         {
-            if (Path.GetFileName(path).Equals(
+            if (path.Contains(
+                    $"{Path.DirectorySeparatorChar}Localization{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase) ||
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}Themes{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase) ||
+                Path.GetFileName(path).Equals(
                     "App.xaml",
                     StringComparison.OrdinalIgnoreCase))
             {
@@ -182,11 +366,139 @@ public sealed class LocalizationTests : IDisposable
                     $"{Path.GetFileName(path)}:{line} " +
                     $"{attribute.Name.LocalName}=\"{attribute.Value}\"");
             }
+            foreach (var textNode in document.DescendantNodes().OfType<XText>())
+            {
+                if (string.IsNullOrWhiteSpace(textNode.Value))
+                    continue;
+
+                var line = ((System.Xml.IXmlLineInfo)textNode).LineNumber;
+                violations.Add(
+                    $"{Path.GetFileName(path)}:{line} inline text: " +
+                    $"\"{textNode.Value.Trim()}\"");
+            }
         }
 
         Assert.True(
             violations.Count == 0,
             "Static user-facing XAML text must use a live DynamicResource." +
+            Environment.NewLine + string.Join(Environment.NewLine, violations));
+    }
+
+    [Fact]
+    public void ProductionXaml_LocalizedResourcesRemainLiveDynamicResources()
+    {
+        var applicationDirectory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock");
+        var english = ReadStrings(Path.Combine(
+            applicationDirectory,
+            "Localization",
+            "Strings.en-US.xaml"));
+        var staticResourcePattern = new Regex(
+            @"\{StaticResource\s+(?<key>[A-Za-z][A-Za-z0-9.]+)\}",
+            RegexOptions.CultureInvariant);
+        var violations = new List<string>();
+
+        foreach (var path in Directory.EnumerateFiles(
+                     applicationDirectory,
+                     "*.xaml",
+                     SearchOption.AllDirectories))
+        {
+            if (path.Contains(
+                    $"{Path.DirectorySeparatorChar}Localization{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase) ||
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}Themes{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var source = File.ReadAllText(path);
+            foreach (Match match in staticResourcePattern.Matches(source))
+            {
+                var key = match.Groups["key"].Value;
+                if (!english.ContainsKey(key))
+                    continue;
+
+                var line = source.AsSpan(0, match.Index).Count('\n') + 1;
+                violations.Add($"{Path.GetFileName(path)}:{line} {key}");
+            }
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            "Localized XAML resources must remain live DynamicResource references." +
+            Environment.NewLine + string.Join(Environment.NewLine, violations));
+    }
+
+    [Fact]
+    public void ProductionCSharp_UserFacingUiSinksDoNotUseStringLiterals()
+    {
+        var applicationDirectory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock");
+        var patterns = new Dictionary<string, Regex>
+        {
+            ["UI property assignment"] = new Regex(
+                "(?:\\.|\\b)(?:Text|Content|Header|Title|ToolTip|Filter)\\s*=\\s*\\$?\"(?<value>(?:[^\"\\\\]|\\\\.)+)\"",
+                RegexOptions.CultureInvariant),
+            ["status call"] = new Regex(
+                "\\bSetStatus\\s*\\(\\s*\\$?\"(?<value>(?:[^\"\\\\]|\\\\.)+)\"",
+                RegexOptions.CultureInvariant),
+            ["message box"] = new Regex(
+                "\\bMessageBox\\.Show\\s*\\(\\s*(?:this\\s*,\\s*)?\\$?\"(?<value>(?:[^\"\\\\]|\\\\.)+)\"",
+                RegexOptions.CultureInvariant),
+            ["automation property"] = new Regex(
+                "\\bAutomationProperties\\.Set(?:Name|HelpText|ItemStatus)\\s*\\(\\s*[^,]+,\\s*\\$?\"(?<value>(?:[^\"\\\\]|\\\\.)+)\"",
+                RegexOptions.CultureInvariant)
+        };
+        var violations = new List<string>();
+        foreach (var path in Directory.EnumerateFiles(
+                     applicationDirectory,
+                     "*.cs",
+                     SearchOption.AllDirectories))
+        {
+            if (path.Contains(
+                    $"{Path.DirectorySeparatorChar}tools{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase) ||
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase) ||
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var source = File.ReadAllText(path);
+            foreach (var (sink, pattern) in patterns)
+            {
+                foreach (Match match in pattern.Matches(source))
+                {
+                    var value = match.Groups["value"].Value;
+                    var literalText = Regex.Replace(
+                        value,
+                        @"\{[^{}]+\}",
+                        string.Empty,
+                        RegexOptions.CultureInvariant);
+                    if (literalText is "SessionDock" or "SD" ||
+                        literalText.All(character => !char.IsLetterOrDigit(character)))
+                    {
+                        continue;
+                    }
+
+                    var line = source.AsSpan(0, match.Index).Count('\n') + 1;
+                    violations.Add(
+                        $"{Path.GetFileName(path)}:{line} {sink}: \"{value}\"");
+                }
+            }
+        }
+
+        Assert.True(
+            violations.Count == 0,
+            "User-facing C# UI sinks must receive localized runtime text." +
             Environment.NewLine + string.Join(Environment.NewLine, violations));
     }
 
@@ -206,10 +518,13 @@ public sealed class LocalizationTests : IDisposable
             "Localization/Strings.en-US.xaml",
             appXaml,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "Localization/Strings.nl-NL.xaml",
-            appXaml,
-            StringComparison.Ordinal);
+        foreach (var cultureName in SupportedCultureNames.Skip(1))
+        {
+            Assert.DoesNotContain(
+                $"Localization/Strings.{cultureName}.xaml",
+                appXaml,
+                StringComparison.Ordinal);
+        }
     }
 
     [Fact]
@@ -229,21 +544,48 @@ public sealed class LocalizationTests : IDisposable
         foreach (var path in Directory.EnumerateFiles(
                      applicationDirectory,
                      "*.xaml",
-                     SearchOption.TopDirectoryOnly))
+                     SearchOption.AllDirectories))
         {
+            if (path.Contains(
+                    $"{Path.DirectorySeparatorChar}Localization{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase) ||
+                path.Contains(
+                    $"{Path.DirectorySeparatorChar}Themes{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             references.UnionWith(xamlPattern.Matches(File.ReadAllText(path))
                 .Select(match => match.Groups["key"].Value)
                 .Where(key => key.Contains('.', StringComparison.Ordinal)));
         }
 
+        var resourcePrefixes = english.Keys
+            .Select(key => key.Split('.')[0])
+            .Concat(
+            [
+                "Diagnostics",
+                "Startup",
+                "UpdateFailure",
+                "Validation",
+                "WebSession"
+            ])
+            .Distinct(StringComparer.Ordinal)
+            .Select(Regex.Escape);
         var codePattern = new Regex(
-            @"(?:Localize|GetString|Format)\s*\(\s*""(?<key>[A-Za-z][A-Za-z0-9.]+)""",
+            $@"""(?<key>(?:{string.Join('|', resourcePrefixes)})(?:\.[A-Z][A-Za-z0-9]*)+)(?![A-Za-z0-9.])""",
             RegexOptions.CultureInvariant);
         foreach (var path in Directory.EnumerateFiles(
                      applicationDirectory,
                      "*.cs",
-                     SearchOption.TopDirectoryOnly))
+                     SearchOption.AllDirectories))
         {
+            if (path.Contains(
+                    $"{Path.DirectorySeparatorChar}tools{Path.DirectorySeparatorChar}",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
             references.UnionWith(codePattern.Matches(File.ReadAllText(path))
                 .Select(match => match.Groups["key"].Value)
                 .Where(key => key.Contains('.', StringComparison.Ordinal)));
@@ -255,6 +597,20 @@ public sealed class LocalizationTests : IDisposable
     [Fact]
     public void LocalizationService_LiveSwitchesResourcesAndFallsBackSafely()
     {
+        var localizationDirectory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Localization");
+        var expectedRuntimeMessages = SupportedCultureNames.ToDictionary(
+            cultureName => cultureName,
+            cultureName => string.Format(
+                CultureInfo.GetCultureInfo(cultureName),
+                ReadStrings(Path.Combine(
+                    localizationDirectory,
+                    $"Strings.{cultureName}.xaml"))[
+                        "Main.DurationSecondMany"],
+                3),
+            StringComparer.Ordinal);
         Exception? failure = null;
         var thread = new Thread(() =>
         {
@@ -271,18 +627,37 @@ public sealed class LocalizationTests : IDisposable
                 using var service = new AppLocalizationService(
                     application,
                     CultureInfo.GetCultureInfo("en-US"));
+                var languageProbe = new Window();
                 var changes = 0;
                 service.LanguageChanged += (_, _) => changes++;
 
-                service.ApplyPreference(LocalizationPreference.Dutch);
-                Assert.Equal("Taal", service.GetString("Language.Title"));
-                Assert.Equal("nl-NL", service.EffectiveCulture.Name);
+                var expectedTitles = new Dictionary<string, string>
+                {
+                    [LocalizationPreference.Dutch] = "Taal",
+                    [LocalizationPreference.German] = "Sprache",
+                    [LocalizationPreference.French] = "Langue",
+                    [LocalizationPreference.Spanish] = "Idioma",
+                    [LocalizationPreference.English] = "Language"
+                };
+                foreach (var (preference, expectedTitle) in expectedTitles)
+                {
+                    service.ApplyPreference(preference);
+                    Assert.Equal(
+                        expectedTitle,
+                        service.GetString("Language.Title"));
+                    Assert.Equal(
+                        expectedRuntimeMessages[preference],
+                        service.Format("Main.DurationSecondMany", 3));
+                    Assert.Equal(preference, service.EffectiveCulture.Name);
+                    service.ApplyWindowLanguage(languageProbe);
+                    Assert.Equal(
+                        preference,
+                        CultureInfo.GetCultureInfo(
+                            languageProbe.Language.IetfLanguageTag).Name);
+                }
 
-                service.ApplyPreference(LocalizationPreference.English);
-                Assert.Equal("Language", service.GetString("Language.Title"));
-                Assert.Equal("en-US", service.EffectiveCulture.Name);
                 Assert.Equal("Missing.Key", service.GetString("Missing.Key"));
-                Assert.Equal(2, changes);
+                Assert.Equal(expectedTitles.Count, changes);
                 application.Shutdown();
             }
             catch (Exception exception)
@@ -298,6 +673,23 @@ public sealed class LocalizationTests : IDisposable
     }
 
     [Fact]
+    public void LanguageSaveFailure_RestoresLocaleBeforePresentingFailure()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "MainWindow.Localization.cs"));
+        var failureBranch = new Regex(
+            @"if \(!committed\)\s*\{\s*" +
+            @"Localization\.ApplyPreference\(originalPreference\);[\s\S]*?" +
+            @"SetStatus\(\s*Localize\(""Language\.SaveFailure""\)",
+            RegexOptions.CultureInvariant);
+
+        Assert.Contains("showFailure: false", source, StringComparison.Ordinal);
+        Assert.Matches(failureBranch, source);
+    }
+
+    [Fact]
     public void DisplayDatesUseSelectedCulture_JsonSerializationDoesNot()
     {
         var value = new DateTimeOffset(
@@ -308,28 +700,31 @@ public sealed class LocalizationTests : IDisposable
             15,
             0,
             TimeSpan.Zero);
-        var english = CultureInfo.GetCultureInfo("en-US");
-        var dutch = CultureInfo.GetCultureInfo("nl-NL");
-
-        var englishDisplay = LocalizationCulture.FormatLocalDateTime(
-            value,
-            english);
-        var dutchDisplay = LocalizationCulture.FormatLocalDateTime(
-            value,
-            dutch);
-
-        Assert.Equal(value.ToLocalTime().ToString("g", english), englishDisplay);
-        Assert.Equal(value.ToLocalTime().ToString("g", dutch), dutchDisplay);
-        Assert.NotEqual(englishDisplay, dutchDisplay);
+        var cultures = SupportedCultureNames
+            .Select(CultureInfo.GetCultureInfo)
+            .ToArray();
+        var displays = cultures
+            .Select(culture => LocalizationCulture.FormatLocalDateTime(
+                value,
+                culture))
+            .ToArray();
+        for (var index = 0; index < cultures.Length; index++)
+        {
+            Assert.Equal(
+                value.ToLocalTime().ToString("g", cultures[index]),
+                displays[index]);
+        }
+        Assert.True(displays.Distinct(StringComparer.Ordinal).Count() >= 3);
 
         var originalCulture = CultureInfo.CurrentCulture;
         try
         {
-            CultureInfo.CurrentCulture = english;
-            var englishJson = JsonSerializer.Serialize(value);
-            CultureInfo.CurrentCulture = dutch;
-            var dutchJson = JsonSerializer.Serialize(value);
-            Assert.Equal(englishJson, dutchJson);
+            var serialized = cultures.Select(culture =>
+            {
+                CultureInfo.CurrentCulture = culture;
+                return JsonSerializer.Serialize(value);
+            }).ToArray();
+            Assert.Single(serialized.Distinct(StringComparer.Ordinal));
         }
         finally
         {
@@ -374,6 +769,18 @@ public sealed class LocalizationTests : IDisposable
                 element => element.Value,
                 StringComparer.Ordinal);
     }
+
+    private static int[] ReadPlaceholderIndexes(string value) =>
+        Regex.Matches(
+                value,
+                @"(?<!\{)\{(?<index>[0-9]+)(?:[^}]*)\}(?!\})",
+                RegexOptions.CultureInvariant)
+            .Select(match => int.Parse(
+                match.Groups["index"].Value,
+                CultureInfo.InvariantCulture))
+            .Distinct()
+            .Order()
+            .ToArray();
 
     private static string FindRepositoryRoot()
     {

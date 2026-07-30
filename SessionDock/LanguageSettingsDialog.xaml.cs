@@ -48,8 +48,9 @@ public partial class LanguageSettingsDialog : Window
     private void UpdatePreview()
     {
         var cultureName = _localization.EffectiveCulture.NativeName;
-        PreviewText.Text = $"{_localization.GetString("Language.DisplayLanguage")}: " +
-            cultureName;
+        PreviewText.Text = _localization.Format(
+            "Language.Preview",
+            cultureName);
     }
 
     private void SaveButton_Click(object sender, RoutedEventArgs e) =>

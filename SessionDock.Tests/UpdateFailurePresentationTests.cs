@@ -16,10 +16,18 @@ public sealed class UpdateFailurePresentationTests
         var result = UpdateFailurePresentation.Create(
             CreateWithoutConstructor<AcquireLockFailedException>());
 
-        Assert.Equal("Update files are busy", result.Title);
-        Assert.Contains("close", result.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("reopen", result.Detail, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("UPDATE BUSY", result.Badge);
+        Assert.Equal("UpdateFailure.Busy.Title", result.TitleKey);
+        Assert.Equal("Update files are busy", Localize(result.TitleKey));
+        Assert.Contains(
+            "close",
+            Localize(result.DetailKey),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "reopen",
+            Localize(result.DetailKey),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("UPDATE BUSY", Localize(result.BadgeKey));
+        Assert.Equal(StatusTone.Warning, result.Tone);
     }
 
     [Theory]
@@ -34,22 +42,30 @@ public sealed class UpdateFailurePresentationTests
             out var result);
 
         Assert.True(classified);
-        Assert.Equal(expectedTitle, result.Title);
-        Assert.Equal(expectedBadge, result.Badge);
-        Assert.NotEmpty(result.Detail);
+        Assert.Equal(expectedTitle, Localize(result.TitleKey));
+        Assert.Equal(expectedBadge, Localize(result.BadgeKey));
+        Assert.NotEmpty(Localize(result.DetailKey));
+        Assert.Equal(StatusTone.Error, result.Tone);
     }
 
     [Fact]
-    public void Create_ReleaseTrustFailure_PreservesSafePolicyMessage()
+    public void Create_ReleaseTrustFailure_UsesLocalizedSafeExplanation()
     {
         const string policyMessage = "The signed descriptor was rejected.";
 
         var result = UpdateFailurePresentation.Create(
             new ReleaseTrustException(policyMessage));
 
-        Assert.Equal("Update was rejected", result.Title);
-        Assert.Equal(policyMessage, result.Detail);
-        Assert.Equal("UPDATE REJECTED", result.Badge);
+        Assert.Equal("UpdateFailure.Trust.Title", result.TitleKey);
+        Assert.Equal("Update was rejected", Localize(result.TitleKey));
+        Assert.Equal("UpdateFailure.Trust.Detail", result.DetailKey);
+        Assert.NotEqual(policyMessage, Localize(result.DetailKey));
+        Assert.Contains(
+            "trust checks",
+            Localize(result.DetailKey),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("UPDATE REJECTED", Localize(result.BadgeKey));
+        Assert.Equal(StatusTone.Error, result.Tone);
     }
 
     [Fact]
@@ -79,10 +95,11 @@ public sealed class UpdateFailurePresentationTests
 
         var result = UpdateFailurePresentation.Create(exception);
 
-        Assert.Contains("data", result.Detail, StringComparison.OrdinalIgnoreCase);
+        var detail = Localize(result.DetailKey);
+        Assert.Contains("data", detail, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "over the existing installation",
-            result.Detail,
+            detail,
             StringComparison.OrdinalIgnoreCase);
     }
 
@@ -150,4 +167,7 @@ public sealed class UpdateFailurePresentationTests
 
     private static T CreateWithoutConstructor<T>() where T : Exception =>
         (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
+
+    private static string Localize(string key) =>
+        EnglishResourceText.Get(key);
 }

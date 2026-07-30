@@ -15,36 +15,68 @@ public partial class MainWindow
 
     internal void VerifyLocalizationSwitchForRuntimeSmoke()
     {
+        const string InvalidDestinationProbe =
+            "https://example.invalid/games/123456";
         Dispatcher.VerifyAccess();
         var originalPreference = Localization.CurrentPreference;
-        var switchPreference = Localization.EffectiveCulture.Name.Equals(
-            LocalizationPreference.Dutch,
-            StringComparison.Ordinal)
-                ? LocalizationPreference.English
-                : LocalizationPreference.Dutch;
+        var originalDestination = PlaceIdBox.Text;
         try
         {
-            Localization.ApplyPreference(switchPreference);
-            var expectedName = Localize("Main.LanguageSettings");
-            if (!string.Equals(
-                    System.Windows.Automation.AutomationProperties.GetName(
-                        LanguageSettingsButton),
-                    expectedName,
-                    StringComparison.Ordinal) ||
-                !string.Equals(
-                    LanguageSettingsButton.ToolTip as string,
-                    expectedName,
-                    StringComparison.Ordinal) ||
-                !Localization.EffectiveCulture.Name.Equals(
-                    switchPreference,
-                    StringComparison.Ordinal))
+            foreach (var preference in LocalizationPreference.SupportedValues
+                         .Where(value => !value.Equals(
+                             LocalizationPreference.System,
+                             StringComparison.Ordinal)))
             {
-                throw new InvalidOperationException(
-                    "The existing main window did not adopt the switched language.");
+                Localization.ApplyPreference(preference);
+                var expectedName = Localize("Main.LanguageSettings");
+                var expectedDestinationHelp = Localize(
+                    _joinUserMode
+                        ? "Main.JoinUserHelp"
+                        : "Main.DestinationHelp");
+                var expectedDestinationName = Localize(
+                    _joinUserMode
+                        ? "Main.JoinUserInputName"
+                        : "Main.DestinationInputName");
+                PlaceIdBox.Text = InvalidDestinationProbe;
+                RefreshLaunchAvailability();
+                if (!string.Equals(
+                        System.Windows.Automation.AutomationProperties.GetName(
+                            LanguageSettingsButton),
+                        expectedName,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        LanguageSettingsButton.ToolTip as string,
+                        expectedName,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        DestinationHelpText.Text,
+                        expectedDestinationHelp,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        System.Windows.Automation.AutomationProperties.GetName(
+                            PlaceIdBox),
+                        expectedDestinationName,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        DestinationValidationText.Text,
+                        Localize(
+                            "Validation.Destination.OfficialLinksOnly"),
+                        StringComparison.Ordinal) ||
+                    !Localization.EffectiveCulture.Name.Equals(
+                        preference,
+                        StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "The existing main window did not adopt a supported switched language.");
+                }
+                PlaceIdBox.Text = originalDestination;
+                RefreshLaunchAvailability();
             }
         }
         finally
         {
+            PlaceIdBox.Text = originalDestination;
+            RefreshLaunchAvailability();
             Localization.ApplyPreference(originalPreference);
         }
     }
@@ -78,10 +110,21 @@ public partial class MainWindow
             var committed = await TryCommitSettingsMutationAsync(
                 () => _settings.Language = selected,
                 Localize("Language.SaveFailure"),
+                showFailure: false,
                 onCommitted: () =>
                     Localization.ApplyPreference(selected));
             if (!committed)
+            {
                 Localization.ApplyPreference(originalPreference);
+                if (!_operationLifetime.IsShuttingDown)
+                {
+                    SetStatus(
+                        Localize("Language.SaveFailure"),
+                        Localize("Main.SettingsRollbackDetail"),
+                        Localize("Main.SettingsErrorBadge"),
+                        StatusTone.Error);
+                }
+            }
         }
         finally
         {
@@ -99,6 +142,19 @@ public partial class MainWindow
         UpdateDestinationModePresentation();
         RenderAccountList();
         RenderRecentExperiences();
+        UpdateAccountControlAvailability();
+        UpdateClearHistoryButton();
+        RefreshBatchRetryState();
+        RefreshLaunchAvailability(announceValidation: false);
+        UpdateAutoJoinActionPresentation();
+        RefreshAutoJoinLocalizedState();
+        if (!IsAutoJoinWatchActive && !_operationBusy)
+        {
+            if (_currentUser is not null && _activeProfile is not null)
+                SetReadyState(announceStatus: false);
+            else
+                SetSignedOutState(announceStatus: false);
+        }
     }
 
     private void UpdateUpdateTooltip() =>

@@ -107,13 +107,20 @@ hashes, and redaction coordinates are documented in the
   clients; Roblox still decides whether multiple Players may run.
 - Closes all visible and background Roblox Player processes on request.
 - Provides optional interface sounds and a user-selected startup sound.
-- Provides live **System default**, **English (United States)**, and
-  **Dutch (Netherlands)** display-language choices from the sidebar. System
-  default follows Dutch Windows installations and otherwise uses the complete
-  English fallback; the choice is remembered locally and does not require a
-  restart. Display dates and times follow the selected culture, while stored
-  data keeps its stable machine-readable format. Some runtime confirmations
-  and detailed technical previews can use the English fallback.
+- Provides live **System default**, **English (United States)**,
+  **Nederlands (Nederland)**, **Deutsch (Deutschland)**,
+  **Français (France)**, and **Español (España)** display-language choices
+  from the sidebar. System default follows supported Dutch, German, French,
+  and Spanish Windows cultures and otherwise uses the complete English
+  fallback. The choice is remembered locally and does not require a restart.
+  Static labels, runtime messages, confirmations, validation, diagnostics, and
+  accessibility text use the selected language. Display dates and times follow
+  the selected culture, while stored data keeps its stable machine-readable
+  format. Older release notes without a translation are clearly labeled when
+  shown in English. Before SessionDock can safely open local settings, very
+  early command-line, security-context, and single-instance errors use the
+  supported Windows display language; the saved app preference takes effect
+  as soon as normal startup begins.
 - Provides an **About and diagnostics** panel with an exact, reviewable support
   summary that can be copied or exported as text. The summary contains bounded
   counts and system/component states, never settings files, logs, paths,
@@ -146,15 +153,14 @@ load subresources chosen by Roblox. The Player executable is location-checked
 and Windows-signature-checked before launch.
 Optional post-launch integrations accept loopback addresses only and are off
 until the user configures them. HandleScope is optional, off by default, and
-never bundled or elevated by SessionDock. When the user explicitly selects
-**Install Latest HandleScope release**, SessionDock resolves the latest stable,
-immutable release from the canonical `Makmatoe/HandleScope` GitHub repository,
-downloads the Windows x64 ZIP and checksum file, then verifies GitHub's exact
-asset digests, the same-release checksum, safe archive layout, and every file in
-the bundle manifest before running the standard-user installer. It records the
-verified inventory and rechecks the installed API hash before starting or
-trusting it. HandleScope is unsigned, so this trust comes from the canonical
-immutable GitHub release rather than a certificate-backed publisher.
+never bundled, downloaded, installed, updated, uninstalled, elevated, or
+started by SessionDock. The integration panel opens only the pinned
+[official HandleScope v0.1.3 setup guide](https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md).
+Users verify, install, and start HandleScope separately and may explicitly
+choose its limited per-user autostart. SessionDock accepts only the exact
+published v0.1.3 API executable at its expected per-user path: 50,275,056 bytes
+with SHA-256
+`ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
 
 To use the optional connector, select **Integrations** in the SessionDock
 sidebar. That panel also manages the separate **Open with SessionDock** link
@@ -171,15 +177,13 @@ keeps the link in memory only as needed to forward, review, and confirm it;
 private codes are hidden from the preview and not persisted. This is not a
 boundary against another process already running as the same Windows user.
 
-HandleScope installation starts the API immediately and enables HandleScope's
-limited per-user task so it starts automatically at future Windows sign-ins;
-it does not change SessionDock's integration opt-in. The HandleScope panel can
-separately enable the fixed per-user Roblox policy, explicitly start the API at
-its expected local path if needed, and test its loopback health endpoint.
+The HandleScope panel can inspect that pinned local runtime, enable or disable
+the fixed per-user Roblox policy, and test an already-running API's loopback
+health endpoint. It never starts the API or changes HandleScope's autostart.
 Testing never enumerates or closes a handle. SessionDock stores only the
-minimal enabled/disabled opt-in; its
-narrow Roblox handle policy remains compiled into the app. Command-line setup
-remains documented for source developers under
+minimal enabled/disabled opt-in in v2.7.1; it ignores and leaves unchanged any
+public HandleScope verification metadata written by v2.7.0. Its narrow Roblox
+handle policy remains compiled into the app. Manual setup and source opt-in details are documented under
 [SystemProcesses](SessionDock/SystemProcesses/README.md).
 
 The embedded sign-in view intentionally does not load extensions or password
@@ -200,7 +204,9 @@ it does not gather a support archive from local application data.
 
 The top-right update button checks this repository's stable GitHub Releases
 feed. SessionDock shows the version and cryptographically signed release notes
-before it downloads anything, and installs only after confirmation.
+before it downloads anything, and installs only after confirmation. Bundled
+notes use the selected language when available and visibly identify an English
+fallback for older releases.
 
 Production updates require a release descriptor authorized by the public key
 pinned in the app. The descriptor binds the version, notes, exact package name,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -17,6 +18,48 @@ internal static class MetadataTransferService
     private const int MaximumAccountLabelLength = 40;
     private const int MaximumExperienceNameLength = 200;
     private const int MaximumCustomNameLength = 80;
+    private static readonly string[] PreviewLocalizationKeys =
+    [
+        "Metadata.Preview.Title",
+        "Metadata.Preview.Format",
+        "Metadata.Preview.MatchedAccounts",
+        "Metadata.Preview.AppearanceUpdates",
+        "Metadata.Preview.AccountOrder",
+        "Metadata.Preview.OrderWillUpdate",
+        "Metadata.Preview.OrderMatches",
+        "Metadata.Preview.FavoritesToAdd",
+        "Metadata.Preview.FavoritesToUpdate",
+        "Metadata.Preview.NeverImportedHeading",
+        "Metadata.Preview.NeverImportedSignIns",
+        "Metadata.Preview.NeverImportedAccountData",
+        "Metadata.Preview.NeverImportedPrivateData",
+        "Metadata.Preview.NeverImportedSettings",
+        "Metadata.Preview.MatchedAppearanceHeading",
+        "Metadata.Preview.OrderMovesHeading",
+        "Metadata.Preview.FavoriteChangesHeading",
+        "Metadata.Preview.SkippedHeading",
+        "Metadata.Preview.SkippedAccountOne",
+        "Metadata.Preview.SkippedAccountMany",
+        "Metadata.Preview.SkippedFavoriteOne",
+        "Metadata.Preview.SkippedFavoriteMany",
+        "Metadata.Preview.AccountDetail",
+        "Metadata.Preview.FavoriteAdd",
+        "Metadata.Preview.FavoriteUpdate",
+        "Metadata.Preview.OrderMove",
+        "Metadata.Preview.NotSet",
+        "Metadata.Preview.Default",
+        "Metadata.Preview.Yes",
+        "Metadata.Preview.YesUnchanged",
+        "Metadata.Preview.NoToYes",
+        "Metadata.Preview.Unchanged",
+        "Metadata.Preview.Clear",
+        "Metadata.Preview.Transition",
+        "Metadata.Preview.SharedHistory",
+        "Metadata.Preview.RobloxUser"
+    ];
+    private static readonly Lazy<LocalizedTextSnapshot> EnglishLocalization =
+        new(() => CreateLocalizationSnapshot(
+            CultureInfo.GetCultureInfo(LocalizationPreference.English)));
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         AllowTrailingCommas = false,
@@ -160,18 +203,81 @@ internal static class MetadataTransferService
         AppSettings currentSettings,
         CancellationToken cancellationToken = default)
     {
+        return await ReadImportAsync(
+            path,
+            currentSettings,
+            EnglishLocalization.Value,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static async Task<MetadataImportPlan> ReadImportAsync(
+        string path,
+        AppSettings currentSettings,
+        AppLocalizationService localization,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(localization);
+        var snapshot = LocalizedTextSnapshot.Capture(
+            localization,
+            PreviewLocalizationKeys);
+        return await ReadImportAsync(
+            path,
+            currentSettings,
+            snapshot,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<MetadataImportPlan> ReadImportAsync(
+        string path,
+        AppSettings currentSettings,
+        LocalizedTextSnapshot localization,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(currentSettings);
+        ArgumentNullException.ThrowIfNull(localization);
         var contents = await ReadBoundedFileAsync(path, cancellationToken)
             .ConfigureAwait(false);
-        return CreateImportPlan(contents, currentSettings);
+        return CreateImportPlan(contents, currentSettings, localization);
     }
 
     internal static MetadataImportPlan CreateImportPlan(
         ReadOnlySpan<byte> contents,
         AppSettings currentSettings)
     {
+        return CreateImportPlan(
+            contents,
+            currentSettings,
+            EnglishLocalization.Value);
+    }
+
+    internal static MetadataImportPlan CreateImportPlan(
+        ReadOnlySpan<byte> contents,
+        AppSettings currentSettings,
+        AppLocalizationService localization)
+    {
+        ArgumentNullException.ThrowIfNull(localization);
+        return CreateImportPlan(
+            contents,
+            currentSettings,
+            LocalizedTextSnapshot.Capture(
+                localization,
+                PreviewLocalizationKeys));
+    }
+
+    internal static LocalizedTextSnapshot CreateLocalizationSnapshot(
+        CultureInfo culture) =>
+        LocalizedTextSnapshot.FromResources(
+            culture,
+            PreviewLocalizationKeys);
+
+    internal static MetadataImportPlan CreateImportPlan(
+        ReadOnlySpan<byte> contents,
+        AppSettings currentSettings,
+        LocalizedTextSnapshot localization)
+    {
         ArgumentNullException.ThrowIfNull(currentSettings);
+        ArgumentNullException.ThrowIfNull(localization);
         if (contents.IsEmpty)
             throw new InvalidDataException("The metadata file is empty.");
         if (contents.Length > MaximumFileBytes)
@@ -203,12 +309,13 @@ internal static class MetadataTransferService
         }
 
         ValidateDocument(document);
-        return BuildImportPlan(document, currentSettings);
+        return BuildImportPlan(document, currentSettings, localization);
     }
 
     private static MetadataImportPlan BuildImportPlan(
         MetadataTransferDocument document,
-        AppSettings currentSettings)
+        AppSettings currentSettings,
+        LocalizedTextSnapshot localization)
     {
         var currentAccounts = currentSettings.Accounts
             .Where(account => account.UserId > 0)
@@ -235,7 +342,24 @@ internal static class MetadataTransferService
                 imported.Color);
             matchedAccounts.Add(metadata);
             accountPreviewDetails.Add(
-                $"Roblox user {metadata.RobloxUserId}: label {DescribeTransition(current.Label, metadata.Label, "not set")}; group {DescribeTransition(current.Group, metadata.Group, "not set")}; color {DescribeTransition(current.ColorHex, metadata.Color, "default")}");
+                localization.Format(
+                    "Metadata.Preview.AccountDetail",
+                    metadata.RobloxUserId,
+                    DescribeTransition(
+                        current.Label,
+                        metadata.Label,
+                        "Metadata.Preview.NotSet",
+                        localization),
+                    DescribeTransition(
+                        current.Group,
+                        metadata.Group,
+                        "Metadata.Preview.NotSet",
+                        localization),
+                    DescribeTransition(
+                        current.ColorHex,
+                        metadata.Color,
+                        "Metadata.Preview.Default",
+                        localization)));
             if (!metadata.Matches(current))
                 accountUpdateCount++;
         }
@@ -251,7 +375,8 @@ internal static class MetadataTransferService
             desiredMatchedOrder);
         var orderChangeDetails = BuildOrderChangeDetails(
             currentSettings.Accounts,
-            desiredMatchedOrder);
+            desiredMatchedOrder,
+            localization);
 
         var favoriteActions = new List<ImportedFavoriteMetadata>();
         var favoriteChangeDetails = new List<string>();
@@ -292,7 +417,21 @@ internal static class MetadataTransferService
                 favoritesToAdd++;
                 favoriteActions.Add(action);
                 favoriteChangeDetails.Add(
-                    $"Add public place {action.PlaceId} for {DescribeFavoriteOwner(action.AccountUserId)}: display name {DescribeValue(action.Name, "not set")}; favorite name {DescribeValue(action.CustomName, "not set")}; pinned yes");
+                    localization.Format(
+                        "Metadata.Preview.FavoriteAdd",
+                        action.PlaceId,
+                        DescribeFavoriteOwner(
+                            action.AccountUserId,
+                            localization),
+                        DescribeValue(
+                            action.Name,
+                            localization.GetString(
+                                "Metadata.Preview.NotSet")),
+                        DescribeValue(
+                            action.CustomName,
+                            localization.GetString(
+                                "Metadata.Preview.NotSet")),
+                        localization.GetString("Metadata.Preview.Yes")));
                 continue;
             }
 
@@ -309,7 +448,26 @@ internal static class MetadataTransferService
                 favoritesToUpdate++;
                 favoriteActions.Add(action);
                 favoriteChangeDetails.Add(
-                    $"Update public place {action.PlaceId} for {DescribeFavoriteOwner(action.AccountUserId)}: display name {DescribeTransition(existing.Name, action.Name, "not set")}; favorite name {DescribeTransition(existing.CustomName, action.CustomName, "not set")}; pinned {(existing.IsPinned ? "yes (unchanged)" : "no -> yes")}");
+                    localization.Format(
+                        "Metadata.Preview.FavoriteUpdate",
+                        action.PlaceId,
+                        DescribeFavoriteOwner(
+                            action.AccountUserId,
+                            localization),
+                        DescribeTransition(
+                            existing.Name,
+                            action.Name,
+                            "Metadata.Preview.NotSet",
+                            localization),
+                        DescribeTransition(
+                            existing.CustomName,
+                            action.CustomName,
+                            "Metadata.Preview.NotSet",
+                            localization),
+                        localization.GetString(
+                            existing.IsPinned
+                                ? "Metadata.Preview.YesUnchanged"
+                                : "Metadata.Preview.NoToYes")));
             }
         }
 
@@ -323,7 +481,8 @@ internal static class MetadataTransferService
             skippedFavoriteCount,
             accountPreviewDetails,
             orderChangeDetails,
-            favoriteChangeDetails);
+            favoriteChangeDetails,
+            localization);
         return new MetadataImportPlan(
             matchedAccounts,
             desiredMatchedOrder,
@@ -347,56 +506,83 @@ internal static class MetadataTransferService
         int skippedFavorites,
         IReadOnlyList<string> accountPreviewDetails,
         IReadOnlyList<string> orderChangeDetails,
-        IReadOnlyList<string> favoriteChangeDetails)
+        IReadOnlyList<string> favoriteChangeDetails,
+        LocalizedTextSnapshot localization)
     {
         var lines = new List<string>
         {
-            "SessionDock metadata import preview",
+            localization.GetString("Metadata.Preview.Title"),
             string.Empty,
-            $"Format: {FormatName} version {CurrentVersion}",
-            $"Existing accounts matched: {matchedAccounts}",
-            $"Account appearance updates: {accountUpdates}",
-            $"Account order: {(orderWillChange ? "will be updated" : "already matches")}",
-            $"Public favorites to add: {favoritesToAdd}",
-            $"Public favorites to update: {favoritesToUpdate}",
+            localization.Format(
+                "Metadata.Preview.Format",
+                FormatName,
+                CurrentVersion),
+            localization.Format(
+                "Metadata.Preview.MatchedAccounts",
+                matchedAccounts),
+            localization.Format(
+                "Metadata.Preview.AppearanceUpdates",
+                accountUpdates),
+            localization.Format(
+                "Metadata.Preview.AccountOrder",
+                localization.GetString(
+                    orderWillChange
+                        ? "Metadata.Preview.OrderWillUpdate"
+                        : "Metadata.Preview.OrderMatches")),
+            localization.Format(
+                "Metadata.Preview.FavoritesToAdd",
+                favoritesToAdd),
+            localization.Format(
+                "Metadata.Preview.FavoritesToUpdate",
+                favoritesToUpdate),
             string.Empty,
-            "Never imported:",
-            "- sign-ins, browser profiles, cookies, tokens, or tickets",
-            "- account-slot keys, usernames, destinations, or local paths",
-            "- private-server links/codes, server JobIds, or timestamps",
-            "- settings internals, logs, or integration configuration"
+            localization.GetString("Metadata.Preview.NeverImportedHeading"),
+            localization.GetString("Metadata.Preview.NeverImportedSignIns"),
+            localization.GetString("Metadata.Preview.NeverImportedAccountData"),
+            localization.GetString("Metadata.Preview.NeverImportedPrivateData"),
+            localization.GetString("Metadata.Preview.NeverImportedSettings")
         };
         if (accountPreviewDetails.Count > 0)
         {
             lines.Add(string.Empty);
-            lines.Add("Matched account appearance (current -> imported):");
+            lines.Add(localization.GetString(
+                "Metadata.Preview.MatchedAppearanceHeading"));
             lines.AddRange(accountPreviewDetails.Select(detail => $"- {detail}"));
         }
         if (orderChangeDetails.Count > 0)
         {
             lines.Add(string.Empty);
-            lines.Add("Account order moves:");
+            lines.Add(localization.GetString(
+                "Metadata.Preview.OrderMovesHeading"));
             lines.AddRange(orderChangeDetails.Select(detail => $"- {detail}"));
         }
         if (favoriteChangeDetails.Count > 0)
         {
             lines.Add(string.Empty);
-            lines.Add("Public favorite changes:");
+            lines.Add(localization.GetString(
+                "Metadata.Preview.FavoriteChangesHeading"));
             lines.AddRange(favoriteChangeDetails.Select(detail => $"- {detail}"));
         }
         if (skippedAccounts > 0 || skippedFavorites > 0)
         {
             lines.Add(string.Empty);
-            lines.Add("Skipped safely:");
+            lines.Add(localization.GetString(
+                "Metadata.Preview.SkippedHeading"));
             if (skippedAccounts > 0)
             {
-                lines.Add(
-                    $"- {skippedAccounts} account entr{(skippedAccounts == 1 ? "y did" : "ies did")} not match an existing signed-in account.");
+                lines.Add(localization.Format(
+                    skippedAccounts == 1
+                        ? "Metadata.Preview.SkippedAccountOne"
+                        : "Metadata.Preview.SkippedAccountMany",
+                    skippedAccounts));
             }
             if (skippedFavorites > 0)
             {
-                lines.Add(
-                    $"- {skippedFavorites} public favorite entr{(skippedFavorites == 1 ? "y was" : "ies were")} unmatched, duplicate, or beyond the 50-favorite limit.");
+                lines.Add(localization.Format(
+                    skippedFavorites == 1
+                        ? "Metadata.Preview.SkippedFavoriteOne"
+                        : "Metadata.Preview.SkippedFavoriteMany",
+                    skippedFavorites));
             }
         }
 
@@ -405,7 +591,8 @@ internal static class MetadataTransferService
 
     private static IReadOnlyList<string> BuildOrderChangeDetails(
         IReadOnlyList<AccountProfile> currentAccounts,
-        IReadOnlyList<long> desiredMatchedOrder)
+        IReadOnlyList<long> desiredMatchedOrder,
+        LocalizedTextSnapshot localization)
     {
         var remainingMatchedIds = desiredMatchedOrder.ToHashSet();
         var desiredQueue = new Queue<long>(desiredMatchedOrder);
@@ -429,7 +616,11 @@ internal static class MetadataTransferService
                 currentIndex != projectedIndex)
             {
                 details.Add(
-                    $"Roblox user {userId}: position {currentIndex + 1} -> {projectedIndex + 1}");
+                    localization.Format(
+                        "Metadata.Preview.OrderMove",
+                        userId,
+                        currentIndex + 1,
+                        projectedIndex + 1));
             }
         }
 
@@ -439,15 +630,26 @@ internal static class MetadataTransferService
     private static string DescribeTransition(
         string? current,
         string? imported,
-        string emptyDescription)
+        string emptyDescriptionKey,
+        LocalizedTextSnapshot localization)
     {
+        var emptyDescription = localization.GetString(emptyDescriptionKey);
         var currentDescription = DescribeValue(current, emptyDescription);
         if (string.Equals(current, imported, StringComparison.Ordinal))
-            return $"{currentDescription} (unchanged)";
+        {
+            return localization.Format(
+                "Metadata.Preview.Unchanged",
+                currentDescription);
+        }
         var importedDescription = imported is null
-            ? $"{emptyDescription} (clear)"
+            ? localization.Format(
+                "Metadata.Preview.Clear",
+                emptyDescription)
             : DescribeValue(imported, emptyDescription);
-        return $"{currentDescription} -> {importedDescription}";
+        return localization.Format(
+            "Metadata.Preview.Transition",
+            currentDescription,
+            importedDescription);
     }
 
     private static string DescribeValue(
@@ -457,10 +659,14 @@ internal static class MetadataTransferService
             ? emptyDescription
             : JsonSerializer.Serialize(value);
 
-    private static string DescribeFavoriteOwner(long accountUserId) =>
+    private static string DescribeFavoriteOwner(
+        long accountUserId,
+        LocalizedTextSnapshot localization) =>
         accountUserId == 0
-            ? "shared history"
-            : $"Roblox user {accountUserId}";
+            ? localization.GetString("Metadata.Preview.SharedHistory")
+            : localization.Format(
+                "Metadata.Preview.RobloxUser",
+                accountUserId);
 
 
     private static void ValidateDocument(MetadataTransferDocument document)

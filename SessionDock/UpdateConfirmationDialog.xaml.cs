@@ -28,11 +28,21 @@ public partial class UpdateConfirmationDialog : Window
         SizeText.Text = localization.Format(
             "Update.SizeMegabytes",
             update.Descriptor.PackageSize / (1024d * 1024d));
-        ReleaseNotesBox.Text = ReleaseNotesTextFormatter.Format(
+        var releaseNotes = ReleaseNotesTextFormatter.Format(
             update.Descriptor.ReleaseNotes);
+        ReleaseNotesBox.Text = localization.EffectiveCulture.Name.Equals(
+                LocalizationPreference.English,
+                StringComparison.Ordinal)
+            ? releaseNotes
+            : $"{localization.GetString("Update.ReleaseNotesEnglishFallback")}" +
+              $"{Environment.NewLine}{Environment.NewLine}{releaseNotes}";
         IntegrityText.Text = alreadyDownloaded
-            ? $"SHA-256 {update.Descriptor.PackageSha256[..16]}…  •  Signed package bytes, contents, and version verified."
-            : $"SHA-256 {update.Descriptor.PackageSha256[..16]}…  •  Signed package identity authorized; bytes, contents, and version are checked after download. Windows binaries are not code-signed.";
+            ? localization.Format(
+                "Update.IntegrityDownloaded",
+                update.Descriptor.PackageSha256[..16])
+            : localization.Format(
+                "Update.IntegrityPending",
+                update.Descriptor.PackageSha256[..16]);
     }
 
     private void InstallButton_Click(object sender, RoutedEventArgs e) =>

@@ -8,10 +8,6 @@ namespace SessionDock.SystemProcesses;
 internal interface IHandleScopeProcessVerifier
 {
     bool IsExpected(HandleScopeConnection connection);
-
-    bool IsExpectedStartedProcess(int processId);
-
-    int? FindExpectedRunningProcessId();
 }
 
 internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
@@ -36,11 +32,7 @@ internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
         _expectedExecutablePath = Path.GetFullPath(expectedExecutablePath);
         _isReparsePoint = isReparsePoint;
         _installedRuntimeVerifier = installedRuntimeVerifier ??
-            new HandleScopeInstalledRuntimeVerifier(
-                _localAppDataRoot,
-                AppDataPaths.RootDirectory,
-                EmbeddedHandleScopeReleaseKeyProvider.Instance,
-                isReparsePoint);
+            new HandleScopeInstalledRuntimeVerifier();
     }
 
     internal static HandleScopeProcessVerifier CreateDefault()
@@ -86,71 +78,6 @@ internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
         {
             return false;
         }
-    }
-
-    public bool IsExpectedStartedProcess(int processId)
-    {
-        if (processId <= 0)
-            return false;
-
-        try
-        {
-            if (!TryGetExpectedProcessSnapshot(processId, out var snapshot))
-                return false;
-
-            using var current = Process.GetCurrentProcess();
-            return MatchesExpectedIdentity(
-                processId,
-                _expectedExecutablePath,
-                current.SessionId,
-                snapshot);
-        }
-        catch (Exception exception) when (
-            exception is ArgumentException or InvalidOperationException or
-                Win32Exception or NotSupportedException or IOException or
-                UnauthorizedAccessException)
-        {
-            return false;
-        }
-    }
-
-    public int? FindExpectedRunningProcessId()
-    {
-        Process[] processes;
-        try
-        {
-            processes = Process.GetProcessesByName(ExpectedProcessName);
-        }
-        catch (Exception exception) when (
-            exception is InvalidOperationException or Win32Exception or
-                NotSupportedException)
-        {
-            return null;
-        }
-
-        try
-        {
-            foreach (var process in processes)
-            {
-                try
-                {
-                    var processId = process.Id;
-                    if (IsExpectedStartedProcess(processId))
-                        return processId;
-                }
-                catch (InvalidOperationException)
-                {
-                    // The process exited while the snapshot was enumerated.
-                }
-            }
-        }
-        finally
-        {
-            foreach (var process in processes)
-                process.Dispose();
-        }
-
-        return null;
     }
 
     private bool TryGetExpectedProcessSnapshot(

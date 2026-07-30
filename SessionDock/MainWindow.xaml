@@ -11,6 +11,7 @@
         FontFamily="Segoe UI Variable Text"
         UseLayoutRounding="True"
         PreviewKeyDown="Window_PreviewKeyDown"
+        SizeChanged="MainWindow_SizeChanged"
         TextOptions.TextFormattingMode="Display">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="64"
@@ -216,19 +217,24 @@
         <!-- Main launch workspace. -->
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
-                <RowDefinition Height="64"/>
+                <RowDefinition x:Name="HeaderRow" Height="64"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Grid Margin="20,10,20,7">
+            <Grid x:Name="HeaderGrid" Margin="20,10,20,7">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <StackPanel VerticalAlignment="Center">
+                <StackPanel x:Name="HeaderTextPanel"
+                            VerticalAlignment="Center">
                     <TextBlock Text="{DynamicResource Main.Heading}"
                                Foreground="{DynamicResource TextBrush}"
                                FontSize="22" FontWeight="SemiBold"/>
@@ -236,7 +242,8 @@
                                Foreground="{DynamicResource MutedBrush}"
                                FontSize="11" Margin="0,2,0,0"/>
                 </StackPanel>
-                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                <StackPanel x:Name="HeaderUtilityPanel"
+                            Grid.Column="1" Orientation="Horizontal"
                             VerticalAlignment="Center">
                     <Button x:Name="AboutDiagnosticsButton"
                             Style="{StaticResource IconOnlyButton}"
@@ -426,7 +433,11 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <Grid>
+                        <Grid x:Name="LaunchHeaderGrid">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
@@ -463,10 +474,12 @@
                                     </StackPanel>
                                 </RadioButton>
                             </StackPanel>
-                            <TextBlock Grid.Column="2"
-                               Text="{DynamicResource Main.DestinationSaved}"
+                            <TextBlock x:Name="DestinationSavedText"
+                                       Grid.Column="2"
+                                       Text="{DynamicResource Main.DestinationSaved}"
                                        Foreground="{DynamicResource SubtleBrush}"
-                                       FontSize="11" VerticalAlignment="Center"/>
+                                       FontSize="11" VerticalAlignment="Center"
+                                       TextWrapping="Wrap"/>
                         </Grid>
 
                         <ScrollViewer x:Name="LaunchTabPanel" Grid.Row="1"
@@ -630,7 +643,11 @@
                                     </Grid>
                                 </Border>
 
-                                <Grid Grid.Row="3">
+                                <Grid x:Name="LaunchActionsGrid" Grid.Row="3">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -649,7 +666,8 @@
                                 <TextBlock x:Name="SignInButtonLabel" Text="{DynamicResource Main.SignIn}"/>
                                         </StackPanel>
                                     </Button>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                    <StackPanel x:Name="LaunchPrimaryActionsPanel"
+                                                Grid.Column="1" Orientation="Horizontal">
                                         <Button x:Name="BatchLaunchButton"
                                                 Style="{StaticResource QuietButton}"
                                                 Click="BatchLaunchButton_Click"
@@ -909,15 +927,21 @@
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="4" Margin="20,5,20,6">
+            <Grid x:Name="RequirementsFooterGrid"
+                  Grid.Row="4" Margin="20,5,20,6">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{DynamicResource Main.Requirements}"
+                <TextBlock x:Name="RequirementsText"
+                           Text="{DynamicResource Main.Requirements}"
                            Foreground="{DynamicResource SubtleBrush}" FontSize="11"
                            TextTrimming="CharacterEllipsis"/>
-                <TextBlock Grid.Column="1"
+                <TextBlock x:Name="NotAffiliatedText" Grid.Column="1"
                            Text="{DynamicResource Main.NotAffiliated}"
                            Foreground="{DynamicResource SubtleBrush}" FontSize="11"
                            Margin="14,0,0,0"/>

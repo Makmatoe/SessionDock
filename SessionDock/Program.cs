@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using SessionDock.Services;
 using Velopack;
@@ -21,7 +22,6 @@ public static class Program
         }
 #endif
         string? externalLink = null;
-        var externalLinkError = string.Empty;
         var externalCommandValid = true;
 #if SESSIONDOCK_SMOKE_HARNESS
         if (runtimeSmokeTest is null)
@@ -30,15 +30,15 @@ public static class Program
         externalCommandValid = ExternalLaunchCommandLine.TryParse(
             args,
             out externalLink,
-            out externalLinkError);
+            out _);
 #if SESSIONDOCK_SMOKE_HARNESS
         }
 #endif
         if (!externalCommandValid)
         {
             MessageBox.Show(
-                externalLinkError,
-                "SessionDock refused an external link",
+                StartupLocalization.GetString("ExternalLink.ErrorDefault"),
+                StartupLocalization.GetString("ExternalLink.RefusedTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
             Environment.ExitCode = 2;
@@ -84,11 +84,12 @@ public static class Program
             ProductionRuntimeAdmissionPolicy.RequiresAdmission(args);
 #endif
         if (requiresProductionSecurityContext &&
-            !RuntimeSecurityPolicy.IsCurrentProcessSupported(out var reason))
+            !RuntimeSecurityPolicy.IsCurrentProcessSupported(out _))
         {
             MessageBox.Show(
-                reason,
-                "SessionDock cannot start",
+                StartupLocalization.GetString(
+                    "Startup.SecurityContextFailureDetail"),
+                StartupLocalization.GetString("Startup.CannotStartTitle"),
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Environment.ExitCode = 1;
@@ -107,6 +108,27 @@ public static class Program
         application.InitializeComponent();
         Environment.ExitCode = application.Run();
     }
+}
+
+internal static class StartupLocalization
+{
+    private static readonly string[] ResourceKeys =
+    [
+        "ExternalLink.ErrorDefault",
+        "ExternalLink.RefusedTitle",
+        "Startup.CannotStartTitle",
+        "Startup.SecurityContextFailureDetail",
+        "Startup.ForwardLinkTitle",
+        "Startup.ForwardLinkDetail",
+        "Startup.LocalDataFailureDetail"
+    ];
+    private static readonly Lazy<LocalizedTextSnapshot> Strings = new(() =>
+        LocalizedTextSnapshot.FromResources(
+            CultureInfo.CurrentUICulture,
+            ResourceKeys));
+
+    internal static string GetString(string key) =>
+        Strings.Value.GetString(key);
 }
 
 internal static class ProductionRuntimeAdmissionPolicy
