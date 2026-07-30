@@ -2,13 +2,17 @@ namespace SessionDock.Tests;
 
 public sealed class InstallationDocumentationTests
 {
-    private const string InstallLabel = "Install Latest SessionDock release";
+    private const string LatestInstallLabel = "Install Latest SessionDock release";
     private const string LatestSetupUrl =
         "https://github.com/Makmatoe/SessionDock/releases/latest/download/" +
         "SessionDock-win-x64-Setup.exe";
+    private const string VersionedInstallLabel = "Install SessionDock v2.7.0";
+    private const string VersionedSetupUrl =
+        "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.0/" +
+        "SessionDock-win-x64-Setup.exe";
 
     [Fact]
-    public void EveryReadmeOffersTheCanonicalOneClickSetupDownload()
+    public void EveryReadmeOffersTheExpectedOneClickSetupDownload()
     {
         var root = FindRepositoryRoot();
         var readmes = Directory.EnumerateFiles(
@@ -19,12 +23,48 @@ public sealed class InstallationDocumentationTests
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        Assert.Equal(3, readmes.Length);
+        var expectedReadmes = new Dictionary<string, (string Label, string Url)>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["README.md"] = (LatestInstallLabel, LatestSetupUrl),
+            [Path.Combine(
+                "docs",
+                "images",
+                "sessiondock-v2.7.0",
+                "README.md")] = (VersionedInstallLabel, VersionedSetupUrl),
+            [Path.Combine("marketing", "README.md")] =
+                (VersionedInstallLabel, VersionedSetupUrl),
+            [Path.Combine(
+                "marketing",
+                "trusted",
+                "v2.7.0",
+                "README.md")] = (VersionedInstallLabel, VersionedSetupUrl),
+            [Path.Combine("SessionDock", "README.md")] =
+                (LatestInstallLabel, LatestSetupUrl),
+            [Path.Combine(
+                "SessionDock",
+                "SystemProcesses",
+                "README.md")] = (LatestInstallLabel, LatestSetupUrl)
+        };
+        Assert.Equal(
+            expectedReadmes.Keys.OrderBy(
+                path => path,
+                StringComparer.OrdinalIgnoreCase),
+            readmes.Select(path => Path.GetRelativePath(root, path)));
         foreach (var readme in readmes)
         {
             var contents = File.ReadAllText(readme);
-            Assert.Contains(InstallLabel, contents, StringComparison.Ordinal);
-            Assert.Contains(LatestSetupUrl, contents, StringComparison.Ordinal);
+            var relative = Path.GetRelativePath(root, readme);
+            var expected = expectedReadmes[relative];
+            Assert.Contains(expected.Label, contents, StringComparison.Ordinal);
+            Assert.Contains(expected.Url, contents, StringComparison.Ordinal);
+            if (expected.Url == VersionedSetupUrl)
+            {
+                Assert.DoesNotContain(
+                    LatestSetupUrl,
+                    contents,
+                    StringComparison.Ordinal);
+            }
         }
     }
 
@@ -40,7 +80,7 @@ public sealed class InstallationDocumentationTests
         var button = File.ReadAllText(buttonPath);
         var updates = File.ReadAllText(Path.Combine(root, "docs", "UPDATES.md"));
 
-        Assert.Contains(InstallLabel, button, StringComparison.Ordinal);
+        Assert.Contains(LatestInstallLabel, button, StringComparison.Ordinal);
         Assert.DoesNotContain("<script", button, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(LatestSetupUrl, updates, StringComparison.Ordinal);
     }

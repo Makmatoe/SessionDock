@@ -16,6 +16,7 @@ AGENTS.md
 /publish/
 /Releases/
 /.velopack/
+/marketing/archive/synthetic-not-for-use/
 coverage/
 coverage.*
 *.coverage

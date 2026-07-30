@@ -1,0 +1,156 @@
+{
+    "product":  "SessionDock",
+    "version":  "2.7.0",
+    "build":  "2.7.0+e30ad6acf8165befe11e00d9f1f5d1de1f7e90de",
+    "executable":  "%LOCALAPPDATA%\\SessionDockApp\\current\\SessionDock.exe",
+    "captureMethod":  "Windows active-window capture of the installed WPF application; dialogs opened through their real UI Automation controls",
+    "privacy":  "Raw captures were processed only in a task-specific temporary directory and are not retained. Listed rectangles were replaced by a deterministic opaque mosaic; no generative editing was used.",
+    "sources":  [
+                    {
+                        "id":  "main-window",
+                        "rawFileName":  "main-window-raw.png",
+                        "rawSha256":  "7e3414e7f794df81795d0908d776e56df344e793de27cea9c4860559c4df251d",
+                        "width":  1048,
+                        "height":  720,
+                        "redactions":  [
+                                           {
+                                               "Name":  "account-card-1",
+                                               "X":  208,
+                                               "Y":  78,
+                                               "Width":  112,
+                                               "Height":  35
+                                           },
+                                           {
+                                               "Name":  "account-card-2",
+                                               "X":  400,
+                                               "Y":  78,
+                                               "Width":  112,
+                                               "Height":  35
+                                           },
+                                           {
+                                               "Name":  "account-card-3",
+                                               "X":  592,
+                                               "Y":  78,
+                                               "Width":  112,
+                                               "Height":  35
+                                           },
+                                           {
+                                               "Name":  "destination",
+                                               "X":  114,
+                                               "Y":  327,
+                                               "Width":  744,
+                                               "Height":  29
+                                           },
+                                           {
+                                               "Name":  "active-account",
+                                               "X":  239,
+                                               "Y":  649,
+                                               "Width":  97,
+                                               "Height":  25
+                                           }
+                                       ]
+                    },
+                    {
+                        "id":  "batch-launch",
+                        "rawFileName":  "batch-launch-raw.png",
+                        "rawSha256":  "0d159769e44589aa1fdf3818543e3067fe192c3fc79814faf6384469fb01919b",
+                        "width":  666,
+                        "height":  713,
+                        "redactions":  [
+                                           {
+                                               "Name":  "batch-account-1",
+                                               "X":  102,
+                                               "Y":  428,
+                                               "Width":  478,
+                                               "Height":  61
+                                           },
+                                           {
+                                               "Name":  "batch-account-2",
+                                               "X":  102,
+                                               "Y":  510,
+                                               "Width":  478,
+                                               "Height":  61
+                                           },
+                                           {
+                                               "Name":  "batch-account-3-partial",
+                                               "X":  102,
+                                               "Y":  594,
+                                               "Width":  150,
+                                               "Height":  24
+                                           }
+                                       ]
+                    },
+                    {
+                        "id":  "about-diagnostics",
+                        "rawFileName":  "diagnostics-raw.png",
+                        "rawSha256":  "f3b8f0f2bc951896f7bc12ad18290c99e0ddc6e66200f9ecba0b377279fe5c4a",
+                        "width":  706,
+                        "height":  673,
+                        "redactions":  [
+
+                                       ]
+                    }
+                ],
+    "outputs":  [
+                    {
+                        "file":  "sessiondock-v2.7.0-full-window.png",
+                        "width":  1048,
+                        "height":  720,
+                        "sha256":  "3d2755c8bc61d8ea7bf2a10ac254a392a5e9ca9c368a8d94ca60244b7b31514b"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-batch-dialog.png",
+                        "width":  666,
+                        "height":  713,
+                        "sha256":  "528c2d8423cc7f580c494d0a592cadaf7062182866a5a385cfb0f0ff1fd6bc23"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-diagnostics-dialog.png",
+                        "width":  706,
+                        "height":  673,
+                        "sha256":  "f3b8f0f2bc951896f7bc12ad18290c99e0ddc6e66200f9ecba0b377279fe5c4a"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-accounts-focused.png",
+                        "width":  1200,
+                        "height":  260,
+                        "sha256":  "f491a49d99439d2edf0643365cd55587fc078f77dcf371cb290334ec4c4b9733"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-destinations-focused.png",
+                        "width":  1200,
+                        "height":  560,
+                        "sha256":  "90e101c1593e36272cf148ea64df3895b17cc0aa0b3d33661bdfc774eb249a01"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-batch-focused.png",
+                        "width":  1100,
+                        "height":  840,
+                        "sha256":  "9bffce50304da1ab3cfffbb9d73627defc38d8dfa8a3e1e42c576e581db1c80e"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-diagnostics-focused.png",
+                        "width":  1100,
+                        "height":  820,
+                        "sha256":  "650762a5b0ce79f9580805f75716f04de17c8bdf930398d1b660edfec406b2ce"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-readme-overview.png",
+                        "width":  1200,
+                        "height":  900,
+                        "sha256":  "511cd127d3ecc4a3f79bdd07bc395f73fd5c5e69cb15ef3e3572e91b11402fad"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-social-wide.png",
+                        "width":  1600,
+                        "height":  900,
+                        "sha256":  "51bd9cc08e0f031a701932736054aefae0f64b6f87d7f98c1416ced15b367f92"
+                    },
+                    {
+                        "file":  "sessiondock-v2.7.0-social-square.png",
+                        "width":  1200,
+                        "height":  1200,
+                        "sha256":  "309a4a3d6d952e70d819f16b5b76f1e8355d80aa11d297924065c0be73e05cc0"
+                    }
+                ]
+}
