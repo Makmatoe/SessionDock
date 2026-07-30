@@ -49,6 +49,14 @@ public sealed class HandleScopeReleaseInstallerTests
             "https://github.com/Makmatoe/HandleScope/releases/download/v0.1.3/",
             release.Checksums.DownloadUri.AbsoluteUri,
             StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "/latest/",
+            release.Package.DownloadUri.AbsoluteUri,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "/latest/",
+            release.Checksums.DownloadUri.AbsoluteUri,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
