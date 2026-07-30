@@ -357,6 +357,8 @@
                         <Grid>
                             <TextBox x:Name="AccountSearchBox"
                                      Style="{StaticResource EmbeddedTextBox}"
+                                     Padding="10,0,34,0"
+                                     VerticalContentAlignment="Center"
                                      MaxLength="256"
                                      TextChanged="AccountSearchBox_TextChanged"
                                      ToolTip="{DynamicResource Main.AccountSearchTooltip}"
@@ -364,7 +366,7 @@
                                      AutomationProperties.LiveSetting="Polite"
                                      AutomationProperties.HelpText="{DynamicResource Main.AccountSearchHelp}"/>
                             <TextBlock Text="{DynamicResource Main.AccountSearchPlaceholder}"
-                                       Margin="10,0"
+                                       Margin="10,0,34,0"
                                        VerticalAlignment="Center"
                                        Foreground="{DynamicResource SubtleBrush}"
                                        FontSize="11"
@@ -381,6 +383,29 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
+                            <Button x:Name="AccountSearchClearButton"
+                                    Panel.ZIndex="1"
+                                    Click="AccountSearchClearButton_Click"
+                                    ToolTip="{DynamicResource Main.ClearAccountSearchTooltip}"
+                                    AutomationProperties.Name="{DynamicResource Main.ClearAccountSearchName}"
+                                    AutomationProperties.HelpText="{DynamicResource Main.ClearAccountSearchTooltip}">
+                                <Button.Style>
+                                    <Style TargetType="Button"
+                                           BasedOn="{StaticResource SearchClearButton}">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                        <Setter Property="IsTabStop" Value="True"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=AccountSearchBox}"
+                                                         Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Setter Property="IsTabStop" Value="False"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Path Style="{StaticResource ButtonIcon}"
+                                      Data="{StaticResource IconClear}"/>
+                            </Button>
                         </Grid>
                     </Border>
                     <StackPanel Grid.Column="3" Orientation="Horizontal"
@@ -751,6 +776,8 @@
                                     <Grid>
                                         <TextBox x:Name="RecentSearchBox"
                                                  Style="{StaticResource EmbeddedTextBox}"
+                                                 Padding="10,0,34,0"
+                                                 VerticalContentAlignment="Center"
                                                  MaxLength="256"
                                                  TextChanged="RecentSearchBox_TextChanged"
                                                  ToolTip="{DynamicResource Main.RecentSearchTooltip}"
@@ -758,7 +785,7 @@
                                                  AutomationProperties.LiveSetting="Polite"
                                                  AutomationProperties.HelpText="{DynamicResource Main.RecentSearchHelp}"/>
                                         <TextBlock Text="{DynamicResource Main.RecentSearchPlaceholder}"
-                                                   Margin="10,0"
+                                                   Margin="10,0,34,0"
                                                    VerticalAlignment="Center"
                                                    Foreground="{DynamicResource SubtleBrush}"
                                                    FontSize="11"
@@ -775,6 +802,29 @@
                                                 </Style>
                                             </TextBlock.Style>
                                         </TextBlock>
+                                        <Button x:Name="RecentSearchClearButton"
+                                                Panel.ZIndex="1"
+                                                Click="RecentSearchClearButton_Click"
+                                                ToolTip="{DynamicResource Main.ClearRecentSearchTooltip}"
+                                                AutomationProperties.Name="{DynamicResource Main.ClearRecentSearchName}"
+                                                AutomationProperties.HelpText="{DynamicResource Main.ClearRecentSearchTooltip}">
+                                            <Button.Style>
+                                                <Style TargetType="Button"
+                                                       BasedOn="{StaticResource SearchClearButton}">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Setter Property="IsTabStop" Value="True"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Text, ElementName=RecentSearchBox}"
+                                                                     Value="">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Setter Property="IsTabStop" Value="False"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <Path Style="{StaticResource ButtonIcon}"
+                                                  Data="{StaticResource IconClear}"/>
+                                        </Button>
                                     </Grid>
                                 </Border>
                                 <ComboBox x:Name="AccountFilterCombo" Grid.Column="2"

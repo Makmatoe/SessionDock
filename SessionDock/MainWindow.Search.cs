@@ -67,4 +67,20 @@ public partial class MainWindow
 
         RenderRecentExperiences();
     }
+
+    private void AccountSearchClearButton_Click(
+        object sender,
+        RoutedEventArgs e) =>
+        ClearSearchBox(AccountSearchBox);
+
+    private void RecentSearchClearButton_Click(
+        object sender,
+        RoutedEventArgs e) =>
+        ClearSearchBox(RecentSearchBox);
+
+    private static void ClearSearchBox(TextBox searchBox)
+    {
+        searchBox.Clear();
+        searchBox.Focus();
+    }
 }

@@ -51,6 +51,8 @@
     <sys:String x:Key="Main.AccountSearchName">Buscar cuentas guardadas</sys:String>
     <sys:String x:Key="Main.AccountSearchHelp">Filtra las cuentas guardadas por etiqueta, grupo, nombre de usuario, ID de usuario o destino guardado. Pulsa Ctrl+F desde Inicio para centrar el foco en esta búsqueda o Escape para borrarla.</sys:String>
     <sys:String x:Key="Main.AccountSearchPlaceholder">Buscar cuentas...</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchName">Borrar la búsqueda de cuentas</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchTooltip">Borrar el texto de la búsqueda de cuentas</sys:String>
     <sys:String x:Key="Main.NoAccountsMatch">Ninguna cuenta guardada coincide con tu búsqueda.</sys:String>
     <sys:String x:Key="Main.AddAccount">Añadir cuenta</sys:String>
     <sys:String x:Key="Main.AddAccountTooltip">Añadir otra cuenta aislada de Roblox</sys:String>
@@ -108,6 +110,8 @@
     <sys:String x:Key="Main.RecentSearchName">Buscar en Recientes y Favoritos</sys:String>
     <sys:String x:Key="Main.RecentSearchHelp">Filtra Recientes y Favoritos por nombre personalizado, nombre de Roblox, ID de lugar, nombre de usuario de la cuenta, destino o JobId del servidor. Pulsa Ctrl+F desde Recientes para centrar el foco en esta búsqueda o Escape para borrarla.</sys:String>
     <sys:String x:Key="Main.RecentSearchPlaceholder">Buscar experiencias guardadas...</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchName">Borrar la búsqueda en Recientes y Favoritos</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchTooltip">Borrar el texto de la búsqueda en Recientes y Favoritos</sys:String>
     <sys:String x:Key="Main.RecentAccountFilter">Filtro de cuentas en Recientes</sys:String>
     <sys:String x:Key="Main.ClearHistory">Borrar historial</sys:String>
     <sys:String x:Key="Main.ClearHistoryTooltip">Eliminar del tipo seleccionado el historial que no sea favorito</sys:String>

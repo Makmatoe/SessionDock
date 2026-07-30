@@ -1,4 +1,7 @@
+using System.Reflection;
+using System.Windows.Controls;
 using System.Xml.Linq;
+using SessionDock;
 using SessionDock.Models;
 using SessionDock.Services;
 
@@ -217,6 +220,166 @@ public sealed class ListSearchTests
             "clearSearchBox.Clear();",
             shortcutSource,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "searchBox.Focus();",
+            shortcutSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindow_SearchClearButtonsAreAccessibleAndTrackTheirQueries()
+    {
+        var document = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "MainWindow.xaml"));
+        XNamespace presentation =
+            "http://schemas.microsoft.com/winfx/2006/xaml/presentation";
+        XNamespace xaml =
+            "http://schemas.microsoft.com/winfx/2006/xaml";
+
+        foreach (var contract in new[]
+                 {
+                     new
+                     {
+                         SearchBox = "AccountSearchBox",
+                         ClearButton = "AccountSearchClearButton",
+                         Click = "AccountSearchClearButton_Click",
+                         AutomationName =
+                             "{DynamicResource Main.ClearAccountSearchName}",
+                         ToolTip =
+                             "{DynamicResource Main.ClearAccountSearchTooltip}"
+                     },
+                     new
+                     {
+                         SearchBox = "RecentSearchBox",
+                         ClearButton = "RecentSearchClearButton",
+                         Click = "RecentSearchClearButton_Click",
+                         AutomationName =
+                             "{DynamicResource Main.ClearRecentSearchName}",
+                         ToolTip =
+                             "{DynamicResource Main.ClearRecentSearchTooltip}"
+                     }
+                 })
+        {
+            var searchBox = document
+                .Descendants(presentation + "TextBox")
+                .Single(element =>
+                    (string?)element.Attribute(xaml + "Name") ==
+                    contract.SearchBox);
+            var clearButton = document
+                .Descendants(presentation + "Button")
+                .Single(element =>
+                    (string?)element.Attribute(xaml + "Name") ==
+                    contract.ClearButton);
+
+            Assert.Same(searchBox.Parent, clearButton.Parent);
+            Assert.Equal(
+                contract.Click,
+                (string?)clearButton.Attribute("Click"));
+            Assert.Equal(
+                contract.AutomationName,
+                (string?)clearButton.Attribute("AutomationProperties.Name"));
+            Assert.Equal(
+                contract.ToolTip,
+                (string?)clearButton.Attribute("ToolTip"));
+            Assert.Equal(
+                contract.ToolTip,
+                (string?)clearButton.Attribute(
+                    "AutomationProperties.HelpText"));
+
+            var buttonStyle = clearButton
+                .Elements(presentation + "Button.Style")
+                .Single()
+                .Elements(presentation + "Style")
+                .Single();
+            Assert.Equal(
+                "{StaticResource SearchClearButton}",
+                (string?)buttonStyle.Attribute("BasedOn"));
+            Assert.Equal("Button", (string?)buttonStyle.Attribute("TargetType"));
+            AssertSetter(buttonStyle, presentation, "Visibility", "Visible");
+            AssertSetter(buttonStyle, presentation, "IsTabStop", "True");
+
+            var emptyQueryTrigger = buttonStyle
+                .Descendants(presentation + "DataTrigger")
+                .Single(trigger =>
+                    (string?)trigger.Attribute("Binding") ==
+                        $"{{Binding Text, ElementName={contract.SearchBox}}}" &&
+                    (string?)trigger.Attribute("Value") == string.Empty);
+            AssertSetter(
+                emptyQueryTrigger,
+                presentation,
+                "Visibility",
+                "Collapsed");
+            AssertSetter(
+                emptyQueryTrigger,
+                presentation,
+                "IsTabStop",
+                "False");
+
+            var icon = clearButton
+                .Descendants(presentation + "Path")
+                .Single();
+            Assert.Equal(
+                "{StaticResource IconClear}",
+                (string?)icon.Attribute("Data"));
+        }
+
+        var application = XDocument.Load(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "App.xaml"));
+        var clearButtonStyle = application
+            .Descendants(presentation + "Style")
+            .Single(style =>
+                (string?)style.Attribute(xaml + "Key") ==
+                "SearchClearButton");
+        AssertSetter(
+            clearButtonStyle,
+            presentation,
+            "Foreground",
+            "{DynamicResource TextBrush}");
+    }
+
+    [Fact]
+    public void SearchClearHelper_ClearsTheProvidedTextBox()
+    {
+        var helper = typeof(MainWindow).GetMethod(
+            "ClearSearchBox",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(helper);
+        Assert.Equal(typeof(void), helper.ReturnType);
+        Assert.Equal(
+            new[] { typeof(TextBox) },
+            helper.GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .ToArray());
+
+        Exception? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var searchBox = new TextBox { Text = "builder" };
+
+                helper.Invoke(null, new object[] { searchBox });
+
+                Assert.Equal(string.Empty, searchBox.Text);
+            }
+            catch (TargetInvocationException exception)
+            {
+                failure = exception.InnerException ?? exception;
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        Assert.True(thread.Join(TimeSpan.FromSeconds(10)));
+
+        Assert.Null(failure);
     }
 
     [Fact]
@@ -257,6 +420,22 @@ public sealed class ListSearchTests
             "_activeProfile.Group",
             reorderingSource[availabilityStart..availabilityEnd],
             StringComparison.Ordinal);
+    }
+
+    private static void AssertSetter(
+        XElement owner,
+        XNamespace presentation,
+        string property,
+        string value)
+    {
+        var setters = owner
+            .Elements(presentation + "Setter")
+            .Where(element =>
+                (string?)element.Attribute("Property") == property)
+            .ToArray();
+
+        var setter = Assert.Single(setters);
+        Assert.Equal(value, (string?)setter.Attribute("Value"));
     }
 
     private static string FindRepositoryRoot()

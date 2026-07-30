@@ -51,6 +51,8 @@
     <sys:String x:Key="Main.AccountSearchName">Search saved accounts</sys:String>
     <sys:String x:Key="Main.AccountSearchHelp">Filters saved accounts by label, group, username, user ID, or saved destination. Press Control F from Launch to focus this search, or Escape to clear it.</sys:String>
     <sys:String x:Key="Main.AccountSearchPlaceholder">Search accounts...</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchName">Clear account search</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchTooltip">Clear the account search</sys:String>
     <sys:String x:Key="Main.NoAccountsMatch">No saved accounts match your search.</sys:String>
     <sys:String x:Key="Main.AddAccount">Add account</sys:String>
     <sys:String x:Key="Main.AddAccountTooltip">Add another isolated Roblox account</sys:String>
@@ -108,6 +110,8 @@
     <sys:String x:Key="Main.RecentSearchName">Search Recent and Favorites</sys:String>
     <sys:String x:Key="Main.RecentSearchHelp">Filters Recent and Favorites by custom name, Roblox name, Place ID, account username, destination, or server JobId. Press Control F from Recent to focus this search, or Escape to clear it.</sys:String>
     <sys:String x:Key="Main.RecentSearchPlaceholder">Search saved experiences...</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchName">Clear Recent and Favorites search</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchTooltip">Clear the Recent and Favorites search</sys:String>
     <sys:String x:Key="Main.RecentAccountFilter">Recent account filter</sys:String>
     <sys:String x:Key="Main.ClearHistory">Clear history</sys:String>
     <sys:String x:Key="Main.ClearHistoryTooltip">Remove non-favorite history in the selected type</sys:String>

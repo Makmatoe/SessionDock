@@ -82,7 +82,7 @@ hashes, and redaction coordinates are documented in the
   and searches Recent and Favorites by name, place, account, destination, or
   tracked server. Press
   **Ctrl+F** to focus the search for the current workspace and **Escape** to
-  clear it.
+  clear it, or use the dedicated clear button beside an active search.
 - Opens public places, official private-server links or codes, and supported
   server IDs recovered from recent launches.
 - Joins an online Roblox user by exact username, user ID, or official profile
