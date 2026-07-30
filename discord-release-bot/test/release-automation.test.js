@@ -484,7 +484,7 @@ test("generation rejects mismatched notes without leaving a partial output", (t)
   assert.throws(() => readFileSync(path.join(root, "artifacts", "announcement", "announcement.json")));
 });
 
-test("generation rejects symlinked canonical release notes", (t) => {
+test("generation rejects linked or non-regular canonical release notes", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-symlink-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
@@ -496,10 +496,10 @@ test("generation rejects symlinked canonical release notes", (t) => {
     symlinkSync(target, notesPath, "file");
   } catch (error) {
     if (error?.code === "EPERM" || error?.code === "EACCES") {
-      t.skip("This Windows environment does not permit file symlink creation.");
-      return;
+      mkdirSync(notesPath);
+    } else {
+      throw error;
     }
-    throw error;
   }
 
   assert.throws(
@@ -550,39 +550,39 @@ test("canonical release note reads enforce the exact byte ceiling", (t) => {
   );
 });
 
-test(
-  "non-regular canonical release notes fail without blocking",
-  { skip: process.platform === "win32" },
-  (t) => {
-    const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-fifo-"));
-    t.after(() => rmSync(root, { recursive: true, force: true }));
-    const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
-    mkdirSync(notesDirectory, { recursive: true });
-    const notesPath = path.join(notesDirectory, "2.7.2.en-US.md");
+test("non-regular canonical release notes fail without blocking", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-fifo-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
+  mkdirSync(notesDirectory, { recursive: true });
+  const notesPath = path.join(notesDirectory, "2.7.2.en-US.md");
+  if (process.platform === "win32") {
+    mkdirSync(notesPath);
+  } else {
     const fifo = spawnSync("mkfifo", [notesPath], { encoding: "utf8" });
     assert.equal(fifo.status, 0, fifo.stderr);
+  }
 
-    const result = spawnSync(
-      process.execPath,
-      [
-        AUTOMATION_SCRIPT,
-        "generate",
-        "--version",
-        "2.7.2",
-        "--source-commit",
-        COMMIT,
-        "--notes",
-        "SessionDock/ReleaseNotes/2.7.2.en-US.md",
-        "--output",
-        "artifacts/announcement",
-      ],
-      { cwd: root, encoding: "utf8", timeout: 2_000 },
-    );
-    assert.notEqual(result.error?.code, "ETIMEDOUT");
-    assert.equal(result.status, 1, result.stderr);
-    assert.match(result.stderr, /INVALID_FILE/);
-  },
-);
+  const result = spawnSync(
+    process.execPath,
+    [
+      AUTOMATION_SCRIPT,
+      "generate",
+      "--version",
+      "2.7.2",
+      "--source-commit",
+      COMMIT,
+      "--notes",
+      "SessionDock/ReleaseNotes/2.7.2.en-US.md",
+      "--output",
+      "artifacts/announcement",
+    ],
+    { cwd: root, encoding: "utf8", timeout: 2_000 },
+  );
+  assert.notEqual(result.error?.code, "ETIMEDOUT");
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /INVALID_FILE/);
+});
 
 test("bundle validation fails after any canonical source is altered", (t) => {
   const fixture = createFixture(t);
