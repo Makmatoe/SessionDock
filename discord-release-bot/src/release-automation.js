@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  constants as fsConstants,
   existsSync,
+  fstatSync,
   fsyncSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
-  readFileSync,
+  readSync,
   readdirSync,
   realpathSync,
   renameSync,
@@ -31,6 +33,10 @@ const MAX_IMAGES = 4;
 const MAX_HISTORY_PAGES = 100;
 const MAX_JSON_RESPONSE_BYTES = 1024 * 1024;
 const MAX_DISCORD_OPERATION_MILLISECONDS = 180_000;
+const READ_ONLY_NONBLOCKING_NOFOLLOW_FLAGS =
+  fsConstants.O_RDONLY |
+  (fsConstants.O_NONBLOCK ?? 0) |
+  (fsConstants.O_NOFOLLOW ?? 0);
 const ATTACHMENT_FLAG_IS_SPOILER = 1 << 3;
 const ATTACHMENT_FLAG_IS_ANIMATED = 1 << 5;
 const PERMISSION_ADMINISTRATOR = 1n << 3n;
@@ -180,25 +186,62 @@ function resolveInside(root, relativePath, label) {
 
 function readRegularFile(root, relativePath, label, maxBytes) {
   const resolved = resolveInside(root, relativePath, label);
-  let stat;
+  let descriptor;
   try {
-    stat = lstatSync(resolved);
-  } catch {
-    fail("MISSING_FILE", `${label} is missing.`);
-  }
-  if (!stat.isFile() || stat.isSymbolicLink()) {
-    fail("INVALID_FILE", `${label} must be a regular non-symlink file.`);
-  }
-  if (stat.size > maxBytes) {
-    fail("FILE_TOO_LARGE", `${label} exceeds its size limit.`);
+    descriptor = openSync(resolved, READ_ONLY_NONBLOCKING_NOFOLLOW_FLAGS);
+  } catch (error) {
+    if (error?.code === "ENOENT") {
+      fail("MISSING_FILE", `${label} is missing.`);
+    }
+    fail("INVALID_FILE", `${label} must be a readable regular non-symlink file.`);
   }
 
-  const real = realpathSync(resolved);
-  const rootReal = realpathSync(root);
-  if (!real.startsWith(`${rootReal}${path.sep}`)) {
-    fail("INVALID_FILE", `${label} resolves outside the repository root.`);
+  try {
+    let descriptorStat;
+    let pathStat;
+    let real;
+    try {
+      descriptorStat = fstatSync(descriptor, { bigint: true });
+      pathStat = lstatSync(resolved, { bigint: true });
+      real = realpathSync(resolved);
+    } catch {
+      fail("INVALID_FILE", `${label} changed while it was being validated.`);
+    }
+    if (
+      !descriptorStat.isFile() ||
+      !pathStat.isFile() ||
+      pathStat.isSymbolicLink()
+    ) {
+      fail("INVALID_FILE", `${label} must be a regular non-symlink file.`);
+    }
+    if (descriptorStat.dev !== pathStat.dev || descriptorStat.ino !== pathStat.ino) {
+      fail("INVALID_FILE", `${label} changed while it was being validated.`);
+    }
+    if (descriptorStat.size > BigInt(maxBytes)) {
+      fail("FILE_TOO_LARGE", `${label} exceeds its size limit.`);
+    }
+
+    const rootReal = realpathSync(root);
+    if (!real.startsWith(`${rootReal}${path.sep}`)) {
+      fail("INVALID_FILE", `${label} resolves outside the repository root.`);
+    }
+
+    const buffer = Buffer.allocUnsafe(maxBytes + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const bytesRead = readSync(descriptor, buffer, offset, buffer.length - offset, null);
+      if (bytesRead === 0) {
+        break;
+      }
+      offset += bytesRead;
+    }
+    if (offset > maxBytes) {
+      fail("FILE_TOO_LARGE", `${label} exceeds its size limit.`);
+    }
+    return buffer.subarray(0, offset);
+  } finally {
+    closeSync(descriptor);
   }
-  return readFileSync(resolved);
 }
 
 function assertDirectory(root, relativePath, label) {
