@@ -51,6 +51,8 @@
     <sys:String x:Key="Main.AccountSearchName">Rechercher dans les comptes enregistrés</sys:String>
     <sys:String x:Key="Main.AccountSearchHelp">Filtre les comptes enregistrés par libellé, groupe, nom d’utilisateur, ID utilisateur ou destination enregistrée. Depuis Lancer, appuyez sur Ctrl+F pour accéder à cette recherche, ou sur Échap pour l’effacer.</sys:String>
     <sys:String x:Key="Main.AccountSearchPlaceholder">Rechercher des comptes...</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchName">Effacer la recherche de comptes</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchTooltip">Effacer le texte de la recherche de comptes</sys:String>
     <sys:String x:Key="Main.NoAccountsMatch">Aucun compte enregistré ne correspond à votre recherche.</sys:String>
     <sys:String x:Key="Main.AddAccount">Ajouter un compte</sys:String>
     <sys:String x:Key="Main.AddAccountTooltip">Ajouter un autre compte Roblox isolé</sys:String>
@@ -108,6 +110,8 @@
     <sys:String x:Key="Main.RecentSearchName">Rechercher dans Récents et Favoris</sys:String>
     <sys:String x:Key="Main.RecentSearchHelp">Filtre Récents et Favoris par nom personnalisé, nom Roblox, ID de lieu, nom d’utilisateur du compte, destination ou JobId de serveur. Depuis Récents, appuyez sur Ctrl+F pour accéder à cette recherche, ou sur Échap pour l’effacer.</sys:String>
     <sys:String x:Key="Main.RecentSearchPlaceholder">Rechercher dans les expériences enregistrées...</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchName">Effacer la recherche dans Récents et Favoris</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchTooltip">Effacer le texte de la recherche dans Récents et Favoris</sys:String>
     <sys:String x:Key="Main.RecentAccountFilter">Filtre de compte pour Récents</sys:String>
     <sys:String x:Key="Main.ClearHistory">Effacer l’historique</sys:String>
     <sys:String x:Key="Main.ClearHistoryTooltip">Supprimer les éléments non favoris du type sélectionné dans l’historique</sys:String>

@@ -50,6 +50,8 @@
     <sys:String x:Key="Main.AccountSearchName">Gespeicherte Konten durchsuchen</sys:String>
     <sys:String x:Key="Main.AccountSearchHelp">Filtert gespeicherte Konten nach Bezeichnung, Gruppe, Benutzername, Benutzer-ID oder gespeichertem Ziel. Drücken Sie im Startbereich Strg+F, um das Suchfeld zu aktivieren, oder Esc, um es zu leeren.</sys:String>
     <sys:String x:Key="Main.AccountSearchPlaceholder">Konten durchsuchen…</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchName">Kontosuche leeren</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchTooltip">Die Suche in den gespeicherten Konten leeren</sys:String>
     <sys:String x:Key="Main.NoAccountsMatch">Keine gespeicherten Konten entsprechen Ihrer Suche.</sys:String>
     <sys:String x:Key="Main.AddAccount">Konto hinzufügen</sys:String>
     <sys:String x:Key="Main.AddAccountTooltip">Weiteres isoliertes Roblox-Konto hinzufügen</sys:String>
@@ -107,6 +109,8 @@
     <sys:String x:Key="Main.RecentSearchName">„Zuletzt“ und „Favoriten“ durchsuchen</sys:String>
     <sys:String x:Key="Main.RecentSearchHelp">Filtert „Zuletzt“ und „Favoriten“ nach benutzerdefiniertem Namen, Roblox-Namen, Place-ID, Benutzername des Kontos, Ziel oder Server-Job-ID. Drücken Sie im Bereich „Zuletzt“ Strg+F, um das Suchfeld zu aktivieren, oder Esc, um es zu leeren.</sys:String>
     <sys:String x:Key="Main.RecentSearchPlaceholder">Gespeicherte Erlebnisse durchsuchen…</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchName">Suche in „Zuletzt“ und „Favoriten“ leeren</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchTooltip">Die Suche in „Zuletzt“ und „Favoriten“ leeren</sys:String>
     <sys:String x:Key="Main.RecentAccountFilter">Kontofilter für „Zuletzt“</sys:String>
     <sys:String x:Key="Main.ClearHistory">Verlauf löschen</sys:String>
     <sys:String x:Key="Main.ClearHistoryTooltip">Verlaufseinträge ohne Favoritenstatus im ausgewählten Typ entfernen</sys:String>

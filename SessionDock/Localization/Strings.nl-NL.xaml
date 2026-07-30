@@ -51,6 +51,8 @@
     <sys:String x:Key="Main.AccountSearchName">Opgeslagen accounts zoeken</sys:String>
     <sys:String x:Key="Main.AccountSearchHelp">Filtert opgeslagen accounts op label, groep, gebruikersnaam, gebruikers-ID of opgeslagen bestemming. Druk in Starten op Ctrl+F om dit zoekveld te activeren of op Escape om het te wissen.</sys:String>
     <sys:String x:Key="Main.AccountSearchPlaceholder">Accounts zoeken...</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchName">Zoekopdracht voor accounts wissen</sys:String>
+    <sys:String x:Key="Main.ClearAccountSearchTooltip">De zoekopdracht voor accounts wissen</sys:String>
     <sys:String x:Key="Main.NoAccountsMatch">Geen opgeslagen accounts komen overeen met je zoekopdracht.</sys:String>
     <sys:String x:Key="Main.AddAccount">Account toevoegen</sys:String>
     <sys:String x:Key="Main.AddAccountTooltip">Nog een geïsoleerd Roblox-account toevoegen</sys:String>
@@ -108,6 +110,8 @@
     <sys:String x:Key="Main.RecentSearchName">Recent en Favorieten zoeken</sys:String>
     <sys:String x:Key="Main.RecentSearchHelp">Filtert Recent en Favorieten op aangepaste naam, Roblox-naam, Place-ID, accountnaam, bestemming of Server JobId. Druk in Recent op Ctrl+F om te zoeken of op Escape om te wissen.</sys:String>
     <sys:String x:Key="Main.RecentSearchPlaceholder">Opgeslagen experiences zoeken...</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchName">Zoekopdracht in Recent en Favorieten wissen</sys:String>
+    <sys:String x:Key="Main.ClearRecentSearchTooltip">De zoekopdracht in Recent en Favorieten wissen</sys:String>
     <sys:String x:Key="Main.RecentAccountFilter">Accountfilter voor Recent</sys:String>
     <sys:String x:Key="Main.ClearHistory">Geschiedenis wissen</sys:String>
     <sys:String x:Key="Main.ClearHistoryTooltip">Niet-favoriete geschiedenis in het geselecteerde type verwijderen</sys:String>
