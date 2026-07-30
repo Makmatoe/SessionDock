@@ -54,6 +54,23 @@ an older Setup as an upgrade or repair. Follow the
 [side-by-side corrective upgrade](docs/UPDATES.md#moving-from-roblox-one-or-sessiondock-230-and-earlier)
 so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
 
+## Interface tour
+
+![SessionDock 2.7.0 main window with personal values pixelated](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-readme-overview.png)
+
+These images come from the installed SessionDock 2.7.0 application. Personal
+account and destination values are replaced with a deterministic opaque mosaic;
+the interface itself is not recreated or generatively edited.
+
+- [Account management](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-accounts-focused.png)
+- [Destination selection](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-destinations-focused.png)
+- [Batch launch](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-batch-focused.png)
+- [About and diagnostics](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-diagnostics-focused.png)
+
+Reusable README and social/store sizes, sanitized source captures, dimensions,
+hashes, and redaction coordinates are documented in the
+[visual asset inventory](docs/images/sessiondock-v2.7.0/README.md).
+
 ## What it does
 
 - Keeps any number of Roblox sign-ins in separate local WebView2 profiles and
