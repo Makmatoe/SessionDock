@@ -39,11 +39,10 @@ public partial class MainWindow
         AutomationProperties.SetSizeOfSet(button, sizeOfSet);
         if (_accountSearch.IsActive)
         {
-            button.ToolTip =
-                "Clear the account search to reorder saved accounts.";
+            button.ToolTip = Localize("Main.AccountReorderSearchTooltip");
             AutomationProperties.SetHelpText(
                 button,
-                "Account reordering is paused while search is active. Clear the account search to reorder saved accounts.");
+                Localize("Main.AccountReorderSearchHelp"));
             return;
         }
 
@@ -54,11 +53,10 @@ public partial class MainWindow
         button.PreviewMouseMove += AccountButton_PreviewMouseMove;
         button.LostMouseCapture += AccountButton_LostMouseCapture;
         button.PreviewKeyDown += AccountButton_PreviewKeyDown;
-        button.ToolTip =
-            "Drag left or right to reorder. Ctrl+Shift+Left/Right also moves this account.";
+        button.ToolTip = Localize("Main.AccountReorderTooltip");
         AutomationProperties.SetHelpText(
             button,
-            "Drag left or right to reorder. Press Control Shift Left or Control Shift Right to move this account.");
+            Localize("Main.AccountReorderHelp"));
     }
 
     private void AccountButton_PreviewMouseLeftButtonDown(
@@ -373,9 +371,9 @@ public partial class MainWindow
                     _settings.Accounts,
                     sourceKey,
                     beforeKey),
-                "Account order could not be saved",
-                "ACCOUNT ORDER ERROR",
-                "SessionDock restored the previous order because it could not save the change. Check that %LOCALAPPDATA%\\SessionDock is writable and not locked, then try again.");
+                Localize("Main.AccountOrderSaveFailureTitle"),
+                Localize("Main.AccountOrderErrorBadge"),
+                Localize("Main.AccountOrderSaveFailureDetail"));
         }
         finally
         {
@@ -413,21 +411,21 @@ public partial class MainWindow
         var activeProfileFilteredOut =
             _activeProfile is not null && !activeProfileVisible;
         EditAccountButton.ToolTip = activeProfileFilteredOut
-            ? "Clear the account search or select a visible account before editing."
-            : "Change the selected account label, group, and color";
+            ? Localize("Main.EditAccountFilteredTooltip")
+            : Localize("Main.EditAccountTooltip");
         ResetButton.ToolTip = activeProfileFilteredOut
-            ? "Clear the account search or select a visible account before removing."
-            : "Clear and remove the selected local account profile";
+            ? Localize("Main.RemoveAccountFilteredTooltip")
+            : Localize("Main.RemoveAccountTooltip");
         AutomationProperties.SetHelpText(
             EditAccountButton,
             activeProfileFilteredOut
-                ? "The selected account is hidden by account search. Clear the search or select a visible account before editing."
-                : "Change the selected account label, group, and color.");
+                ? Localize("Main.EditAccountFilteredHelp")
+                : Localize("Main.EditAccountTooltip"));
         AutomationProperties.SetHelpText(
             ResetButton,
             activeProfileFilteredOut
-                ? "The selected account is hidden by account search. Clear the search or select a visible account before removing."
-                : "Clear and remove the selected local account profile.");
+                ? Localize("Main.RemoveAccountFilteredHelp")
+                : Localize("Main.RemoveAccountTooltip"));
         RetryFailedBatchButton.IsEnabled =
             enabled && _batchRetryState is not null;
     }

@@ -106,6 +106,15 @@ scaling, localization, DPI, and multi-monitor checks in
 underlying contracts but do not replace assistive-technology and physical
 display verification.
 
+For every release, verify all five localization dictionaries have identical,
+non-empty keys and matching composite-format placeholders. Exercise singular
+and plural paths, switch live through every supported language, and inspect
+runtime-generated status, validation, confirmation, file-picker, tooltip, and
+automation text. The current version must include release notes for `en-US`,
+`nl-NL`, `de-DE`, `fr-FR`, and `es-ES`; an older English-only note must be
+visibly labeled as fallback. Run the isolated runtime smoke test after these
+checks so stale overlays and live-switch regressions block the release.
+
 The smoke feature is compiled only into a separate test artifact. Production
 publish verification proves the privileged smoke switch is absent.
 

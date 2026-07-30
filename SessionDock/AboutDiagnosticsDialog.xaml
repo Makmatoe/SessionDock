@@ -102,38 +102,43 @@
                 </Border>
             </Grid>
 
-            <Grid Grid.Row="3" Margin="0,15,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+            <Grid x:Name="AboutActionArea" Grid.Row="3" Margin="0,15,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
                 <TextBlock x:Name="ActionStatusText"
-                               Text="{DynamicResource About.NotSent}"
+                           Text="{DynamicResource About.NotSent}"
                            Foreground="{DynamicResource MutedBrush}"
                            FontSize="11" TextWrapping="Wrap"
-                           VerticalAlignment="Center" Margin="0,0,14,0"
+                           VerticalAlignment="Center"
                            AutomationProperties.LiveSetting="Polite"/>
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <WrapPanel x:Name="AboutActionButtonsPanel"
+                           Grid.Row="1" Margin="0,8,0,0"
+                           HorizontalAlignment="Right">
                     <Button x:Name="CopyButton"
-                        Content="{DynamicResource About.Copy}"
-                            Padding="14,9" Margin="0,0,8,0"
+                            Content="{DynamicResource About.Copy}"
+                            Padding="14,9" Margin="0,0,8,8"
+                            VerticalAlignment="Center"
                             Click="CopyButton_Click"
-                        AutomationProperties.Name="{DynamicResource About.CopyName}"
-                        AutomationProperties.HelpText="{DynamicResource About.CopyHelp}"/>
+                            AutomationProperties.Name="{DynamicResource About.CopyName}"
+                            AutomationProperties.HelpText="{DynamicResource About.CopyHelp}"/>
                     <Button x:Name="ExportButton"
-                        Content="{DynamicResource About.Export}"
-                            Padding="14,9" Margin="0,0,8,0"
+                            Content="{DynamicResource About.Export}"
+                            Padding="14,9" Margin="0,0,8,8"
+                            VerticalAlignment="Center"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
                             Click="ExportButton_Click"
-                        AutomationProperties.Name="{DynamicResource About.ExportName}"
-                        AutomationProperties.HelpText="{DynamicResource About.ExportHelp}"/>
-                <Button x:Name="DoneButton" Content="{DynamicResource Common.Done}"
-                            IsCancel="True" Padding="15,9"
+                            AutomationProperties.Name="{DynamicResource About.ExportName}"
+                            AutomationProperties.HelpText="{DynamicResource About.ExportHelp}"/>
+                    <Button x:Name="DoneButton" Content="{DynamicResource Common.Done}"
+                            IsCancel="True" Padding="15,9" Margin="0,0,0,8"
+                            VerticalAlignment="Center"
                             Background="{DynamicResource ControlSurfaceBrush}"
                             Foreground="{DynamicResource ControlTextBrush}"
-                        AutomationProperties.Name="{DynamicResource About.CloseName}"/>
-                </StackPanel>
+                            AutomationProperties.Name="{DynamicResource About.CloseName}"/>
+                </WrapPanel>
             </Grid>
         </Grid>
     </Border>

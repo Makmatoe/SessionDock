@@ -90,13 +90,20 @@ so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
   clients; Roblox still decides whether multiple Players may run.
 - Closes all visible and background Roblox Player processes on request.
 - Provides optional interface sounds and a user-selected startup sound.
-- Provides live **System default**, **English (United States)**, and
-  **Dutch (Netherlands)** display-language choices from the sidebar. System
-  default follows Dutch Windows installations and otherwise uses the complete
-  English fallback; the choice is remembered locally and does not require a
-  restart. Display dates and times follow the selected culture, while stored
-  data keeps its stable machine-readable format. Some runtime confirmations
-  and detailed technical previews can use the English fallback.
+- Provides live **System default**, **English (United States)**,
+  **Nederlands (Nederland)**, **Deutsch (Deutschland)**,
+  **Français (France)**, and **Español (España)** display-language choices
+  from the sidebar. System default follows supported Dutch, German, French,
+  and Spanish Windows cultures and otherwise uses the complete English
+  fallback. The choice is remembered locally and does not require a restart.
+  Static labels, runtime messages, confirmations, validation, diagnostics, and
+  accessibility text use the selected language. Display dates and times follow
+  the selected culture, while stored data keeps its stable machine-readable
+  format. Older release notes without a translation are clearly labeled when
+  shown in English. Before SessionDock can safely open local settings, very
+  early command-line, security-context, and single-instance errors use the
+  supported Windows display language; the saved app preference takes effect
+  as soon as normal startup begins.
 - Provides an **About and diagnostics** panel with an exact, reviewable support
   summary that can be copied or exported as text. The summary contains bounded
   counts and system/component states, never settings files, logs, paths,
@@ -183,7 +190,9 @@ it does not gather a support archive from local application data.
 
 The top-right update button checks this repository's stable GitHub Releases
 feed. SessionDock shows the version and cryptographically signed release notes
-before it downloads anything, and installs only after confirmation.
+before it downloads anything, and installs only after confirmation. Bundled
+notes use the selected language when available and visibly identify an English
+fallback for older releases.
 
 Production updates require a release descriptor authorized by the public key
 pinned in the app. The descriptor binds the version, notes, exact package name,

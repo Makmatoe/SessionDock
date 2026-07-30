@@ -50,9 +50,10 @@ public partial class MainWindow
         {
             ClearBatchRetryState();
             SetStatus(
-                "No failed accounts remain",
-                "The accounts from that batch are no longer saved, so there is nothing left to retry.",
-                "RETRY CLEARED");
+                Localize("Main.BatchNoFailedAccountsTitle"),
+                Localize("Main.BatchNoFailedAccountsDetail"),
+                Localize("Main.BatchRetryClearedBadge"),
+                StatusTone.Neutral);
             return;
         }
 
@@ -89,9 +90,9 @@ public partial class MainWindow
                                 dialog.DelaySeconds;
                         }
                     },
-                    "Batch preferences could not be saved",
-                    "BATCH SETTINGS ERROR",
-                    "SessionDock could not confirm the preset or delay update, so it was rolled back. Make %LOCALAPPDATA%\\SessionDock writable, then retry."))
+                    Localize("Main.BatchPreferencesSaveFailureTitle"),
+                    Localize("Main.BatchSettingsErrorBadge"),
+                    Localize("Main.BatchPreferencesSaveFailureDetail")))
             {
                 return;
             }
@@ -106,9 +107,10 @@ public partial class MainWindow
                 out var planningError))
         {
             SetStatus(
-                "Batch destinations are not ready",
-                planningError,
-                "INVALID DESTINATION");
+                Localize("Main.BatchDestinationsNotReadyTitle"),
+                LocalizeBatchPlanningError(planningError),
+                Localize("Main.InvalidDestinationBadge"),
+                StatusTone.Error);
             return;
         }
 
@@ -175,6 +177,48 @@ public partial class MainWindow
             launchPlans);
     }
 
+    private string LocalizeBatchPlanningError(string error)
+    {
+        const string selectAccountError =
+            "Select at least one account for the batch.";
+        const string firstDestinationSuffix =
+            " is the first selected account and needs a destination.";
+        const string joinUserSuffix =
+            ": Join-user destinations currently use single launch so Roblox can check that account's permission at launch time.";
+
+        if (error.Equals(selectAccountError, StringComparison.Ordinal))
+            return Localize("Main.BatchSelectAccountDetail");
+        if (error.EndsWith(firstDestinationSuffix, StringComparison.Ordinal))
+        {
+            return Localize(
+                "Main.BatchFirstDestinationRequiredDetail",
+                error[..^firstDestinationSuffix.Length]);
+        }
+        if (error.EndsWith(joinUserSuffix, StringComparison.Ordinal))
+        {
+            return Localize(
+                "Main.BatchJoinUserSingleDetail",
+                error[..^joinUserSuffix.Length]);
+        }
+
+        var separatorIndex = error.LastIndexOf(": ", StringComparison.Ordinal);
+        if (separatorIndex > 0)
+        {
+            var errorKey = error[(separatorIndex + 2)..];
+            if (errorKey.StartsWith(
+                    "Validation.Destination.",
+                    StringComparison.Ordinal))
+            {
+                return Localize(
+                    "Main.BatchAccountDestinationErrorDetail",
+                    error[..separatorIndex],
+                    Localize(errorKey));
+            }
+        }
+
+        return Localize("Main.BatchDestinationsNotReadyDetail");
+    }
+
     private IReadOnlyList<AccountProfile> CreateRetryAccounts(
         BatchRetryState retryState)
     {
@@ -202,9 +246,10 @@ public partial class MainWindow
 
         CancelBatchButton.IsEnabled = false;
         SetStatus(
-            "Cancelling batch launch",
-            "SessionDock will stop before the next safe step. Clients already started remain open.",
-            "BATCH CANCELLING");
+            Localize("Main.BatchCancellingTitle"),
+            Localize("Main.BatchCancellingDetail"),
+            Localize("Main.BatchCancellingBadge"),
+            StatusTone.Neutral);
         _batchCancellation.Cancel();
     }
 
@@ -227,9 +272,10 @@ public partial class MainWindow
         }
 
         SetStatus(
-            "Preparing batch launch",
-            "Closing every running, verified Roblox Player instance…",
-            "BATCH CLEANUP");
+            Localize("Main.BatchPreparingTitle"),
+            Localize("Main.BatchPreparingDetail"),
+            Localize("Main.BatchCleanupBadge"),
+            StatusTone.Neutral);
         RobloxClientService.ClosePlayersResult closeResult;
         try
         {
@@ -247,15 +293,16 @@ public partial class MainWindow
             Trace.WriteLine(
                 $"Roblox batch cleanup failed: {ex.GetType().Name}.");
             SetStatus(
-                "Batch launch stopped",
-                "SessionDock could not verify that all current clients were closed.",
-                "BATCH ERROR");
+                Localize("Main.BatchStoppedTitle"),
+                Localize("Main.BatchCloseVerificationFailureDetail"),
+                Localize("Main.BatchErrorBadge"),
+                StatusTone.Error);
             return new BatchLaunchResult(
                 0,
                 launchPlans.Count,
                 launchPlans.Select(plan => new BatchFailure(
                     plan.Account.Key,
-                    "Existing Roblox clients could not be verified as closed"))
+                    Localize("Main.BatchFailureClientsNotClosed")))
                     .ToArray(),
                 ClientsWereClosed: false,
                 Cancelled: false);
@@ -264,12 +311,21 @@ public partial class MainWindow
         if (!closeResult.Success)
         {
             var detail = closeResult.Unverified > 0
-                ? $"{closeResult.Unverified} Roblox-named process(es) could not be safely verified and were left running."
-                : $"{closeResult.Remaining} verified Roblox Player instance(s) could not be closed.";
+                ? closeResult.Unverified == 1
+                    ? Localize("Main.BatchUnverifiedProcessDetailOne")
+                    : Localize(
+                        "Main.BatchUnverifiedProcessDetailMany",
+                        closeResult.Unverified)
+                : closeResult.Remaining == 1
+                    ? Localize("Main.BatchRemainingClientDetailOne")
+                    : Localize(
+                        "Main.BatchRemainingClientDetailMany",
+                        closeResult.Remaining);
             SetStatus(
-                "Batch launch stopped",
+                Localize("Main.BatchStoppedTitle"),
                 detail,
-                "BATCH ERROR");
+                Localize("Main.BatchErrorBadge"),
+                StatusTone.Error);
             return new BatchLaunchResult(
                 0,
                 launchPlans.Count,
@@ -285,9 +341,14 @@ public partial class MainWindow
         if (closeResult.Closed > 0)
         {
             SetStatus(
-                $"Closed {closeResult.Closed} Roblox Player instance(s)",
-                "Roblox cleanup will settle while SessionDock prepares the first queued launch…",
-                "BATCH CLEANUP");
+                closeResult.Closed == 1
+                    ? Localize("Main.BatchClosedClientTitleOne")
+                    : Localize(
+                        "Main.BatchClosedClientTitleMany",
+                        closeResult.Closed),
+                Localize("Main.BatchCleanupSettlingDetail"),
+                Localize("Main.BatchCleanupBadge"),
+                StatusTone.Success);
             cleanupSettled = Task.Delay(
                 TimeSpan.FromSeconds(2),
                 cancellationToken);
@@ -301,7 +362,10 @@ public partial class MainWindow
             preflight.Plans,
             (plan, index, token) => QueueBatchLaunchAsync(
                 plan,
-                $"{index + 1} of {preflight.Plans.Count}",
+                Localize(
+                    "Main.BatchPosition",
+                    index + 1,
+                    preflight.Plans.Count),
                 token),
             async (queued, index, token) =>
             {
@@ -311,10 +375,15 @@ public partial class MainWindow
                     ? StartedBatchLaunchResult.Failed(
                         queued.Account,
                         queued.Failure ??
-                        $"@{queued.Account.Username}: launch preparation failed")
+                        Localize(
+                            "Main.BatchFailurePreparation",
+                            queued.Account.Username))
                     : await StartQueuedBatchAccountAsync(
                         queued.Queued,
-                        $"{index + 1} of {preflight.Plans.Count}",
+                        Localize(
+                            "Main.BatchPosition",
+                            index + 1,
+                            preflight.Plans.Count),
                         token);
             },
             async (started, index, hasNext, token) =>
@@ -324,10 +393,20 @@ public partial class MainWindow
                 var launched = started.Started is not null;
                 if (launched && hasNext)
                 {
+                    var delaySeconds = (int)Math.Ceiling(delay.TotalSeconds);
                     SetStatus(
-                        $"Batch {index + 1} of {preflight.Plans.Count}: @{started.Account.Username} started",
-                        $"The next account is queued. Waiting {delay.TotalSeconds:0} seconds so Roblox and local hooks can settle…",
-                        "BATCH WAIT");
+                        Localize(
+                            "Main.BatchAccountStartedTitle",
+                            index + 1,
+                            preflight.Plans.Count,
+                            started.Account.Username),
+                        delaySeconds == 1
+                            ? Localize("Main.BatchWaitDetailSecondOne")
+                            : Localize(
+                                "Main.BatchWaitDetailSecondMany",
+                                delaySeconds),
+                        Localize("Main.BatchWaitBadge"),
+                        StatusTone.Neutral);
                     await Task.Delay(delay, token);
                 }
 
@@ -340,7 +419,9 @@ public partial class MainWindow
                         started.Account.Key,
                         false,
                         started.Failure ??
-                        $"@{started.Account.Username}: launch failed");
+                        Localize(
+                            "Main.BatchFailureLaunch",
+                            started.Account.Username));
             },
             cancellationToken);
 
@@ -372,9 +453,15 @@ public partial class MainWindow
                     plan.Account.Key,
                     StringComparison.OrdinalIgnoreCase)) ?? plan.Account;
             SetStatus(
-                $"Checking account {index + 1} of {launchPlans.Count}",
-                $"Verifying {GetAccountDisplayName(account)} before any running client is closed…",
-                "BATCH CHECK");
+                Localize(
+                    "Main.BatchCheckingAccountTitle",
+                    index + 1,
+                    launchPlans.Count),
+                Localize(
+                    "Main.BatchCheckingAccountDetail",
+                    GetAccountDisplayName(account)),
+                Localize("Main.BatchCheckBadge"),
+                StatusTone.Neutral);
             try
             {
                 var sessionToken = await ActivateBatchAccountAsync(
@@ -384,7 +471,9 @@ public partial class MainWindow
                 {
                     unavailable.Add(new BatchFailure(
                         account.Key,
-                        $"@{account.Username}: sign-in unavailable"));
+                        Localize(
+                            "Main.BatchFailureSignInUnavailable",
+                            account.Username)));
                     continue;
                 }
 
@@ -401,7 +490,9 @@ public partial class MainWindow
                 {
                     unavailable.Add(new BatchFailure(
                         account.Key,
-                        $"@{plan.Account.Username}: account session unavailable"));
+                        Localize(
+                            "Main.BatchFailureSessionUnavailable",
+                            plan.Account.Username)));
                     continue;
                 }
                 account = currentAccount;
@@ -414,7 +505,9 @@ public partial class MainWindow
                     {
                         unavailable.Add(new BatchFailure(
                             account.Key,
-                            $"@{account.Username}: account session unavailable"));
+                            Localize(
+                                "Main.BatchFailureSessionUnavailable",
+                                account.Username)));
                         continue;
                     }
                     var resolvedTarget = await _webSession.ResolvePrivateServerAsync(
@@ -426,7 +519,9 @@ public partial class MainWindow
                     {
                         unavailable.Add(new BatchFailure(
                             account.Key,
-                            $"@{account.Username}: account session unavailable"));
+                            Localize(
+                                "Main.BatchFailureSessionUnavailable",
+                                account.Username)));
                         continue;
                     }
                     if (resolvedTarget is null ||
@@ -435,7 +530,9 @@ public partial class MainWindow
                     {
                         unavailable.Add(new BatchFailure(
                             account.Key,
-                            $"@{account.Username}: private server unavailable"));
+                            Localize(
+                                "Main.BatchFailurePrivateServerUnavailable",
+                                account.Username)));
                         continue;
                     }
                     target = resolvedTarget;
@@ -454,7 +551,9 @@ public partial class MainWindow
                     $"Batch preflight failed for one account: {ex.GetType().Name}.");
                 unavailable.Add(new BatchFailure(
                     account.Key,
-                    $"@{account.Username}: account check failed"));
+                    Localize(
+                        "Main.BatchFailureAccountCheck",
+                        account.Username)));
             }
         }
         return new BatchPreflightResult(verifiedPlans, unavailable);
@@ -468,9 +567,12 @@ public partial class MainWindow
             return true;
 
         SetStatus(
-            $"Restoring {GetAccountDisplayName(profile)}",
-            "Returning the launcher to the account that was selected before the batch…",
-            "BATCH RESTORE");
+            Localize(
+                "Main.BatchRestoringTitle",
+                GetAccountDisplayName(profile)),
+            Localize("Main.BatchRestoringDetail"),
+            Localize("Main.BatchRestoreBadge"),
+            StatusTone.Neutral);
         try
         {
             var restoredToken = await ActivateBatchAccountAsync(
@@ -502,16 +604,16 @@ public partial class MainWindow
         bool restoredOriginalProfile,
         IReadOnlyList<BatchLaunchPlan> launchPlans)
     {
-        var restoreDetail = restoredOriginalProfile
-            ? string.Empty
-            : " The original account needs to be signed in again.";
         if (result.Cancelled)
         {
             ClearBatchRetryState();
             SetStatus(
-                "Batch launch cancelled",
-                $"No further accounts will start. Started clients remain open; clients already closed during cleanup cannot be restored.{restoreDetail}",
-                "BATCH CANCELLED");
+                Localize("Main.BatchCancelledTitle"),
+                restoredOriginalProfile
+                    ? Localize("Main.BatchCancelledDetail")
+                    : Localize("Main.BatchCancelledRestoreDetail"),
+                Localize("Main.BatchCancelledBadge"),
+                StatusTone.Warning);
             return;
         }
 
@@ -519,15 +621,27 @@ public partial class MainWindow
         {
             ClearBatchRetryState();
             SetStatus(
-                $"Batch complete: {result.Started} clients started",
-                $"Every selected account received its own launch ticket.{restoreDetail}",
-                "BATCH COMPLETE");
+                result.Started == 1
+                    ? Localize("Main.BatchCompleteTitleOne")
+                    : Localize(
+                        "Main.BatchCompleteTitleMany",
+                        result.Started),
+                restoredOriginalProfile
+                    ? Localize("Main.BatchCompleteDetail")
+                    : Localize("Main.BatchCompleteRestoreDetail"),
+                Localize("Main.BatchCompleteBadge"),
+                StatusTone.Success);
             return;
         }
 
         var title = result.ClientsWereClosed
-            ? $"Batch complete: {result.Started} of {result.Total} started"
-            : "Batch not started";
+            ? result.Started == 1
+                ? Localize("Main.BatchPartialTitleOne", result.Total)
+                : Localize(
+                    "Main.BatchPartialTitleMany",
+                    result.Started,
+                    result.Total)
+            : Localize("Main.BatchNotStartedTitle");
         SetBatchRetryState(result, launchPlans);
         var failureDetail = string.Join(
             "; ",
@@ -536,8 +650,21 @@ public partial class MainWindow
                 .Distinct(StringComparer.Ordinal));
         SetStatus(
             title,
-            $"{failureDetail}.{restoreDetail} Choose Retry failed only to review just the failed account(s); retrying will close currently running Roblox clients.".Trim(),
-            result.Started > 0 ? "BATCH PARTIAL" : "BATCH ERROR");
+            result.Failures.Count == 1
+                ? restoredOriginalProfile
+                    ? Localize("Main.BatchFailureDetailOne", failureDetail)
+                    : Localize(
+                        "Main.BatchFailureRestoreDetailOne",
+                        failureDetail)
+                : restoredOriginalProfile
+                    ? Localize("Main.BatchFailureDetailMany", failureDetail)
+                    : Localize(
+                        "Main.BatchFailureRestoreDetailMany",
+                        failureDetail),
+            result.Started > 0
+                ? Localize("Main.BatchPartialBadge")
+                : Localize("Main.BatchErrorBadge"),
+            result.Started > 0 ? StatusTone.Warning : StatusTone.Error);
     }
 
     private void SetBatchRetryState(
@@ -572,9 +699,7 @@ public partial class MainWindow
             !_operationBusy &&
             !IsAutoJoinWatchActive &&
             !_accountReorderInProgress;
-        System.Windows.Automation.AutomationProperties.SetHelpText(
-            RetryFailedBatchButton,
-            $"Review and retry {accountKeys.Count} failed account(s). Starting the retry closes currently running verified Roblox Player clients.");
+        UpdateBatchRetryButtonPresentation(accountKeys.Count);
     }
 
     private void RefreshBatchRetryState()
@@ -611,7 +736,15 @@ public partial class MainWindow
             !_operationBusy &&
             !IsAutoJoinWatchActive &&
             !_accountReorderInProgress;
+        UpdateBatchRetryButtonPresentation(currentKeys.Count);
     }
+
+    private void UpdateBatchRetryButtonPresentation(int accountCount) =>
+        System.Windows.Automation.AutomationProperties.SetHelpText(
+            RetryFailedBatchButton,
+            accountCount == 1
+                ? Localize("Main.BatchRetryHelpOne")
+                : Localize("Main.BatchRetryHelpMany", accountCount));
 
     private void ClearBatchRetryState()
     {
@@ -731,10 +864,13 @@ public partial class MainWindow
         {
             SetStatus(
                 account is null
-                    ? "Could not load the selected account"
-                    : $"Could not load @{account.Username}",
-                "Its Roblox session did not become ready within 20 seconds.",
-                "BATCH ACCOUNT ERROR");
+                    ? Localize("Main.BatchAccountLoadFailureTitle")
+                    : Localize(
+                        "Main.BatchNamedAccountLoadFailureTitle",
+                        account.Username),
+                Localize("Main.BatchAccountLoadTimeoutDetail"),
+                Localize("Main.BatchAccountErrorBadge"),
+                StatusTone.Error);
             return null;
         }
         finally
@@ -754,9 +890,13 @@ public partial class MainWindow
                 plan.Account.Key,
                 StringComparison.OrdinalIgnoreCase)) ?? plan.Account;
         SetStatus(
-            $"Queueing batch {position}: {GetAccountDisplayName(account)}",
-            "Loading this account's isolated session while the current launch settles…",
-            "BATCH QUEUE");
+            Localize(
+                "Main.BatchQueueingTitle",
+                position,
+                GetAccountDisplayName(account)),
+            Localize("Main.BatchQueueingSessionDetail"),
+            Localize("Main.BatchQueueBadge"),
+            StatusTone.Neutral);
 
         try
         {
@@ -767,7 +907,9 @@ public partial class MainWindow
             {
                 return QueuedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: sign-in unavailable");
+                    Localize(
+                        "Main.BatchFailureSignInUnavailable",
+                        account.Username));
             }
 
             var currentAccount = _settings.Accounts.FirstOrDefault(candidate =>
@@ -783,7 +925,9 @@ public partial class MainWindow
             {
                 return QueuedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: account session unavailable");
+                    Localize(
+                        "Main.BatchFailureSessionUnavailable",
+                        account.Username));
             }
             account = currentAccount;
 
@@ -793,18 +937,26 @@ public partial class MainWindow
             {
                 return QueuedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: tracked server changed");
+                    Localize(
+                        "Main.BatchFailureTrackedServerChanged",
+                        account.Username));
             }
 
             SetStatus(
-                $"Queueing batch {position}: @{account.Username}",
-                "Preparing destination details. Its launch ticket will be requested only when Roblox is ready to start.",
-                "BATCH QUEUE");
+                Localize(
+                    "Main.BatchQueueingUsernameTitle",
+                    position,
+                    account.Username),
+                Localize("Main.BatchPreparingDestinationDetail"),
+                Localize("Main.BatchQueueBadge"),
+                StatusTone.Neutral);
             if (!IsCurrentWebSessionOwner(sessionToken.Value))
             {
                 return QueuedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: account session unavailable");
+                    Localize(
+                        "Main.BatchFailureSessionUnavailable",
+                        account.Username));
             }
 
             var nameTask = _webSession.GetExperienceNameAsync(
@@ -820,7 +972,9 @@ public partial class MainWindow
             {
                 return QueuedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: account session unavailable");
+                    Localize(
+                        "Main.BatchFailureSessionUnavailable",
+                        account.Username));
             }
 
             var queued = new QueuedBatchLaunch(
@@ -844,7 +998,9 @@ public partial class MainWindow
                 $"Batch queueing failed for one account: {ex.GetType().Name}.");
             return QueuedBatchLaunchResult.Failed(
                 account,
-                $"@{account.Username}: launch preparation failed");
+                Localize(
+                    "Main.BatchFailurePreparation",
+                    account.Username));
         }
     }
 
@@ -865,13 +1021,19 @@ public partial class MainWindow
             {
                 return StartedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: account session unavailable");
+                    Localize(
+                        "Main.BatchFailureSessionUnavailable",
+                        account.Username));
             }
 
             SetStatus(
-                $"Batch {position}: preparing @{account.Username}",
-                "Requesting a fresh secure Roblox game-client ticket…",
-                "BATCH TICKET");
+                Localize(
+                    "Main.BatchPreparingAccountTitle",
+                    position,
+                    account.Username),
+                Localize("Main.BatchRequestingTicketDetail"),
+                Localize("Main.BatchTicketBadge"),
+                StatusTone.Neutral);
             var ticket = await _webSession.GetAuthenticationTicketAsync(
                 queued.SessionToken,
                 cancellationToken);
@@ -880,13 +1042,17 @@ public partial class MainWindow
             {
                 return StartedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: account session unavailable");
+                    Localize(
+                        "Main.BatchFailureSessionUnavailable",
+                        account.Username));
             }
             if (string.IsNullOrWhiteSpace(ticket))
             {
                 return StartedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: launch ticket unavailable");
+                    Localize(
+                        "Main.BatchFailureTicketUnavailable",
+                        account.Username));
             }
 
             var recent = new RecentExperience
@@ -901,9 +1067,13 @@ public partial class MainWindow
                 LastLaunchedAt = DateTimeOffset.UtcNow
             };
             SetStatus(
-                $"Batch {position}: launching @{account.Username}",
-                "Handing this fresh account ticket directly to Roblox Player…",
-                "BATCH LAUNCH");
+                Localize(
+                    "Main.BatchLaunchingAccountTitle",
+                    position,
+                    account.Username),
+                Localize("Main.BatchLaunchingDetail"),
+                Localize("Main.BatchLaunchBadge"),
+                StatusTone.Neutral);
             var launchStartedAt = DateTimeOffset.UtcNow;
             var result = await _robloxClient.LaunchAsync(
                 RobloxLaunchUriBuilder.Build(
@@ -918,7 +1088,9 @@ public partial class MainWindow
             {
                 return StartedBatchLaunchResult.Failed(
                     account,
-                    $"@{account.Username}: launch failed");
+                    Localize(
+                        "Main.BatchFailureLaunch",
+                        account.Username));
             }
 
             handedOffToCompletion = true;
@@ -943,7 +1115,9 @@ public partial class MainWindow
                 $"Batch ticket request failed for one account: {ex.GetType().Name}.");
             return StartedBatchLaunchResult.Failed(
                 account,
-                $"@{account.Username}: launch preparation failed");
+                Localize(
+                    "Main.BatchFailurePreparation",
+                    account.Username));
         }
         finally
         {
@@ -966,9 +1140,13 @@ public partial class MainWindow
                     started.LaunchStartedAt);
             }
             SetStatus(
-                $"Batch {started.Position}: @{started.Account.Username} started",
-                "Waiting for optional local launch hooks to finish while the next account is prepared…",
-                "BATCH HOOK");
+                Localize(
+                    "Main.BatchHookTitle",
+                    started.Position,
+                    started.Account.Username),
+                Localize("Main.BatchHookDetail"),
+                Localize("Main.BatchHookBadge"),
+                StatusTone.Neutral);
             await NotifyLaunchHookAsync(
                 started.Recent,
                 started.ProcessId,

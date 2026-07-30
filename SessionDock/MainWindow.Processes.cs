@@ -26,12 +26,15 @@ public partial class MainWindow
 
         SetStatus(
             dialog.ClosedClientCount == 1
-                ? "Roblox client closed"
-                : "Roblox clients closed",
+                ? Localize("Main.ClientClosedTitleOne")
+                : Localize("Main.ClientClosedTitleMany"),
             dialog.ClosedClientCount == 1
-                ? "One verified Roblox Player process was closed."
-                : $"{dialog.ClosedClientCount} verified Roblox Player processes were closed.",
-            "CLIENTS CLOSED");
+                ? Localize("Main.ClientClosedDetailOne")
+                : Localize(
+                    "Main.ClientClosedDetailMany",
+                    dialog.ClosedClientCount),
+            Localize("Main.ClientsClosedBadge"),
+            StatusTone.Success);
     }
 
     private void TrackLaunchedClient(

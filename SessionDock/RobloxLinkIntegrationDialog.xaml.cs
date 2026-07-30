@@ -32,7 +32,9 @@ public partial class RobloxLinkIntegrationDialog : Window
         if (confirmation != MessageBoxResult.Yes)
             return;
 
-        var status = _registration.Enable();
+        var status = _registration.Enable(
+            Localize("LinkIntegration.RegistryProgIdDescription"),
+            Localize("LinkIntegration.RegistryProtocolDescription"));
         RenderStatus(status);
         var succeeded = status.State == RobloxLinkRegistrationState.Enabled;
         SetActionStatus(
@@ -54,7 +56,9 @@ public partial class RobloxLinkIntegrationDialog : Window
         if (confirmation != MessageBoxResult.Yes)
             return;
 
-        var status = _registration.Disable();
+        var status = _registration.Disable(
+            Localize("LinkIntegration.RegistryProgIdDescription"),
+            Localize("LinkIntegration.RegistryProtocolDescription"));
         RenderStatus(status);
         var succeeded = status.State == RobloxLinkRegistrationState.Disabled;
         SetActionStatus(
@@ -70,7 +74,9 @@ public partial class RobloxLinkIntegrationDialog : Window
         SetActionStatus(Localize("LinkIntegration.RefreshedAction"));
     }
 
-    private void RefreshStatus() => RenderStatus(_registration.Inspect());
+    private void RefreshStatus() => RenderStatus(_registration.Inspect(
+        Localize("LinkIntegration.RegistryProgIdDescription"),
+        Localize("LinkIntegration.RegistryProtocolDescription")));
 
     private void RenderStatus(RobloxLinkRegistrationStatus status)
     {

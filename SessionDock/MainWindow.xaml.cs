@@ -16,6 +16,8 @@ namespace SessionDock;
 
 public partial class MainWindow : Window
 {
+    private const double CompactLayoutBreakpoint = 900;
+    private const double CompactHeaderHeight = 112;
     private static readonly TimeSpan ShutdownTimeout =
         TimeSpan.FromSeconds(2);
     private static readonly TimeSpan StartupProfileDeletionTimeout =
@@ -69,6 +71,7 @@ public partial class MainWindow : Window
     private bool _destinationModeAwaitingInput;
     private bool _webView2RecoveryPromptShown;
     private bool _shutdownComplete;
+    private bool _compactLayoutActive;
 
     internal Task<Exception?> StartupCompletion => _startupCompletion.Task;
 
@@ -164,6 +167,44 @@ public partial class MainWindow : Window
         }
     }
 
+    internal void VerifyCompactLayoutForRuntimeSmoke()
+    {
+        Dispatcher.VerifyAccess();
+        var original = _compactLayoutActive;
+        try
+        {
+            ApplyCompactLayout(compact: true);
+            if (HeaderRow.Height.Value != CompactHeaderHeight ||
+                Grid.GetRow(HeaderTextPanel) != 1 ||
+                Grid.GetColumnSpan(HeaderUtilityPanel) != 2 ||
+                Grid.GetRow(DestinationSavedText) != 1 ||
+                Grid.GetColumnSpan(DestinationSavedText) != 3 ||
+                Grid.GetRow(LaunchPrimaryActionsPanel) != 1 ||
+                Grid.GetColumnSpan(NotAffiliatedText) != 2)
+            {
+                throw new InvalidOperationException(
+                    "The compact main-window layout was not applied.");
+            }
+
+            ApplyCompactLayout(compact: false);
+            if (HeaderRow.Height.Value != 64 ||
+                Grid.GetRow(HeaderTextPanel) != 0 ||
+                Grid.GetColumn(HeaderUtilityPanel) != 1 ||
+                Grid.GetRow(DestinationSavedText) != 0 ||
+                Grid.GetColumn(DestinationSavedText) != 2 ||
+                Grid.GetRow(LaunchPrimaryActionsPanel) != 0 ||
+                Grid.GetColumn(NotAffiliatedText) != 1)
+            {
+                throw new InvalidOperationException(
+                    "The regular main-window layout was not restored.");
+            }
+        }
+        finally
+        {
+            ApplyCompactLayout(original);
+        }
+    }
+
     internal void VerifySemanticSelectorsForRuntimeSmoke()
     {
         Dispatcher.VerifyAccess();
@@ -241,7 +282,8 @@ public partial class MainWindow : Window
         _destinationPersistence = new DestinationPersistenceDebouncer(
             DestinationPersistenceDelay,
             PersistDestinationRequestAsync);
-        _startupNotice = _settingsService.LoadNotice;
+        _startupNotice = LocalizeSettingsLoadNotice(
+            _settingsService.LoadNotice);
         app.UiSoundsEnabled = _settings.UiSoundsEnabled;
         _webSession.RobloxPageLoaded += WebSession_RobloxPageLoaded;
         _webSession.SessionUnavailable += WebSession_SessionUnavailable;
@@ -268,6 +310,80 @@ public partial class MainWindow : Window
         PrivateFilterButton.Checked += PrivateFilterButton_Checked;
     }
 
+    private void MainWindow_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _ = sender;
+        ApplyCompactLayout(ShouldUseCompactLayout(e.NewSize.Width));
+    }
+
+    internal static bool ShouldUseCompactLayout(double width) =>
+        double.IsFinite(width) &&
+        width > 0 &&
+        width < CompactLayoutBreakpoint;
+
+    private void ApplyCompactLayout(bool compact)
+    {
+        if (_compactLayoutActive == compact)
+            return;
+
+        _compactLayoutActive = compact;
+        HeaderRow.Height = new GridLength(compact ? CompactHeaderHeight : 64);
+
+        Grid.SetRow(HeaderTextPanel, compact ? 1 : 0);
+        Grid.SetColumn(HeaderTextPanel, 0);
+        Grid.SetColumnSpan(HeaderTextPanel, compact ? 2 : 1);
+        HeaderTextPanel.Margin = compact
+            ? new Thickness(0, 4, 0, 0)
+            : new Thickness(0);
+
+        Grid.SetRow(HeaderUtilityPanel, 0);
+        Grid.SetColumn(HeaderUtilityPanel, compact ? 0 : 1);
+        Grid.SetColumnSpan(HeaderUtilityPanel, compact ? 2 : 1);
+        HeaderUtilityPanel.HorizontalAlignment = compact
+            ? HorizontalAlignment.Right
+            : HorizontalAlignment.Stretch;
+
+        Grid.SetRow(DestinationSavedText, compact ? 1 : 0);
+        Grid.SetColumn(DestinationSavedText, compact ? 0 : 2);
+        Grid.SetColumnSpan(DestinationSavedText, compact ? 3 : 1);
+        DestinationSavedText.HorizontalAlignment = compact
+            ? HorizontalAlignment.Left
+            : HorizontalAlignment.Stretch;
+        DestinationSavedText.Margin = compact
+            ? new Thickness(0, 8, 0, 0)
+            : new Thickness(0);
+
+        Grid.SetRow(LaunchPrimaryActionsPanel, compact ? 1 : 0);
+        Grid.SetColumn(LaunchPrimaryActionsPanel, compact ? 0 : 1);
+        Grid.SetColumnSpan(LaunchPrimaryActionsPanel, compact ? 2 : 1);
+        LaunchPrimaryActionsPanel.HorizontalAlignment = compact
+            ? HorizontalAlignment.Right
+            : HorizontalAlignment.Stretch;
+        LaunchPrimaryActionsPanel.Margin = compact
+            ? new Thickness(0, 8, 0, 0)
+            : new Thickness(0);
+
+        Grid.SetRow(RequirementsText, 0);
+        Grid.SetColumn(RequirementsText, 0);
+        Grid.SetColumnSpan(RequirementsText, compact ? 2 : 1);
+        RequirementsText.TextTrimming = compact
+            ? TextTrimming.None
+            : TextTrimming.CharacterEllipsis;
+        RequirementsText.TextWrapping = compact
+            ? TextWrapping.Wrap
+            : TextWrapping.NoWrap;
+
+        Grid.SetRow(NotAffiliatedText, compact ? 1 : 0);
+        Grid.SetColumn(NotAffiliatedText, compact ? 0 : 1);
+        Grid.SetColumnSpan(NotAffiliatedText, compact ? 2 : 1);
+        NotAffiliatedText.Margin = compact
+            ? new Thickness(0, 2, 0, 0)
+            : new Thickness(14, 0, 0, 0);
+        NotAffiliatedText.TextWrapping = compact
+            ? TextWrapping.Wrap
+            : TextWrapping.NoWrap;
+    }
+
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e) =>
         await RunWindowOperationAsync(MainWindowLoadedAsync);
 
@@ -287,12 +403,16 @@ public partial class MainWindow : Window
             if (orphanCleanup.RemovedProfiles > 0)
             {
                 AppendStartupNotice(
-                    $"Removed {orphanCleanup.RemovedProfiles} incomplete local account profile(s) left by an interrupted sign-in.");
+                    Localize(
+                        orphanCleanup.RemovedProfiles == 1
+                            ? "Main.StartupOrphanRemovedOne"
+                            : "Main.StartupOrphanRemovedMany",
+                        orphanCleanup.RemovedProfiles));
             }
             if (orphanCleanup.BudgetExpired)
             {
                 AppendStartupNotice(
-                    "SessionDock limited incomplete-profile cleanup during startup so the window could remain responsive. Any unfinished profile is preserved for another cleanup attempt on the next start.");
+                    Localize("Main.StartupOrphanCleanupDeferred"));
             }
 
             await ReconcileImportedSoundsAsync(cancellationToken);
@@ -304,7 +424,7 @@ public partial class MainWindow : Window
                 MessageBox.Show(
                     this,
                     _startupNotice,
-                    "Local settings recovery",
+                    Localize("Main.LocalSettingsRecoveryTitle"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
                 _settingsService.AcknowledgeLoadNotice();
@@ -342,6 +462,38 @@ public partial class MainWindow : Window
             : $"{_startupNotice}{Environment.NewLine}{Environment.NewLine}{notice}";
     }
 
+    private string? LocalizeSettingsLoadNotice(string? notice)
+    {
+        if (string.IsNullOrWhiteSpace(notice))
+            return null;
+
+        return string.Join(
+            Environment.NewLine + Environment.NewLine,
+            notice.Split(
+                    [Environment.NewLine + Environment.NewLine],
+                    StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => part switch
+                {
+                    "SessionDock recovered your accounts and history from the local settings backup. The unreadable file was preserved for diagnosis." =>
+                        Localize("Main.SettingsRecoveredPreserved"),
+                    "SessionDock recovered your accounts and history from the local settings backup after the primary file was missing." =>
+                        Localize("Main.SettingsRecoveredMissing"),
+                    "SessionDock could not read the local settings or its backup. The unreadable files were preserved, and browser profiles were left untouched." =>
+                        Localize("Main.SettingsUnreadablePreserved"),
+                    "SessionDock found separate or conflicting current and legacy RobloxOne data. Conflicting files were left untouched, and automatic browser-profile cleanup is paused. Resolve the preserved legacy data before deleting migration-conflict.txt." =>
+                        Localize("Main.SettingsMigrationConflict"),
+                    "A legacy RobloxOne data migration did not finish cleanly. Some files may exist in either data directory, so automatic browser-profile cleanup is paused. Reconcile both directories before deleting migration-in-progress.txt." =>
+                        Localize("Main.SettingsMigrationIncomplete"),
+                    "Automatic browser-profile cleanup remains paused while recovered sessions are being validated. Your account records are available; the pause prevents unreferenced browser profiles from being deleted." =>
+                        Localize("Main.SettingsRecoveredValidation"),
+                    "Automatic browser-profile cleanup is paused to protect sessions whose account metadata could not be recovered." =>
+                        Localize("Main.SettingsCleanupPaused"),
+                    "Your accounts and browser profiles were recovered, but a conflicting optional sound or local integration file remains only in the preserved RobloxOne folder. Keep that folder until any optional configuration you still need has been reviewed." =>
+                        Localize("Main.SettingsOptionalLegacyData"),
+                    _ => Localize("Main.SettingsRecoveryGeneric")
+                }));
+    }
+
     private async Task RetryPendingProfileDeletionsAsync(
         CancellationToken cancellationToken)
     {
@@ -356,7 +508,7 @@ public partial class MainWindow : Window
             LocalDataException.IsExpectedPersistenceFailure(exception))
         {
             AppendStartupNotice(
-                "SessionDock could not inspect its account-removal journal, so all browser profiles were left untouched.");
+                Localize("Main.RemovalJournalInspectFailure"));
             return;
         }
 
@@ -386,9 +538,10 @@ public partial class MainWindow : Window
                     }
                     prepared = true;
                 },
-                "Pending account removal could not be restored",
-                "CLEANUP WARNING",
-                "SessionDock preserved the removal journal and left all browser profiles untouched. It will retry after local settings become writable.",
+                Localize("Main.PendingRemovalRestoreFailureTitle"),
+                Localize("Main.CleanupWarningBadge"),
+                Localize("Main.PendingRemovalRestoreFailureDetail"),
+                failureTone: StatusTone.Warning,
                 onCommitted: () =>
                 {
                     _activeProfile = FindActiveSavedProfile();
@@ -400,7 +553,7 @@ public partial class MainWindow : Window
             !prepared)
         {
             AppendStartupNotice(
-                "One or more confirmed account removals could not yet be restored to local settings. Their browser data was preserved for a later retry.");
+                Localize("Main.PendingRemovalPreserved"));
             return;
         }
 
@@ -431,15 +584,19 @@ public partial class MainWindow : Window
             }
 
             AppendStartupNotice(
-                $"Finished clearing {deletedKeys.Count} previously removed account profile(s).");
+                Localize(
+                    deletedKeys.Count == 1
+                        ? "Main.PendingRemovalClearedOne"
+                        : "Main.PendingRemovalClearedMany",
+                    deletedKeys.Count));
         }
 
         if (deletedKeys.Count < journaledKeys.Count || journalClearFailed ||
             _settings.PendingProfileDeletionKeys.Count > 0)
         {
             AppendStartupNotice(replayResult.BudgetExpired
-                ? "SessionDock limited account-profile cleanup during startup so the window could remain responsive. Unfinished removals were preserved and will be retried on the next start."
-                : "Some isolated browser data from a removed account is still locked or its cleanup acknowledgement could not be saved. SessionDock will retry on the next start.");
+                ? Localize("Main.PendingRemovalCleanupDeferred")
+                : Localize("Main.PendingRemovalCleanupPending"));
         }
     }
 
@@ -460,9 +617,10 @@ public partial class MainWindow : Window
                 acknowledged = _settings.PendingProfileDeletionKeys.RemoveAll(
                     key => keys.Contains(key));
             },
-            "Account cleanup could not be confirmed",
-            "CLEANUP WARNING",
-            "The browser data was cleared, but SessionDock could not save that acknowledgement. It will safely retry on the next start.");
+            Localize("Main.CleanupAcknowledgeFailureTitle"),
+            Localize("Main.CleanupWarningBadge"),
+            Localize("Main.CleanupAcknowledgeFailureDetail"),
+            failureTone: StatusTone.Warning);
         return committed && acknowledged > 0;
     }
 
@@ -524,7 +682,7 @@ public partial class MainWindow : Window
         catch (WebSessionUnavailableException exception)
         {
             PresentWebSessionFailure(
-                "Web sign-in could not start",
+                Localize("Main.WebSignInStartFailureTitle"),
                 exception);
             return false;
         }
@@ -538,7 +696,13 @@ public partial class MainWindow : Window
         BrowserHost.Children.Clear();
         BrowserPanel.Visibility = Visibility.Collapsed;
         LauncherPanel.Visibility = Visibility.Visible;
-        SetStatus(title, exception.Message, "SESSION ERROR");
+        var failureDetail = Localize(
+            WebSessionException.GetLocalizationKey(exception.Reason));
+        SetStatus(
+            title,
+            failureDetail,
+            Localize("Main.SessionErrorBadge"),
+            StatusTone.Error);
         SignInButton.Visibility = Visibility.Visible;
 
         if (_webView2RecoveryPromptShown ||
@@ -551,9 +715,8 @@ public partial class MainWindow : Window
         _webView2RecoveryPromptShown = true;
         var result = MessageBox.Show(
             this,
-            $"{exception.Message}{Environment.NewLine}{Environment.NewLine}" +
-            "Open Microsoft's official WebView2 download and repair page now?",
-            "Microsoft WebView2 needs attention",
+            Localize("Main.WebView2RecoveryPrompt", failureDetail),
+            Localize("Main.WebView2RecoveryTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
         if (result != MessageBoxResult.Yes)
@@ -572,9 +735,12 @@ public partial class MainWindow : Window
             System.Diagnostics.Trace.WriteLine(
                 $"WebView2 help page could not be opened: {startException.NativeErrorCode}.");
             SetStatus(
-                "WebView2 help page could not be opened",
-                $"Open {WebSessionException.OfficialWebView2DownloadUrl} in your browser, install or repair WebView2, restart Windows, and try again.",
-                "SESSION ERROR");
+                Localize("Main.WebView2HelpOpenFailureTitle"),
+                Localize(
+                    "Main.WebView2HelpOpenFailureDetail",
+                    WebSessionException.OfficialWebView2DownloadUrl),
+                Localize("Main.SessionErrorBadge"),
+                StatusTone.Error);
         }
     }
 
@@ -613,9 +779,10 @@ public partial class MainWindow : Window
             SignInButton,
             Localize("Main.ReconnectName"));
         SetStatus(
-            "Roblox web session stopped",
-            "The isolated browser process became unavailable. Reconnect this account before launching again.",
-            "SESSION ERROR");
+            Localize("Main.WebSessionStoppedTitle"),
+            Localize("Main.WebSessionStoppedDetail"),
+            Localize("Main.SessionErrorBadge"),
+            StatusTone.Error);
         return Task.CompletedTask;
     }
 
@@ -740,9 +907,9 @@ public partial class MainWindow : Window
                         _settings.ActiveAccountKey = pendingKey;
                         promotionApplied = true;
                     },
-                    "Account could not be saved",
-                    "ACCOUNT SAVE ERROR",
-                    "The Roblox sign-in succeeded, but SessionDock could not save this account slot. The temporary slot was kept so you can retry after making %LOCALAPPDATA%\\SessionDock writable.",
+                    Localize("Main.AccountSaveFailureTitle"),
+                    Localize("Main.AccountSaveErrorBadge"),
+                    Localize("Main.AccountSaveFailureDetail"),
                     onCommitted: () =>
                     {
                         if (!promotionApplied)
@@ -765,9 +932,12 @@ public partial class MainWindow : Window
             if (duplicateDetected)
             {
                 SetStatus(
-                    "Account already added",
-                    $"@{detectedUser.Name} already has a saved account slot. Sign out on the Roblox page and use a different account.",
-                    "DUPLICATE ACCOUNT");
+                    Localize("Main.AccountAlreadyAddedTitle"),
+                    Localize(
+                        "Main.AccountAlreadyAddedDetail",
+                        detectedUser.Name),
+                    Localize("Main.DuplicateAccountBadge"),
+                    StatusTone.Warning);
                 LaunchButton.IsEnabled = false;
                 return;
             }
@@ -783,9 +953,13 @@ public partial class MainWindow : Window
             if (!IsCurrentWebSessionOwner(token))
                 return;
             SetStatus(
-                "Different account detected",
-                $"This slot belongs to @{_activeProfile?.Username}. Sign out of @{detectedUser.Name} and reconnect the correct account.",
-                "ACCOUNT BLOCKED");
+                Localize("Main.DifferentAccountTitle"),
+                Localize(
+                    "Main.DifferentAccountDetail",
+                    _activeProfile?.Username,
+                    detectedUser.Name),
+                Localize("Main.AccountBlockedBadge"),
+                StatusTone.Warning);
             LaunchButton.IsEnabled = false;
             SignInButton.Visibility = Visibility.Visible;
             SignInButtonLabel.Text = Localize("Main.FixSignIn");
@@ -852,20 +1026,22 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void SetSignedOutState()
+    private void SetSignedOutState(bool announceStatus = true)
     {
         CancelAutoJoinWatchSilently();
         var profile = _pendingProfile ?? _activeProfile;
         SetStatus(
             profile is null || _pendingProfile is not null
-                ? "Connect a Roblox account"
-                : $"Reconnect @{profile.Username}",
+                ? Localize("Main.ConnectAccountTitle")
+                : Localize("Main.ReconnectAccountTitle", profile.Username),
             _pendingProfile is not null
-                ? "Sign in to the second Roblox account. It will keep its own isolated session."
+                ? Localize("Main.PendingAccountSignInDetail")
                 : profile is null
-                    ? "Add an account to create the first isolated Roblox session."
-                    : "This account slot's Roblox session has expired. Sign back into the same account.",
-            "SIGN-IN NEEDED");
+                    ? Localize("Main.NoAccountSignInDetail")
+                    : Localize("Main.ExpiredAccountSignInDetail"),
+            Localize("Main.SignInNeededBadge"),
+            StatusTone.Warning,
+            announceStatus);
         LaunchButton.IsEnabled = false;
         SignInButton.Visibility = Visibility.Visible;
         SignInButtonLabel.Text = Localize("Main.SignIn");
@@ -874,30 +1050,39 @@ public partial class MainWindow : Window
             Localize("Main.SignInName"));
     }
 
-    private void SetReadyState()
+    private void SetReadyState(bool announceStatus = true)
     {
         if (_currentUser is null || _activeProfile is null ||
             !TryGetCurrentWebSessionToken(_activeProfile, out _))
             return;
 
         SetStatus(
-            $"Active account: @{_currentUser.Name}",
-            "Ready. Roblox Player will be verified by Windows when you launch.",
-            _launchInProgress ? "LAUNCHING" : "ACCOUNT VERIFIED");
+            Localize("Main.ActiveAccountTitle", _currentUser.Name),
+            Localize("Main.AccountReadyDetail"),
+            _launchInProgress
+                ? Localize("Main.LaunchingBadge")
+                : Localize("Main.AccountVerifiedBadge"),
+            _launchInProgress ? StatusTone.Neutral : StatusTone.Success,
+            announceStatus);
         SignInButton.Visibility = Visibility.Collapsed;
-        RefreshLaunchAvailability();
+        RefreshLaunchAvailability(announceValidation: announceStatus);
         UpdateAutoJoinActionPresentation();
     }
 
-    private void SetStatus(string title, string detail, string badge)
+    private void SetStatus(
+        string title,
+        string detail,
+        string badge,
+        StatusTone tone,
+        bool announceChanges = true)
     {
-        var tone = StatusToneClassifier.Classify(badge);
         _statusLiveRegion.Update(
             title,
             CreateStatusAnnouncement(title, detail, badge),
             tone is StatusTone.Error or StatusTone.Warning
                 ? AccessibilityLiveRegionSeverity.Assertive
-                : AccessibilityLiveRegionSeverity.Polite);
+                : AccessibilityLiveRegionSeverity.Polite,
+            announceChanges);
         StatusDetail.Text = detail;
         SessionBadge.Text = badge;
 
@@ -968,21 +1153,23 @@ public partial class MainWindow : Window
                 return;
             }
             PresentWebSessionFailure(
-                "Roblox web session became unavailable",
+                Localize("Main.WebSessionUnavailableTitle"),
                 webSessionFailure);
             return;
         }
         SetStatus(
-            "Local operation could not be completed",
-            "SessionDock could not access a required local file or folder. Check that %LOCALAPPDATA%\\SessionDock is writable and not locked, then try again.",
-            "LOCAL DATA ERROR");
+            Localize("Main.LocalOperationFailureTitle"),
+            Localize("Main.LocalOperationFailureDetail"),
+            Localize("Main.LocalDataErrorBadge"),
+            StatusTone.Error);
     }
 
     private async Task<bool> TryCommitSettingsMutationAsync(
         Action mutation,
         string failureTitle,
-        string failureBadge = "SETTINGS ERROR",
+        string? failureBadge = null,
         string? failureDetail = null,
+        StatusTone failureTone = StatusTone.Error,
         bool showFailure = true,
         Action? onCommitted = null)
     {
@@ -1004,8 +1191,9 @@ public partial class MainWindow : Window
             SetStatus(
                 failureTitle,
                 failureDetail ??
-                    "SessionDock could not confirm the local settings update, so the in-memory change was rolled back. Check that %LOCALAPPDATA%\\SessionDock is writable and not locked, then try again.",
-                failureBadge);
+                    Localize("Main.SettingsRollbackDetail"),
+                failureBadge ?? Localize("Main.SettingsErrorBadge"),
+                failureTone);
         }
         return false;
     }
@@ -1272,7 +1460,7 @@ public partial class MainWindow : Window
                     profile.ColorHex = selectedColor;
                     mutationApplied = true;
                 },
-                "Account details could not be saved",
+                Localize("Main.AccountDetailsSaveFailureTitle"),
                 onCommitted: () =>
                 {
                     if (mutationApplied)
@@ -1300,7 +1488,7 @@ public partial class MainWindow : Window
         {
             await TryCommitSettingsMutationAsync(
                 () => _settings.UseLightTheme = useLightTheme,
-                "Theme could not be saved",
+                Localize("Main.ThemeSaveFailureTitle"),
                 onCommitted: () =>
                 {
                     ((App)Application.Current).ThemeService.ApplyPreference(
@@ -1394,7 +1582,7 @@ public partial class MainWindow : Window
                             selectedCustomFileName ??
                             _settings.CustomStartupSoundFileName;
                     },
-                    "Sound settings could not be saved",
+                    Localize("Main.SoundSaveFailureTitle"),
                     onCommitted: () =>
                         ((App)Application.Current).UiSoundsEnabled =
                             uiSoundsEnabled))
@@ -1402,16 +1590,18 @@ public partial class MainWindow : Window
                 return;
             }
             SetStatus(
-                "Sound settings saved",
-                "Your interface and startup sound choices stay on this PC.",
-                "SETTINGS SAVED");
+                Localize("Main.SoundSavedTitle"),
+                Localize("Main.SoundSavedDetail"),
+                Localize("Main.SettingsSavedBadge"),
+                StatusTone.Success);
         }
         catch (Exception ex) when (IsExpectedSoundImportFailure(ex))
         {
             SetStatus(
-                "Sound settings could not be saved",
-                ex.Message,
-                "SETTINGS ERROR");
+                Localize("Main.SoundSaveFailureTitle"),
+                Localize("Main.SoundSaveFailureDetail"),
+                Localize("Main.SettingsErrorBadge"),
+                StatusTone.Error);
         }
         finally
         {
@@ -1565,9 +1755,10 @@ public partial class MainWindow : Window
         if (_destinationDraftDirty && !_destinationDraftValid)
         {
             SetStatus(
-                "Account was not switched",
-                "Enter a valid Roblox destination or restore the saved value before switching accounts.",
-                "INVALID DESTINATION");
+                Localize("Main.AccountSwitchInvalidTitle"),
+                Localize("Main.AccountSwitchInvalidDetail"),
+                Localize("Main.InvalidDestinationBadge"),
+                StatusTone.Error);
             return;
         }
 
@@ -1599,8 +1790,8 @@ public partial class MainWindow : Window
                     _settings.ActiveAccountKey = key;
                     mutationApplied = true;
                 },
-                $"Could not switch to @{profile.Username}",
-                "ACCOUNT SWITCH ERROR",
+                Localize("Main.AccountSwitchFailureTitle", profile.Username),
+                Localize("Main.AccountSwitchErrorBadge"),
                 onCommitted: () =>
                 {
                     if (!mutationApplied)
@@ -1629,7 +1820,11 @@ public partial class MainWindow : Window
         {
             return;
         }
-        SetStatus($"Switching to @{profile.Username}", "Loading its isolated Roblox session…", "SWITCHING");
+        SetStatus(
+            Localize("Main.AccountSwitchingTitle", profile.Username),
+            Localize("Main.AccountSwitchingDetail"),
+            Localize("Main.SwitchingBadge"),
+            StatusTone.Neutral);
         await InitializeBrowserAsync(
             committedProfile,
             showLogin: false,
@@ -1722,9 +1917,10 @@ public partial class MainWindow : Window
         if (!await _accountCheckLock.WaitAsync(0, cancellationToken))
         {
             SetStatus(
-                "Account verification is still finishing",
-                "Wait for the current sign-in check to finish before discarding this temporary session.",
-                "ACCOUNT CHECK PENDING");
+                Localize("Main.AccountCheckPendingTitle"),
+                Localize("Main.AccountCheckPendingDetail"),
+                Localize("Main.AccountCheckPendingBadge"),
+                StatusTone.Warning);
             return;
         }
 
@@ -1741,9 +1937,10 @@ public partial class MainWindow : Window
             if (!await ClearCurrentBrowserProfileAsync(cancellationToken))
             {
                 SetStatus(
-                    "Temporary session could not be cleared",
-                    "Keep this window open and try Back again before closing SessionDock.",
-                    "CLEANUP ERROR");
+                    Localize("Main.TemporarySessionCleanupFailureTitle"),
+                    Localize("Main.TemporarySessionCleanupFailureDetail"),
+                    Localize("Main.CleanupErrorBadge"),
+                    StatusTone.Error);
                 return;
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -1847,7 +2044,11 @@ public partial class MainWindow : Window
                     out joinUser,
                     out parseError))
             {
-                SetStatus("User is not valid", parseError, "INVALID USER");
+                SetStatus(
+                    Localize("Main.InvalidUserTitle"),
+                    Localize(parseError),
+                    Localize("Main.InvalidUserBadge"),
+                    StatusTone.Error);
                 return;
             }
 
@@ -1864,7 +2065,11 @@ public partial class MainWindow : Window
                      out trackedPlaceId,
                      out parseError))
         {
-            SetStatus("Destination is not valid", parseError, "INVALID DESTINATION");
+            SetStatus(
+                Localize("Main.InvalidDestinationTitle"),
+                Localize(parseError),
+                Localize("Main.InvalidDestinationBadge"),
+                StatusTone.Error);
             return;
         }
 
@@ -1888,9 +2093,10 @@ public partial class MainWindow : Window
              expectedAccountUserId != currentUser.Id))
         {
             SetStatus(
-                "Auto-join watch ended",
-                "The selected account changed before Roblox Player could start. No launch was attempted.",
-                "WATCH ENDED");
+                Localize("Main.AutoJoinEndedTitle"),
+                Localize("Main.AutoJoinAccountChangedDetail"),
+                Localize("Main.WatchEndedBadge"),
+                StatusTone.Warning);
             return;
         }
 
@@ -1910,9 +2116,13 @@ public partial class MainWindow : Window
             else
             {
                 SetStatus(
-                    "Checking whether this user can be joined",
-                    $"Resolving {joinUser.DisplayValue} through @{currentUser.Name}'s isolated Roblox session…",
-                    "CHECKING USER");
+                    Localize("Main.JoinUserCheckingTitle"),
+                    Localize(
+                        "Main.JoinUserResolvingDetail",
+                        joinUser.DisplayValue,
+                        currentUser.Name),
+                    Localize("Main.CheckingUserBadge"),
+                    StatusTone.Neutral);
                 LaunchButton.IsEnabled = false;
                 var lookup = await _webSession.ResolveJoinUserAsync(
                     joinUser,
@@ -1950,18 +2160,20 @@ public partial class MainWindow : Window
         {
             _launchInProgress = false;
             SetStatus(
-                "Auto-join watch ended",
-                "The selected account or Roblox session changed before a ticket was requested. No launch was attempted.",
-                "WATCH ENDED");
+                Localize("Main.AutoJoinEndedTitle"),
+                Localize("Main.AutoJoinSessionChangedDetail"),
+                Localize("Main.WatchEndedBadge"),
+                StatusTone.Warning);
             return;
         }
 
         if (target!.ShareCode is not null)
         {
             SetStatus(
-                "Resolving private-server link",
-                "Looking up the hidden experience and private-server link code…",
-                "RESOLVING SERVER");
+                Localize("Main.PrivateServerResolvingTitle"),
+                Localize("Main.PrivateServerResolvingDetail"),
+                Localize("Main.ResolvingServerBadge"),
+                StatusTone.Neutral);
             LaunchButton.IsEnabled = false;
             target = await _webSession.ResolvePrivateServerAsync(
                 target.ShareCode,
@@ -1974,9 +2186,10 @@ public partial class MainWindow : Window
             {
                 _launchInProgress = false;
                 SetStatus(
-                    "Private-server link could not be resolved",
-                    "The code may be invalid, expired, or unavailable to the selected account.",
-                    "SERVER LINK ERROR");
+                    Localize("Main.PrivateServerResolveFailureTitle"),
+                    Localize("Main.PrivateServerResolveFailureDetail"),
+                    Localize("Main.ServerLinkErrorBadge"),
+                    StatusTone.Error);
                 LaunchButtonLabel.Text = Localize("Main.Launch");
                 LaunchButton.IsEnabled = true;
                 return;
@@ -1987,25 +2200,30 @@ public partial class MainWindow : Window
         {
             _launchInProgress = false;
             SetStatus(
-                "Tracked server does not match its experience",
-                "The saved server record is inconsistent and was not launched.",
-                "SERVER RECORD ERROR");
+                Localize("Main.TrackedServerMismatchTitle"),
+                Localize("Main.TrackedServerMismatchDetail"),
+                Localize("Main.ServerRecordErrorBadge"),
+                StatusTone.Error);
             LaunchButtonLabel.Text = Localize("Main.Launch");
             return;
         }
 
         SetStatus(
             joinUserResolution is not null
-                ? $"Joining @{joinUserResolution.Username} as @{currentUser.Name}"
+                ? Localize(
+                    "Main.JoiningUserAsTitle",
+                    joinUserResolution.Username,
+                    currentUser.Name)
                 : serverJobId is null
-                ? $"Preparing @{currentUser.Name}"
-                : $"Rejoining server as @{currentUser.Name}",
+                ? Localize("Main.PreparingAccountTitle", currentUser.Name)
+                : Localize("Main.RejoiningAsTitle", currentUser.Name),
             joinUserResolution is not null
-                ? "Requesting a fresh game-client ticket for the selected account and the user's current server…"
+                ? Localize("Main.JoinUserTicketDetail")
                 : serverJobId is null
-                ? "Requesting a secure Roblox game-client ticket for the selected account…"
-                : $"Targeting tracked server {serverJobId[..8]}… with a fresh account ticket.",
-            "GETTING TICKET");
+                ? Localize("Main.LaunchTicketDetail")
+                : Localize("Main.TrackedServerTicketDetail", serverJobId[..8]),
+            Localize("Main.GettingTicketBadge"),
+            StatusTone.Neutral);
         LaunchButton.IsEnabled = false;
 
         var ticketTask = _webSession.GetAuthenticationTicketAsync(
@@ -2027,9 +2245,10 @@ public partial class MainWindow : Window
         {
             _launchInProgress = false;
             SetStatus(
-                "Roblox did not issue a launch ticket",
-                "Refresh this account slot by signing in again, then retry.",
-                "TICKET ERROR");
+                Localize("Main.TicketFailureTitle"),
+                Localize("Main.TicketFailureDetail"),
+                Localize("Main.TicketErrorBadge"),
+                StatusTone.Error);
             SignInButton.Visibility = Visibility.Visible;
             SignInButtonLabel.Text = Localize("Main.RefreshSignIn");
             AutomationProperties.SetName(
@@ -2082,36 +2301,49 @@ public partial class MainWindow : Window
         JoinUserIdentifier requestedUser,
         JoinUserAvailability availability)
     {
-        var (title, detail, badge) = availability switch
+        var (title, detail, badge, tone) = availability switch
         {
             JoinUserAvailability.UserNotFound => (
-                "Roblox user was not found",
-                "Check the exact username, user ID, or profile URL and try again.",
-                "USER NOT FOUND"),
+                Localize("Main.JoinUserNotFoundTitle"),
+                Localize("Main.JoinUserNotFoundDetail"),
+                Localize("Main.UserNotFoundBadge"),
+                StatusTone.Error),
             JoinUserAvailability.Offline => (
-                $"{requestedUser.DisplayValue} is not joinable right now",
-                "The user is offline, hiding their activity, or unavailable to the selected account.",
-                "USER OFFLINE"),
+                Localize(
+                    "Main.JoinUserOfflineTitle",
+                    requestedUser.DisplayValue),
+                Localize("Main.JoinUserOfflineDetail"),
+                Localize("Main.UserOfflineBadge"),
+                StatusTone.Warning),
             JoinUserAvailability.NotInExperience => (
-                $"{requestedUser.DisplayValue} is not in an experience",
-                "They may only be online on the website or using Roblox Studio.",
-                "NOT IN GAME"),
+                Localize(
+                    "Main.JoinUserNotInExperienceTitle",
+                    requestedUser.DisplayValue),
+                Localize("Main.JoinUserNotInExperienceDetail"),
+                Localize("Main.NotInGameBadge"),
+                StatusTone.Warning),
             JoinUserAvailability.NotJoinable => (
-                $"{requestedUser.DisplayValue} has no usable current server",
-                "Privacy, experience, or current server details may be unavailable.",
-                "JOINS UNAVAILABLE"),
+                Localize(
+                    "Main.JoinUserUnavailableTitle",
+                    requestedUser.DisplayValue),
+                Localize("Main.JoinUserUnavailableDetail"),
+                Localize("Main.JoinsUnavailableBadge"),
+                StatusTone.Warning),
             JoinUserAvailability.RateLimited => (
-                "Roblox asked SessionDock to check less often",
-                "Wait a moment before trying to join this user again.",
-                "USER CHECK LIMITED"),
+                Localize("Main.JoinUserRateLimitedTitle"),
+                Localize("Main.JoinUserRateLimitedDetail"),
+                Localize("Main.UserCheckLimitedBadge"),
+                StatusTone.Warning),
             JoinUserAvailability.SessionUnavailable => (
-                "The selected Roblox session is unavailable",
-                "Reconnect this account before trying to join a user.",
-                "SIGN-IN NEEDED"),
+                Localize("Main.JoinUserSessionUnavailableTitle"),
+                Localize("Main.JoinUserSessionUnavailableDetail"),
+                Localize("Main.SignInNeededBadge"),
+                StatusTone.Warning),
             _ => (
-                "Roblox could not check this user",
-                "The Roblox user or presence service did not return a usable result. Try again shortly.",
-                "USER CHECK ERROR")
+                Localize("Main.JoinUserCheckFailureTitle"),
+                Localize("Main.JoinUserCheckFailureDetail"),
+                Localize("Main.UserCheckErrorBadge"),
+                StatusTone.Error)
         };
         if (availability == JoinUserAvailability.SessionUnavailable)
         {
@@ -2122,7 +2354,7 @@ public partial class MainWindow : Window
                 SignInButton,
                 Localize("Main.ReconnectName"));
         }
-        SetStatus(title, detail, badge);
+        SetStatus(title, detail, badge, tone);
         if (availability != JoinUserAvailability.SessionUnavailable)
         {
             LaunchButtonLabel.Text = Localize("Main.JoinUserButton");
@@ -2161,9 +2393,10 @@ public partial class MainWindow : Window
         bool saveToHistory = true)
     {
         SetStatus(
-            $"Launching as @{_currentUser?.Name}",
-            "Handing this destination directly to Roblox Player…",
-            "STARTING CLIENT");
+            Localize("Main.LaunchingAsTitle", _currentUser?.Name),
+            Localize("Main.StartingClientDetail"),
+            Localize("Main.StartingClientBadge"),
+            StatusTone.Neutral);
         LaunchButton.IsEnabled = false;
 
         var launchStartedAt = DateTimeOffset.UtcNow;
@@ -2180,11 +2413,12 @@ public partial class MainWindow : Window
             if (saveToHistory && _settings.RecentExperiences.Contains(recent))
                 BeginServerTracking(recent, launchStartedAt);
             SetStatus(
-                "Roblox Player started",
+                Localize("Main.ClientStartedTitle"),
                 _launchHook.IsConfigured
-                    ? "Running configured local launch integrations…"
-                    : "Checking optional local launch integrations…",
-                "CLIENT STARTED");
+                    ? Localize("Main.IntegrationsRunningDetail")
+                    : Localize("Main.IntegrationsCheckingDetail"),
+                Localize("Main.ClientStartedBadge"),
+                StatusTone.Success);
             var accountLabel = _activeProfile?.Label;
             await NotifyLaunchHookAsync(
                 recent,
@@ -2192,11 +2426,12 @@ public partial class MainWindow : Window
                 accountLabel,
                 cancellationToken);
             SetStatus(
-                "Roblox Player started",
+                Localize("Main.ClientStartedTitle"),
                 _launchHook.IsConfigured
-                    ? "Configured local integrations finished their bounded attempt. They never control launch success."
-                    : "No local launch integration is configured, so that step was skipped.",
-                "CLIENT STARTED");
+                    ? Localize("Main.IntegrationsFinishedDetail")
+                    : Localize("Main.IntegrationsSkippedDetail"),
+                Localize("Main.ClientStartedBadge"),
+                StatusTone.Success);
             RefreshLaunchAvailability();
             LaunchButtonLabel.Text = Localize("Main.Launch");
             return;
@@ -2204,7 +2439,11 @@ public partial class MainWindow : Window
 
         LaunchButtonLabel.Text = Localize("Main.Launch");
         LaunchButton.IsEnabled = true;
-        SetStatus("Roblox Player is unavailable", result.Error!, "CLIENT ERROR");
+        SetStatus(
+            Localize("Main.ClientUnavailableTitle"),
+            Localize(result.Error!),
+            Localize("Main.ClientErrorBadge"),
+            StatusTone.Error);
     }
 
     private async Task NotifyLaunchHookAsync(
@@ -2297,8 +2536,10 @@ public partial class MainWindow : Window
             return;
 
         var result = MessageBox.Show(
-            $"Remove @{profile.Username} from SessionDock? Its isolated sign-in will be cleared. Recent and Favorites entries for this account will remain until you remove or clear them.",
-            "Remove account", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            Localize("Main.RemoveAccountConfirm", profile.Username),
+            Localize("Main.RemoveAccountTitle"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
         if (result != MessageBoxResult.Yes)
             return;
 
@@ -2327,9 +2568,9 @@ public partial class MainWindow : Window
                         _settings.ActiveAccountKey =
                             _settings.Accounts.FirstOrDefault()?.Key;
                     },
-                    "Account removal could not be saved",
-                    "ACCOUNT SAVE ERROR",
-                    "SessionDock could not save the account removal, so the account and its isolated sign-in data were left unchanged. Make %LOCALAPPDATA%\\SessionDock writable, then retry."))
+                    Localize("Main.AccountRemovalSaveFailureTitle"),
+                    Localize("Main.AccountSaveErrorBadge"),
+                    Localize("Main.AccountRemovalSaveFailureDetail")))
             {
                 if (!await Task.Run(
                         () => _settingsService.ClearProfileDeletionJournal(
@@ -2337,9 +2578,10 @@ public partial class MainWindow : Window
                         CancellationToken.None))
                 {
                     SetStatus(
-                        "Account removal is queued",
-                        "SessionDock could not cancel the durable removal request. It will safely finish removing this account after local settings become writable.",
-                        "CLEANUP WARNING");
+                        Localize("Main.AccountRemovalQueuedTitle"),
+                        Localize("Main.AccountRemovalQueuedDetail"),
+                        Localize("Main.CleanupWarningBadge"),
+                        StatusTone.Warning);
                 }
                 return;
             }
@@ -2382,9 +2624,10 @@ public partial class MainWindow : Window
             if (!profileWasCleared || !cleanupAcknowledged || !journalCleared)
             {
                 SetStatus(
-                    "Account removed; local cleanup is pending",
-                    "The account removal was saved, but some isolated browser files are still in use or the cleanup acknowledgement could not be saved. SessionDock will retry this exact removal on the next start.",
-                    "CLEANUP WARNING");
+                    Localize("Main.AccountRemovalCleanupPendingTitle"),
+                    Localize("Main.AccountRemovalCleanupPendingDetail"),
+                    Localize("Main.CleanupWarningBadge"),
+                    StatusTone.Warning);
             }
         }
         finally
@@ -2551,9 +2794,10 @@ public partial class MainWindow : Window
         if (_settings.Accounts.Count == 0)
         {
             SetStatus(
-                "Destination was not changed",
-                "Add an account before setting a shared destination.",
-                "INVALID DESTINATION");
+                Localize("Main.DestinationNotChangedTitle"),
+                Localize("Main.DestinationNoAccountsDetail"),
+                Localize("Main.InvalidDestinationBadge"),
+                StatusTone.Error);
             RefreshLaunchAvailability();
             return;
         }
@@ -2563,7 +2807,11 @@ public partial class MainWindow : Window
                 out _,
                 out var error))
         {
-            SetStatus("Destination was not changed", error, "INVALID DESTINATION");
+            SetStatus(
+                Localize("Main.DestinationNotChangedTitle"),
+                Localize(error),
+                Localize("Main.InvalidDestinationBadge"),
+                StatusTone.Error);
             RefreshLaunchAvailability();
             return;
         }
@@ -2576,8 +2824,8 @@ public partial class MainWindow : Window
                     foreach (var account in _settings.Accounts)
                         account.Destination = storedDestination;
                 },
-                "Shared destination could not be saved",
-                "DESTINATION SAVE ERROR",
+                Localize("Main.SharedDestinationSaveFailureTitle"),
+                Localize("Main.DestinationSaveErrorBadge"),
                 onCommitted: () =>
                 {
                     ShowDestinationForProfile(_activeProfile);
@@ -2589,9 +2837,18 @@ public partial class MainWindow : Window
             return;
         }
         SetStatus(
-            "Destination set for all accounts",
-            $"Saved this {(_joinUserMode ? "user" : "experience")} destination for {assignedCount} account{(assignedCount == 1 ? string.Empty : "s")}.",
-            "DESTINATION SAVED");
+            Localize("Main.DestinationSetForAllTitle"),
+            Localize(
+                (_joinUserMode, assignedCount == 1) switch
+                {
+                    (true, true) => "Main.UserDestinationSavedOne",
+                    (true, false) => "Main.UserDestinationSavedMany",
+                    (false, true) => "Main.ExperienceDestinationSavedOne",
+                    _ => "Main.ExperienceDestinationSavedMany"
+                },
+                assignedCount),
+            Localize("Main.DestinationSavedBadge"),
+            StatusTone.Success);
     }
 
     private bool TryResolveLaunchInput(
@@ -2695,9 +2952,10 @@ public partial class MainWindow : Window
             if (showInvalidError && !_operationLifetime.IsShuttingDown)
             {
                 SetStatus(
-                    "Destination was not saved",
-                    "Enter a valid Roblox destination before leaving this account.",
-                    "INVALID DESTINATION");
+                    Localize("Main.DestinationNotSavedTitle"),
+                    Localize("Main.DestinationNotSavedDetail"),
+                    Localize("Main.InvalidDestinationBadge"),
+                    StatusTone.Error);
             }
             return false;
         }
@@ -2732,8 +2990,8 @@ public partial class MainWindow : Window
                 profile.Destination = request.Destination;
                 applied = true;
             },
-            "Destination could not be saved",
-            "DESTINATION SAVE ERROR",
+            Localize("Main.DestinationSaveFailureTitle"),
+            Localize("Main.DestinationSaveErrorBadge"),
             onCommitted: () =>
             {
                 if (!applied ||
@@ -2883,7 +3141,7 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private void RefreshLaunchAvailability()
+    private void RefreshLaunchAvailability(bool announceValidation = true)
     {
         if (LaunchButton is null)
             return;
@@ -2894,17 +3152,22 @@ public partial class MainWindow : Window
             out _,
             out var resolvedInput,
             out var validationError);
+        var localizedValidationError = destinationIsValid ||
+                                       string.IsNullOrWhiteSpace(validationError)
+            ? string.Empty
+            : Localize(validationError);
         if (DestinationValidationText is not null)
         {
             if (_destinationValidationLiveRegion is { } liveRegion)
             {
                 liveRegion.Update(
-                    validationError,
-                    severity: AccessibilityLiveRegionSeverity.Assertive);
+                    localizedValidationError,
+                    severity: AccessibilityLiveRegionSeverity.Assertive,
+                    announceChanges: announceValidation);
             }
             else
             {
-                DestinationValidationText.Text = validationError;
+                DestinationValidationText.Text = localizedValidationError;
             }
             DestinationValidationText.Visibility =
                 destination.Length > 0 && !destinationIsValid

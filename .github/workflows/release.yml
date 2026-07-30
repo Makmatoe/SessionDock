@@ -89,7 +89,7 @@ jobs:
           $version = @($project.SelectNodes('/Project/PropertyGroup/Version') | ForEach-Object { $_.InnerText } | Where-Object { $_ })
           if (@($version).Count -ne 1) { throw 'Expected exactly one project version.' }
           $tag = $env:RELEASE_TAG
-          Copy-Item "SessionDock/ReleaseNotes/$version.md" artifacts/release-input/notes.md
+          Copy-Item "SessionDock/ReleaseNotes/$version.en-US.md" artifacts/release-input/notes.md
           Copy-Item SessionDock/Resources/update-public-key.pem artifacts/release-input/update-public-key.pem
           Copy-Item SessionDock/SessionDock.csproj artifacts/release-input/application.csproj
           Copy-Item SessionDock/packages.lock.json artifacts/release-input/packages.lock.json

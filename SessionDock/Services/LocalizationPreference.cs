@@ -7,9 +7,12 @@ internal static class LocalizationPreference
     internal const string System = "system";
     internal const string English = "en-US";
     internal const string Dutch = "nl-NL";
+    internal const string German = "de-DE";
+    internal const string French = "fr-FR";
+    internal const string Spanish = "es-ES";
 
     internal static IReadOnlyList<string> SupportedValues { get; } =
-        [System, English, Dutch];
+        [System, English, Dutch, German, French, Spanish];
 
     internal static string Normalize(string? value)
     {
@@ -20,6 +23,12 @@ internal static class LocalizationPreference
             return English;
         if (string.Equals(trimmed, Dutch, StringComparison.OrdinalIgnoreCase))
             return Dutch;
+        if (string.Equals(trimmed, German, StringComparison.OrdinalIgnoreCase))
+            return German;
+        if (string.Equals(trimmed, French, StringComparison.OrdinalIgnoreCase))
+            return French;
+        if (string.Equals(trimmed, Spanish, StringComparison.OrdinalIgnoreCase))
+            return Spanish;
         return System;
     }
 
@@ -32,10 +41,13 @@ internal static class LocalizationPreference
         if (!normalized.Equals(System, StringComparison.Ordinal))
             return normalized;
 
-        return systemCulture.TwoLetterISOLanguageName.Equals(
-            "nl",
-            StringComparison.OrdinalIgnoreCase)
-                ? Dutch
-                : English;
+        return systemCulture.TwoLetterISOLanguageName.ToLowerInvariant() switch
+        {
+            "nl" => Dutch,
+            "de" => German,
+            "fr" => French,
+            "es" => Spanish,
+            _ => English
+        };
     }
 }

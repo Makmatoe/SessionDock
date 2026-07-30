@@ -71,8 +71,10 @@ public partial class App : Application
             if (!linkForwarded)
             {
                 MessageBox.Show(
-                    "The running SessionDock window did not accept the link in time. No account was launched. Try the link again after the window finishes starting.",
-                    "SessionDock could not forward the link",
+                    StartupLocalization.GetString(
+                        "Startup.ForwardLinkDetail"),
+                    StartupLocalization.GetString(
+                        "Startup.ForwardLinkTitle"),
                     MessageBoxButton.OK,
                     MessageBoxImage.Warning);
             }
@@ -148,8 +150,10 @@ public partial class App : Application
             QueueExternalLinkForDispatch(startupExternalLink);
     }
 
-    private void ReportStartupFailure(string message)
+    private void ReportStartupFailure(string messageKey)
     {
+        var message = _localizationService?.GetString(messageKey) ??
+            StartupLocalization.GetString(messageKey);
 #if SESSIONDOCK_SMOKE_HARNESS
         if (IsRuntimeSmokeTest)
         {
@@ -163,7 +167,8 @@ public partial class App : Application
 
         MessageBox.Show(
             message,
-            "SessionDock cannot start",
+            _localizationService?.GetString("Startup.CannotStartTitle") ??
+                StartupLocalization.GetString("Startup.CannotStartTitle"),
             MessageBoxButton.OK,
             MessageBoxImage.Error);
     }
@@ -208,6 +213,7 @@ public partial class App : Application
         if (sender is not Window window)
             return;
 
+        _localizationService?.ApplyWindowLanguage(window);
         ApplyNativeWindowTheme(window);
 #if SESSIONDOCK_SMOKE_HARNESS
         if (_runtimeSmokeTest is null)
@@ -311,6 +317,7 @@ public partial class App : Application
             mainWindow.VerifyLocalizationSwitchForRuntimeSmoke();
             mainWindow.VerifySemanticSelectorsForRuntimeSmoke();
             mainWindow.VerifyJoinUserUiForRuntimeSmoke();
+            mainWindow.VerifyCompactLayoutForRuntimeSmoke();
 
             void HandleShutdownCompleted(Exception? shutdownFailure)
             {

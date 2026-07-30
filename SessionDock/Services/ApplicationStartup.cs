@@ -2,10 +2,8 @@ namespace SessionDock.Services;
 
 internal static class ApplicationStartup
 {
-    private const string LocalDataFailureMessage =
-        "SessionDock could not safely open its local data folder:\n\n" +
-        "%LOCALAPPDATA%\\SessionDock\n\n" +
-        "Make sure this path is a writable folder rather than a file or redirected link, close programs that may be locking it, and then start SessionDock again.";
+    internal const string LocalDataFailureKey =
+        "Startup.LocalDataFailureDetail";
 
     internal static bool TryStart(
         Action start,
@@ -21,7 +19,7 @@ internal static class ApplicationStartup
         catch (Exception exception) when (
             LocalDataException.IsExpectedPersistenceFailure(exception))
         {
-            reportLocalDataFailure(LocalDataFailureMessage);
+            reportLocalDataFailure(LocalDataFailureKey);
             return false;
         }
     }

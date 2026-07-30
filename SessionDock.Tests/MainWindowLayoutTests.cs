@@ -3,6 +3,29 @@ namespace SessionDock.Tests;
 public sealed class MainWindowLayoutTests
 {
     [Theory]
+    [InlineData(508, true)]
+    [InlineData(719.9, true)]
+    [InlineData(832, true)]
+    [InlineData(899.9, true)]
+    [InlineData(900, false)]
+    [InlineData(1048, false)]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    public void ShouldUseCompactLayout_UsesNarrowWindowBreakpoint(
+        double width,
+        bool expected)
+    {
+        Assert.Equal(expected, MainWindow.ShouldUseCompactLayout(width));
+    }
+
+    [Fact]
+    public void ShouldUseCompactLayout_RejectsNonFiniteWidths()
+    {
+        Assert.False(MainWindow.ShouldUseCompactLayout(double.NaN));
+        Assert.False(MainWindow.ShouldUseCompactLayout(double.PositiveInfinity));
+    }
+
+    [Theory]
     [InlineData(false, 2, true)]
     [InlineData(true, 2, false)]
     [InlineData(false, 1, false)]

@@ -15,7 +15,8 @@ public partial class MainWindow
         try
         {
             var dialog = new ReleaseNotesDialog(
-                BundledReleaseNotesCatalog.CurrentAndPrevious)
+                BundledReleaseNotesCatalog.LoadForCurrentAssembly(
+                    Localization.EffectiveCulture))
             {
                 Owner = this
             };
@@ -27,9 +28,10 @@ public partial class MainWindow
             Trace.WriteLine(
                 $"Bundled release notes are unavailable: {exception.Message}");
             SetStatus(
-                "Release notes are unavailable",
-                "This copy of SessionDock does not contain valid notes for its installed version.",
-                "NOTES UNAVAILABLE");
+                Localize("Main.ReleaseNotesUnavailableTitle"),
+                Localize("Main.ReleaseNotesUnavailableDetail"),
+                Localize("Main.ReleaseNotesUnavailableBadge"),
+                StatusTone.Error);
         }
     }
 

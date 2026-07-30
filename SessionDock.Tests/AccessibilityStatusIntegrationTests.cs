@@ -36,6 +36,8 @@ public sealed class AccessibilityStatusIntegrationTests
         var runningClientsSource = ReadProductionFile(
             "RunningClientsDialog.xaml.cs");
         var soundSource = ReadProductionFile("SoundSettingsDialog.xaml.cs");
+        var localizationSource = ReadProductionFile(
+            "MainWindow.Localization.cs");
         var mainXaml = ReadProductionFile("MainWindow.xaml");
 
         Assert.Contains(
@@ -93,6 +95,22 @@ public sealed class AccessibilityStatusIntegrationTests
         Assert.Contains(
             "new AccessibilityLiveRegion(ValidationText)",
             soundSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SetValidation(Localize(\"Sound.ImportCancelled\"))",
+            soundSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RefreshLaunchAvailability(announceValidation: false)",
+            localizationSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SetReadyState(announceStatus: false)",
+            localizationSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SetSignedOutState(announceStatus: false)",
+            localizationSource,
             StringComparison.Ordinal);
         Assert.Contains(
             "x:Name=\"StatusTitle\"",

@@ -10,6 +10,8 @@ public sealed class HandleScopeContractValidationTests
     private const string Policy = "roblox-singleton-event-v1";
     private const string ValidToken =
         "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    private const string ValidPlanId =
+        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
 
     [Theory]
     [InlineData("http://127.0.0.1:1")]
@@ -173,12 +175,15 @@ public sealed class HandleScopeContractValidationTests
     {
         var response = CreateOperationResponse(dryRun: true);
 
-        Assert.True(ValidateOperation(
-            response,
+        using var document = JsonDocument.Parse(response.ToJsonString());
+        Assert.True(HandleScopeLaunchHook.TryValidateOperationDocument(
+            document.RootElement,
             ExpectedPid,
             expectedDryRun: true,
-            out var closedExpectedProcess));
+            out var closedExpectedProcess,
+            out var planId));
         Assert.False(closedExpectedProcess);
+        Assert.Equal(ValidPlanId, planId);
     }
 
     [Fact]
@@ -220,6 +225,7 @@ public sealed class HandleScopeContractValidationTests
     [Theory]
     [InlineData("policy")]
     [InlineData("dryRun")]
+    [InlineData("planId")]
     [InlineData("matchCount")]
     [InlineData("closedCount")]
     [InlineData("failedCount")]
@@ -231,6 +237,50 @@ public sealed class HandleScopeContractValidationTests
     {
         var response = CreateOperationResponse(dryRun: false);
         response.Remove(propertyName);
+
+        Assert.False(ValidateOperation(
+            response,
+            ExpectedPid,
+            expectedDryRun: false,
+            out _));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("short")]
+    [InlineData("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB+")]
+    [InlineData("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB")]
+    public void TryValidateOperationDocument_InvalidDryRunPlanId_IsRejected(
+        string planId)
+    {
+        var response = CreateOperationResponse(dryRun: true);
+        response["planId"] = planId;
+
+        Assert.False(ValidateOperation(
+            response,
+            ExpectedPid,
+            expectedDryRun: true,
+            out _));
+    }
+
+    [Fact]
+    public void TryValidateOperationDocument_MissingDryRunPlanId_IsRejected()
+    {
+        var response = CreateOperationResponse(dryRun: true);
+        response.Remove("planId");
+
+        Assert.False(ValidateOperation(
+            response,
+            ExpectedPid,
+            expectedDryRun: true,
+            out _));
+    }
+
+    [Fact]
+    public void TryValidateOperationDocument_NonNullExecutionPlanId_IsRejected()
+    {
+        var response = CreateOperationResponse(dryRun: false);
+        response["planId"] = ValidPlanId;
 
         Assert.False(ValidateOperation(
             response,
@@ -268,6 +318,7 @@ public sealed class HandleScopeContractValidationTests
               "policy": "{{Policy}}",
               "policy": "{{Policy}}",
               "dryRun": false,
+              "planId": null,
               "processCount": 1,
               "matchedProcessCount": 1,
               "matchCount": 1,
@@ -312,6 +363,7 @@ public sealed class HandleScopeContractValidationTests
         {
             ["policy"] = Policy,
             ["dryRun"] = dryRun,
+            ["planId"] = dryRun ? ValidPlanId : null,
             ["processCount"] = 1,
             ["matchedProcessCount"] = 1,
             ["matchCount"] = 1,

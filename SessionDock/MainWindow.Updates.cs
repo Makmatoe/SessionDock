@@ -25,9 +25,10 @@ public partial class MainWindow
             if (!_updateService.CanSelfUpdate)
             {
                 SetStatus(
-                    "Updates require the installed app",
-                    "This debug or portable copy cannot replace itself. Install SessionDock with the official Setup executable, then check again.",
-                    "UPDATES UNAVAILABLE");
+                    Localize("Main.UpdateInstalledAppRequiredTitle"),
+                    Localize("Main.UpdateInstalledAppRequiredDetail"),
+                    Localize("Main.UpdatesUnavailableBadge"),
+                    StatusTone.Warning);
                 return;
             }
 
@@ -35,9 +36,10 @@ public partial class MainWindow
             if (pending is not null)
             {
                 SetStatus(
-                    "Update ready to restart",
-                    "Verifying the signed release descriptor and downloaded package before restarting…",
-                    "VERIFYING UPDATE");
+                    Localize("Main.UpdateReadyToRestartTitle"),
+                    Localize("Main.UpdateVerifyingDetail"),
+                    Localize("Main.UpdateVerifyingBadge"),
+                    StatusTone.Neutral);
                 var verifiedPending = await _updateService.VerifyPendingAsync(
                     pending,
                     cancellationToken);
@@ -45,9 +47,10 @@ public partial class MainWindow
                 if (!ConfirmUpdate(verifiedPending, alreadyDownloaded: true))
                 {
                     SetStatus(
-                        "Restart postponed",
-                        "The verified update remains downloaded until you choose to install it.",
-                        "UPDATE READY");
+                        Localize("Main.UpdateRestartPostponedTitle"),
+                        Localize("Main.UpdateRestartPostponedDetail"),
+                        Localize("Main.UpdateReadyBadge"),
+                        StatusTone.Neutral);
                     return;
                 }
 
@@ -58,47 +61,59 @@ public partial class MainWindow
             }
 
             SetStatus(
-                "Checking for updates",
-                "Contacting the official SessionDock release feed…",
-                "CHECKING UPDATE");
+                Localize("Main.UpdateCheckingTitle"),
+                Localize("Main.UpdateCheckingDetail"),
+                Localize("Main.UpdateCheckingBadge"),
+                StatusTone.Neutral);
             var available = await _updateService.CheckAsync(
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (available is null)
             {
                 SetStatus(
-                    "SessionDock is up to date",
-                    $"Version {_updateService.CurrentVersion} is the newest stable release.",
-                    "UP TO DATE");
+                    Localize("Main.UpdateCurrentTitle"),
+                    Localize(
+                        "Main.UpdateCurrentDetail",
+                        _updateService.CurrentVersion),
+                    Localize("Main.UpdateCurrentBadge"),
+                    StatusTone.Success);
                 return;
             }
 
             if (!ConfirmUpdate(available.Release, alreadyDownloaded: false))
             {
                 SetStatus(
-                    "Update not installed",
-                    "The signed update is available, but no files were changed.",
-                    "UPDATE CANCELLED");
+                    Localize("Main.UpdateNotInstalledTitle"),
+                    Localize("Main.UpdateNotInstalledDetail"),
+                    Localize("Main.UpdateCancelledBadge"),
+                    StatusTone.Warning);
                 return;
             }
 
             SetStatus(
-                $"Downloading SessionDock {available.Release.Descriptor.Version}",
-                "Downloading the verified package from GitHub… 0%",
-                "DOWNLOADING UPDATE");
+                Localize(
+                    "Main.UpdateDownloadingTitle",
+                    available.Release.Descriptor.Version),
+                Localize("Main.UpdateDownloadingDetail", 0),
+                Localize("Main.UpdateDownloadingBadge"),
+                StatusTone.Neutral);
             await _updateService.DownloadAsync(
                 available,
                 progress => Dispatcher.BeginInvoke(() => SetStatus(
-                    $"Downloading SessionDock {available.Release.Descriptor.Version}",
-                    $"Downloading the verified package from GitHub… {progress}%",
-                    "DOWNLOADING UPDATE")),
+                    Localize(
+                        "Main.UpdateDownloadingTitle",
+                        available.Release.Descriptor.Version),
+                    Localize("Main.UpdateDownloadingDetail", progress),
+                    Localize("Main.UpdateDownloadingBadge"),
+                    StatusTone.Neutral)),
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             SetStatus(
-                "Update downloaded",
-                "SessionDock will close, install the verified package, and restart.",
-                "RESTARTING");
+                Localize("Main.UpdateDownloadedTitle"),
+                Localize("Main.UpdateDownloadedDetail"),
+                Localize("Main.UpdateRestartingBadge"),
+                StatusTone.Success);
             _updateService.ApplyAfterExit(available.UpdateInfo.TargetFullRelease);
             applyingUpdate = true;
             _ = Dispatcher.BeginInvoke(() => Close());
@@ -112,9 +127,10 @@ public partial class MainWindow
             cancellationToken.IsCancellationRequested)
         {
             SetStatus(
-                "Update cancelled",
-                "The installed version was left unchanged.",
-                "UPDATE CANCELLED");
+                Localize("Main.UpdateCancelledTitle"),
+                Localize("Main.UpdateCancelledDetail"),
+                Localize("Main.UpdateCancelledBadge"),
+                StatusTone.Warning);
         }
         catch (Exception ex) when (
             UpdateFailurePresentation.TryCreate(ex, out _))
@@ -123,9 +139,10 @@ public partial class MainWindow
             Trace.WriteLine(
                 $"Expected update failure: {ex.GetType().FullName}.");
             SetStatus(
-                failure.Title,
-                failure.Detail,
-                failure.Badge);
+                Localize(failure.TitleKey),
+                Localize(failure.DetailKey),
+                Localize(failure.BadgeKey),
+                failure.Tone);
         }
         finally
         {

@@ -78,7 +78,7 @@ public sealed class AccountDestinationServiceTests
 
         Assert.False(success);
         Assert.Equal(0, assignedCount);
-        Assert.Contains("Add an account", error, StringComparison.Ordinal);
+        Assert.Equal("Validation.Destination.AccountRequired", error);
     }
 
     private static List<AccountProfile> CreateAccounts() =>

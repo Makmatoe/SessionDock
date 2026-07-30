@@ -62,9 +62,11 @@ public partial class MainWindow
         {
             AnnounceAutoJoinState(
                 "external-link-blocked",
-                "External Roblox link was not opened",
-                "Stop the active auto-join watch before opening another Roblox destination.",
-                "WATCHING");
+                () => (
+                    Localize("Main.ExternalLinkBlockedTitle"),
+                    Localize("Main.ExternalLinkBlockedDetail"),
+                    Localize("Main.AutoJoinWatchingBadge"),
+                    StatusTone.Warning));
             return;
         }
         if (!ExternalRobloxLinkPolicy.TryParse(
