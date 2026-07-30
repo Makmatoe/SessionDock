@@ -985,7 +985,8 @@ try {
         $releaseGuideContents -notmatch 'DISCORD_RELEASE_CHANNEL_ID' -or
         $releaseGuideContents -notmatch 'DISCORD_RELEASE_ROLE_ID' -or
         $releaseGuideContents -notmatch '(?i)no form' -or
-        $releaseGuideContents -notmatch '(?i)tagging\s+is\s+blocked' -or
+        $releaseGuideContents -notmatch '(?i)before\s+tagging,\s+the\s+repository\s+owner\s+must\s+run\s+the\s+audit' -or
+        $releaseGuideContents -notmatch '(?i)treat\s+every\s+failure\s+as\s+a\s+release\s+blocker' -or
         $releaseGuideContents -notmatch '(?i)GET-only\s+preflight' -or
         $releaseGuideContents -notmatch '(?i)Re-run failed jobs' -or
         $releaseGuideContents -notmatch 'Unknown publisher' -or

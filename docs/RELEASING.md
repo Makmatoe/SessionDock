@@ -43,15 +43,20 @@ environment:
 | Variable | `DISCORD_RELEASE_CHANNEL_ID` | Dedicated release channel |
 | Variable | `DISCORD_RELEASE_ROLE_ID` | Mentionable SessionDock notification role |
 
-Tagging is blocked until the repository owner creates `release-announcement`,
-restricts deployments to tags matching `v*`, and configures the exact values
-above. GitHub does not reveal an existing secret value, so retrieve Bota's token
-from its approved secure source or rotate it rather than attempting to read or
-copy it from GitHub. Pin the bot user/Application ID shown in the Discord
-Developer Portal. After the new environment contains the re-entered token and
-reviewed IDs, remove the legacy Discord secret and variables from `release`,
-then run the audit below. The audit passes only after that migration is complete.
-Do not intentionally configure these names at repository or organization scope.
+Before tagging, the repository owner must run the audit below and treat every
+failure as a release blocker. It verifies that `release-announcement` is restricted
+to tags matching `v*`, has no reviewer gate, declares exactly the expected
+environment-scoped secret and variable names, has no broader-scope fallbacks, and
+leaves no legacy Discord values on `release`. GitHub's API does not expose secret
+values, and this audit does not validate variable values. The GET-only release
+preflight validates the effective IDs and Bota identity before any draft is staged.
+
+GitHub does not reveal an existing secret value. When recreating the environment
+or rotating Bota's credential, retrieve the token from its approved secure source
+or rotate it rather than attempting to read or copy it from GitHub. Pin the bot
+user/Application ID shown in the Discord Developer Portal, remove any legacy
+Discord values from `release`, and rerun the audit. Do not intentionally configure
+these names at repository or organization scope.
 
 GitHub Actions expression lookup is an important provenance limitation: if an
 environment-scoped secret or variable is absent, a same-named repository or

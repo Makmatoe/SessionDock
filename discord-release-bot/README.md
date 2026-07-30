@@ -26,12 +26,14 @@ Maintainers configure the protected environment described in
 [`docs/RELEASING.md`](../docs/RELEASING.md). The official job needs no Gateway
 connection or `discord.js` runtime.
 
-Tagging is blocked unless the repository-owner audit confirms that
-`release-announcement` is restricted to `v*` tags, has no reviewer gate, and
-contains exactly the three pinned IDs plus Bota's environment-scoped token.
-GitHub does not reveal or copy an existing token; re-enter it from its approved
-secure source or rotate it. The audit also rejects broader-scope fallbacks and
-legacy Discord values left on the signing environment.
+Before tagging, maintainers must run the repository-owner audit and treat every
+failure as a release blocker. It verifies that `release-announcement` is restricted
+to `v*` tags with no reviewer gate, has exactly the expected environment-scoped
+secret and variable names, has no broader-scope fallbacks, and leaves no legacy
+Discord values on the signing environment. It cannot inspect secret or variable
+values; the GET-only preflight validates the effective IDs and Bota identity.
+GitHub does not reveal or copy an existing token, so re-enter it from its approved
+secure source or rotate it.
 
 ## Optional community announcement bot
 
