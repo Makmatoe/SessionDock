@@ -312,6 +312,64 @@ public sealed class ExternalRobloxLinkTests
                 openWithValueExists));
     }
 
+    [Theory]
+    [InlineData(
+        "Open Roblox link with SessionDock",
+        "URL: Open Roblox link with SessionDock",
+        (int)RobloxLinkRegistrationState.Enabled)]
+    [InlineData(
+        "SessionDock Roblox link handler",
+        "URL: Open Roblox link with SessionDock",
+        (int)RobloxLinkRegistrationState.UpdateRequired)]
+    [InlineData(
+        "Open Roblox link with SessionDock",
+        "URL : ouvrir un lien Roblox avec SessionDock",
+        (int)RobloxLinkRegistrationState.UpdateRequired)]
+    [InlineData(
+        "SessionDock Roblox link handler",
+        "URL : ouvrir un lien Roblox avec SessionDock",
+        (int)RobloxLinkRegistrationState.UpdateRequired)]
+    public void RegistryValuePolicy_RequiresBothCurrentLocalizedDescriptions(
+        string actualProgIdDescription,
+        string actualProtocolDescription,
+        int expectedState)
+    {
+        const string expectedProgIdDescription =
+            "Open Roblox link with SessionDock";
+        const string expectedProtocolDescription =
+            "URL: Open Roblox link with SessionDock";
+        const string command =
+            "\"C:\\Program Files\\SessionDock\\SessionDock.exe\" " +
+            "--open-roblox-link \"%1\"";
+
+        var progIdMatches =
+            RobloxLinkRegistrationService.HasExpectedHandlerValues(
+                actualProgIdDescription,
+                RobloxLinkRegistrationService.OwnerValue,
+                string.Empty,
+                command,
+                expectedProgIdDescription,
+                command);
+        var protocolMatches =
+            RobloxLinkRegistrationService.HasExpectedHandlerValues(
+                actualProtocolDescription,
+                RobloxLinkRegistrationService.OwnerValue,
+                string.Empty,
+                command,
+                expectedProtocolDescription,
+                command);
+
+        Assert.Equal(
+            (RobloxLinkRegistrationState)expectedState,
+            RobloxLinkRegistrationService.ClassifyRegistrationState(
+                RobloxLinkRegistrationOwnership.Owned,
+                progIdExists: true,
+                protocolExists: true,
+                openWithValueExists: true,
+                progIdHasExpectedValues: progIdMatches,
+                protocolHasExpectedValues: protocolMatches));
+    }
+
     [Fact]
     public void LatestOnlyQueue_BoundsActiveAndPendingWorkAndKeepsNewest()
     {
@@ -404,6 +462,10 @@ public sealed class ExternalRobloxLinkTests
             root,
             "SessionDock",
             "RobloxLinkIntegrationDialog.xaml"));
+        var settingsCode = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "RobloxLinkIntegrationDialog.xaml.cs"));
         var registration = File.ReadAllText(Path.Combine(
             root,
             "SessionDock",
@@ -453,6 +515,18 @@ public sealed class ExternalRobloxLinkTests
         Assert.Contains("Registry.CurrentUser", registration, StringComparison.Ordinal);
         Assert.DoesNotContain("Registry.ClassesRoot", registration, StringComparison.Ordinal);
         Assert.DoesNotContain("Process.Start", registration, StringComparison.Ordinal);
+        Assert.Contains(
+            "LinkIntegration.RegistryProgIdDescription",
+            settingsCode,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "LinkIntegration.RegistryProtocolDescription",
+            settingsCode,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "URL:Open Roblox link with SessionDock",
+            registration,
+            StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

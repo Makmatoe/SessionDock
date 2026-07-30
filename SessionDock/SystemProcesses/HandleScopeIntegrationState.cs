@@ -4,8 +4,6 @@ public enum HandleScopeIntegrationState
 {
     NotInstalled,
     InstalledStopped,
-    StartPending,
-    RunningUntested,
     RunningDisabled,
     Ready,
     UpdateRequired,

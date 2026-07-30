@@ -41,7 +41,13 @@ public sealed class LaunchInputResolverTests
 
         Assert.False(success);
         Assert.Null(resolved);
-        Assert.Contains("not in Recent", error, StringComparison.Ordinal);
+        Assert.Equal(
+            LaunchInputResolver.UntrackedServerJobIdErrorKey,
+            error);
+        Assert.Contains(
+            "not in Recent",
+            EnglishResourceText.Get(error),
+            StringComparison.Ordinal);
     }
 
     [Fact]

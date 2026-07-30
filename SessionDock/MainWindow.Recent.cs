@@ -85,18 +85,27 @@ public partial class MainWindow
         AutomationProperties.SetItemStatus(
             RecentSearchBox,
             _recentSearch.IsActive
-                ? $"{filtered.Count} of {_settings.RecentExperiences.Count(MatchesRecentFilters)} saved experiences shown"
-                : $"{filtered.Count} saved experiences shown");
+                ? filtered.Count == 1
+                    ? Localize(
+                        "Main.RecentFilteredCountOne",
+                        _settings.RecentExperiences.Count(MatchesRecentFilters))
+                    : Localize(
+                        "Main.RecentFilteredCountMany",
+                        filtered.Count,
+                        _settings.RecentExperiences.Count(MatchesRecentFilters))
+                : filtered.Count == 1
+                    ? Localize("Main.RecentCountOne")
+                    : Localize("Main.RecentCountMany", filtered.Count));
 
         if (filtered.Count == 0)
         {
             var emptyState = new TextBlock
             {
                 Text = _settings.RecentExperiences.Count == 0
-                    ? "Experiences you successfully launch will appear here."
+                    ? Localize("Main.RecentEmptyHistory")
                     : _recentSearch.IsActive
-                        ? "No Recent or Favorite items match your search and filters."
-                    : "No saved experiences match these filters.",
+                        ? Localize("Main.RecentNoSearchMatches")
+                    : Localize("Main.RecentNoFilterMatches"),
                 FontSize = 13,
                 Margin = new Thickness(2, 18, 0, 0)
             };
@@ -114,8 +123,8 @@ public partial class MainWindow
 
         var favorites = filtered.Where(item => item.IsPinned).ToList();
         var recent = filtered.Where(item => !item.IsPinned).ToList();
-        AddRecentSection("Favorites", favorites);
-        AddRecentSection("Recent", recent);
+        AddRecentSection(Localize("Main.Favorites"), favorites);
+        AddRecentSection(Localize("Main.Recent"), recent);
         RestoreRecentKeyboardFocus(
             restoreKeyboardFocus,
             focusedDestinationKey,
@@ -190,13 +199,15 @@ public partial class MainWindow
     {
         var title = recent.CustomName
             ?? recent.Name
-            ?? $"Place {recent.PlaceId}";
+            ?? Localize("Main.RecentPlace", recent.PlaceId);
         var timestamp = LocalizationCulture.FormatLocalDateTime(
             recent.LastLaunchedAt,
             Localization.EffectiveCulture);
-        var type = recent.IsPrivateServer ? "Private server" : "Public";
+        var type = recent.IsPrivateServer
+            ? Localize("Main.PrivateServer")
+            : Localize("Main.Public");
         var account = string.IsNullOrWhiteSpace(recent.AccountUsername)
-            ? "Unknown account"
+            ? Localize("Main.UnknownAccount")
             : $"@{recent.AccountUsername}";
 
         var card = new Border
@@ -228,7 +239,7 @@ public partial class MainWindow
         };
         AutomationProperties.SetName(
             useButton,
-            $"Use {title} with the selected account");
+            Localize("Main.RecentUseWithSelectedAccount", title));
         var labels = new StackPanel();
         var titleText = new TextBlock
         {
@@ -243,7 +254,7 @@ public partial class MainWindow
         labels.Children.Add(titleText);
         var metadataText = new TextBlock
         {
-            Text = $"{type}  •  {account}  •  {timestamp}",
+            Text = Localize("Main.RecentMetadata", type, account, timestamp),
             FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -256,8 +267,12 @@ public partial class MainWindow
         {
             var serverText = new TextBlock
             {
-                Text = $"Tracked server {serverJobId[..8]}…",
-                ToolTip = $"Roblox server JobId\n{serverJobId}",
+                Text = Localize(
+                    "Main.RecentTrackedServer",
+                    serverJobId[..8]),
+                ToolTip = Localize(
+                    "Main.RecentServerJobIdTooltip",
+                    serverJobId),
                 FontSize = 11,
                 Margin = new Thickness(0, 3, 0, 0),
                 TextTrimming = TextTrimming.CharacterEllipsis
@@ -269,8 +284,13 @@ public partial class MainWindow
         }
         useButton.Content = labels;
         useButton.ToolTip = recent.ServerJobId is null
-            ? $"Use this destination\n{recent.Destination}"
-            : $"Use this destination\n{recent.Destination}\n\nServer JobId\n{recent.ServerJobId}";
+            ? Localize(
+                "Main.RecentUseDestinationTooltip",
+                recent.Destination)
+            : Localize(
+                "Main.RecentUseServerDestinationTooltip",
+                recent.Destination,
+                recent.ServerJobId);
         useButton.Click += RecentExperienceButton_Click;
         grid.Children.Add(useButton);
 
@@ -279,7 +299,7 @@ public partial class MainWindow
         {
             var serverButton = CreateHistoryActionButton(
                 "IconServerJoin",
-                "Use this tracked Server JobId",
+                Localize("Main.RecentUseTrackedServer"),
                 recent,
                 UseRecentServerButton_Click);
             Grid.SetColumn(serverButton, actionColumn++);
@@ -288,7 +308,9 @@ public partial class MainWindow
 
         var pinButton = CreateHistoryActionButton(
             "IconStar",
-            recent.IsPinned ? "Remove from Favorites" : "Add to Favorites",
+            recent.IsPinned
+                ? Localize("Main.RecentRemoveFavorite")
+                : Localize("Main.RecentAddFavorite"),
             recent,
             PinRecentButton_Click,
             recent.IsPinned);
@@ -297,7 +319,7 @@ public partial class MainWindow
 
         var renameButton = CreateHistoryActionButton(
             "IconEdit",
-            "Set a local custom name",
+            Localize("Main.RecentSetCustomName"),
             recent,
             RenameRecentButton_Click);
         Grid.SetColumn(renameButton, actionColumn++);
@@ -305,7 +327,7 @@ public partial class MainWindow
 
         var removeButton = CreateHistoryActionButton(
             "IconTrash",
-            "Remove from history",
+            Localize("Main.RecentRemoveFromHistory"),
             recent,
             RemoveRecentButton_Click);
         Grid.SetColumn(removeButton, actionColumn);
@@ -314,7 +336,7 @@ public partial class MainWindow
         return card;
     }
 
-    private static Button CreateHistoryActionButton(
+    private Button CreateHistoryActionButton(
         string iconResourceKey,
         string tooltip,
         RecentExperience recent,
@@ -353,7 +375,9 @@ public partial class MainWindow
         {
             AutomationProperties.SetItemStatus(
                 button,
-                recent.IsPinned ? "Selected" : "Not selected");
+                recent.IsPinned
+                    ? Localize("Common.Selected")
+                    : Localize("Common.NotSelected"));
         }
         button.Click += handler;
         return button;
@@ -398,8 +422,8 @@ public partial class MainWindow
                     currentProfile.Destination = destination;
                     mutationApplied = true;
                 },
-                "Recent destination could not be saved",
-                "HISTORY SAVE ERROR",
+                Localize("Main.RecentDestinationSaveFailureTitle"),
+                Localize("Main.HistorySaveErrorBadge"),
                 onCommitted: () =>
                 {
                     if (!mutationApplied ||
@@ -468,8 +492,8 @@ public partial class MainWindow
                     currentProfile.Destination = destination;
                     mutationApplied = true;
                 },
-                "Tracked server could not be saved",
-                "HISTORY SAVE ERROR",
+                Localize("Main.TrackedServerSaveFailureTitle"),
+                Localize("Main.HistorySaveErrorBadge"),
                 onCommitted: () =>
                 {
                     if (!mutationApplied ||
@@ -500,9 +524,13 @@ public partial class MainWindow
                 StringComparison.OrdinalIgnoreCase))
             return;
         SetStatus(
-            "Tracked server selected",
-            $"Launch will try server {serverJobId.ToString("D")[..8]}… for Place {placeId}.",
-            "SERVER READY");
+            Localize("Main.TrackedServerSelectedTitle"),
+            Localize(
+                "Main.TrackedServerSelectedDetail",
+                serverJobId.ToString("D")[..8],
+                placeId),
+            Localize("Main.ServerReadyBadge"),
+            StatusTone.Success);
     }
 
     private async void PinRecentButton_Click(object sender, RoutedEventArgs e) =>
@@ -528,9 +556,10 @@ public partial class MainWindow
         if (favoriteLimitReached)
         {
             SetStatus(
-                "Favorites limit reached",
-                "Remove one Favorite before pinning another. Recent history is unchanged.",
-                "FAVORITES FULL");
+                Localize("Main.FavoritesLimitTitle"),
+                Localize("Main.FavoritesLimitDetail"),
+                Localize("Main.FavoritesFullBadge"),
+                StatusTone.Warning);
         }
     }
 
@@ -543,8 +572,8 @@ public partial class MainWindow
             return;
 
         var dialog = new TextPromptDialog(
-            "Rename saved experience",
-            "This local name applies to this destination for every account. Leave it blank to use Roblox's name.",
+            Localize("Main.RenameExperienceTitle"),
+            Localize("Main.RenameExperienceDetail"),
             recent.CustomName)
         {
             Owner = this
@@ -575,9 +604,12 @@ public partial class MainWindow
     {
         if (sender is not Button { Tag: RecentExperience recent })
             return;
+        var title = recent.CustomName
+            ?? recent.Name
+            ?? Localize("Main.RecentPlace", recent.PlaceId);
         var result = MessageBox.Show(
-            $"Remove “{recent.CustomName ?? recent.Name ?? $"Place {recent.PlaceId}"}” from saved experiences?",
-            "Remove saved experience",
+            Localize("Main.RemoveSavedExperiencePrompt", title),
+            Localize("Main.RemoveSavedExperienceTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
         if (result != MessageBoxResult.Yes)
@@ -598,17 +630,23 @@ public partial class MainWindow
 
         var scope = _recentTypeFilter switch
         {
-            RecentTypeFilter.Public => "public-server history",
-            RecentTypeFilter.Private => "private-server history",
-            _ => "history"
+            RecentTypeFilter.Public =>
+                Localize("Main.RecentPublicHistoryScope"),
+            RecentTypeFilter.Private =>
+                Localize("Main.RecentPrivateHistoryScope"),
+            _ => Localize("Main.RecentAllHistoryScope")
         };
         var entryText = removableCount == 1
-            ? "1 non-favorite entry"
-            : $"{removableCount} non-favorite entries";
+            ? Localize("Main.RecentNonFavoriteEntryOne")
+            : Localize("Main.RecentNonFavoriteEntryMany", removableCount);
         var accountScope = GetRecentAccountScopeDescription();
         var result = MessageBox.Show(
-            $"Clear {scope} {accountScope}? This removes {entryText}. Favorites will stay saved.",
-            $"Clear {scope}",
+            Localize(
+                "Main.ClearRecentHistoryPrompt",
+                scope,
+                accountScope,
+                entryText),
+            Localize("Main.ClearRecentHistoryTitle", scope),
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
         if (result != MessageBoxResult.Yes)
@@ -670,8 +708,8 @@ public partial class MainWindow
     {
         var committed = await TryCommitSettingsMutationAsync(
             mutation,
-            "Local metadata could not be saved",
-            "HISTORY ERROR",
+            Localize("Main.LocalMetadataSaveFailureTitle"),
+            Localize("Main.HistoryErrorBadge"),
             showFailure: showError);
         RenderRecentExperiences();
         return committed;
@@ -708,15 +746,15 @@ public partial class MainWindow
     private string GetRecentAccountScopeDescription()
     {
         if (_recentAccountFilter == 0)
-            return "across all accounts";
+            return Localize("Main.RecentAcrossAllAccounts");
 
         var username = _settings.RecentExperiences
             .Where(item => item.AccountUserId == _recentAccountFilter)
             .Select(item => item.AccountUsername)
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
         return username is null
-            ? $"for account {_recentAccountFilter}"
-            : $"for @{username}";
+            ? Localize("Main.RecentForAccount", _recentAccountFilter)
+            : Localize("Main.RecentForUsername", username);
     }
 
     private void UpdateClearHistoryButton()
@@ -724,17 +762,22 @@ public partial class MainWindow
         var accessibleName = _recentTypeFilter switch
         {
             RecentTypeFilter.Public =>
-                "Clear public history",
+                Localize("Main.ClearPublicHistory"),
             RecentTypeFilter.Private =>
-                "Clear private history",
-            _ => "Clear all history"
+                Localize("Main.ClearPrivateHistory"),
+            _ => Localize("Main.ClearAllHistory")
         };
         var accountScope = GetRecentAccountScopeDescription();
         AutomationProperties.SetName(
             ClearHistoryButton,
-            $"{accessibleName} {accountScope}");
-        ClearHistoryButton.ToolTip =
-            $"{accessibleName} {accountScope}; Favorites stay saved";
+            Localize(
+                "Main.ClearHistoryAccessibleName",
+                accessibleName,
+                accountScope));
+        ClearHistoryButton.ToolTip = Localize(
+            "Main.ClearHistoryScopedTooltip",
+            accessibleName,
+            accountScope);
         ClearHistoryButton.IsEnabled =
             !_operationBusy &&
             _settings.RecentExperiences.Any(MatchesClearHistoryScope);

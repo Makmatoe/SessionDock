@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -69,7 +70,9 @@ public partial class RunningClientsDialog : Window
             ApplyScan(scan, focusIndex);
             var baseStatus = result ?? GetRefreshStatus(scan.Clients.Count);
             SetStatus(
-                AppendUnverifiedWarning(baseStatus, scan.UnverifiedCount),
+                AppendUnverifiedWarningLocalized(
+                    baseStatus,
+                    scan.UnverifiedCount),
                 accessibleAnnouncement: baseStatus);
         }
         catch (OperationCanceledException) when (
@@ -81,7 +84,7 @@ public partial class RunningClientsDialog : Window
             IsExpectedProcessInspectionFailure(exception))
         {
             SetStatus(
-                "Running Roblox clients could not be inspected safely. Try Refresh.",
+                Localize("Clients.InspectFailed"),
                 isError: true);
         }
         finally
@@ -107,8 +110,10 @@ public partial class RunningClientsDialog : Window
         SetWarning(scan.UnverifiedCount switch
         {
             0 => string.Empty,
-            1 => "One Roblox-named process could not be safely verified and was left untouched.",
-            _ => $"{scan.UnverifiedCount} Roblox-named processes could not be safely verified and were left untouched."
+            1 => Localize("Clients.UnverifiedWarningOne"),
+            _ => Localize(
+                "Clients.UnverifiedWarningMany",
+                scan.UnverifiedCount)
         });
     }
 
@@ -119,10 +124,10 @@ public partial class RunningClientsDialog : Window
         EmptyStateText.Visibility = _clients.Count == 0
             ? Visibility.Visible
             : Visibility.Collapsed;
-        EmptyStateText.Text = "No verified Roblox clients are running.";
+        EmptyStateText.Text = Localize("Clients.Empty");
         ClientCountText.Text = _clients.Count == 1
-            ? "1 RUNNING"
-            : $"{_clients.Count} RUNNING";
+            ? Localize("Clients.CountOne")
+            : Localize("Clients.CountMany", _clients.Count);
         CloseAllButton.IsEnabled = !_busy && _clients.Count > 0;
 
         for (var index = 0; index < _clients.Count; index++)
@@ -159,7 +164,7 @@ public partial class RunningClientsDialog : Window
         _registry.TryGet(client.Identity, out var attribution);
         var knownAccount = attribution is not null;
         var accountTitle = attribution is null
-            ? "Account unknown"
+            ? Localize("Clients.UnknownAccount")
             : string.IsNullOrWhiteSpace(attribution.AccountLabel)
                 ? $"@{attribution.AccountUsername}"
                 : $"{attribution.AccountLabel} (@{attribution.AccountUsername})";
@@ -175,6 +180,8 @@ public partial class RunningClientsDialog : Window
         experience = string.IsNullOrWhiteSpace(experience)
             ? "Roblox Player"
             : experience;
+        var processId = client.Identity.ProcessId.ToString(
+            CultureInfo.InvariantCulture);
 
         var card = new Border
         {
@@ -182,8 +189,9 @@ public partial class RunningClientsDialog : Window
             CornerRadius = new CornerRadius(8),
             Padding = new Thickness(11, 9, 9, 9),
             Margin = new Thickness(0, 0, 0, 6),
-            ToolTip =
-                $"Verified Roblox Player process\nPID {client.Identity.ProcessId}"
+            ToolTip = Localize(
+                "Clients.ProcessTooltip",
+                processId)
         };
         card.SetResourceReference(
             Border.BackgroundProperty,
@@ -262,8 +270,11 @@ public partial class RunningClientsDialog : Window
         var attributionText = new TextBlock
         {
             Text = knownAccount
-                ? $"{experience} • launched for @{attribution!.AccountUsername}"
-                : "Launched before SessionDock opened or outside this run",
+                ? Localize(
+                    "Clients.AttributionKnown",
+                    experience,
+                    attribution!.AccountUsername)
+                : Localize("Clients.AttributionUnknown"),
             FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -275,11 +286,20 @@ public partial class RunningClientsDialog : Window
         var startedAt = DateTime.SpecifyKind(
             client.Identity.StartTimeUtc,
             DateTimeKind.Utc).ToLocalTime();
+        var startedAtText = startedAt.ToString(
+            "t",
+            Localization.EffectiveCulture);
         var processText = new TextBlock
         {
             Text = client.HasVisibleWindow
-                ? $"Started {startedAt:t} • PID {client.Identity.ProcessId}"
-                : $"Background process • started {startedAt:t} • PID {client.Identity.ProcessId}",
+                ? Localize(
+                    "Clients.ProcessVisible",
+                    startedAtText,
+                    processId)
+                : Localize(
+                    "Clients.ProcessBackground",
+                    startedAtText,
+                    processId),
             FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis
@@ -294,7 +314,7 @@ public partial class RunningClientsDialog : Window
         var closeButton = new Button
         {
             Tag = new ClientCloseTarget(client, index, accountTitle, experience),
-            Content = "Close",
+            Content = Localize("Common.Close"),
             Padding = new Thickness(13, 8, 13, 8),
             VerticalAlignment = VerticalAlignment.Center
         };
@@ -307,8 +327,13 @@ public partial class RunningClientsDialog : Window
         AutomationProperties.SetName(
             closeButton,
             knownAccount
-                ? $"Close Roblox client launched for {accountTitle}, {experience}"
-                : $"Close unidentified Roblox client started at {startedAt:t}");
+                ? Localize(
+                    "Clients.CloseKnownAutomation",
+                    accountTitle,
+                    experience)
+                : Localize(
+                    "Clients.CloseUnknownAutomation",
+                    startedAtText));
         closeButton.Click += CloseClientButton_Click;
         Grid.SetColumn(closeButton, 2);
         grid.Children.Add(closeButton);
@@ -332,13 +357,16 @@ public partial class RunningClientsDialog : Window
 
         var confirmationText = target.Client.HasVisibleWindow
             ? _registry.TryGet(target.Client.Identity, out _)
-                ? $"Close the Roblox client launched for {target.AccountTitle} playing {target.ExperienceName}? The active game will disconnect."
-                : "Close this verified Roblox client? SessionDock cannot identify which account launched it. The active game will disconnect."
-            : "This verified Roblox client has no visible window and may be running in the background. Close it?";
+                ? Localize(
+                    "Clients.CloseKnownConfirm",
+                    target.AccountTitle,
+                    target.ExperienceName)
+                : Localize("Clients.CloseUnknownConfirm")
+            : Localize("Clients.CloseBackgroundConfirm");
         var confirmation = MessageBox.Show(
             this,
             confirmationText,
-            "Close Roblox client",
+            Localize("Clients.CloseConfirmTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
@@ -346,7 +374,10 @@ public partial class RunningClientsDialog : Window
             return;
 
         SetBusy(true, destructive: true);
-        SetStatus($"Closing PID {target.Client.Identity.ProcessId}…");
+        SetStatus(Localize(
+            "Clients.ClosingProcess",
+            target.Client.Identity.ProcessId.ToString(
+                CultureInfo.InvariantCulture)));
         try
         {
             var closeResult = await _clientService.ClosePlayerAsync(
@@ -356,13 +387,13 @@ public partial class RunningClientsDialog : Window
             var resultText = closeResult.Status switch
             {
                 CloseRobloxClientStatus.Closed =>
-                    "The selected Roblox client was closed.",
+                    Localize("Clients.CloseResultClosed"),
                 CloseRobloxClientStatus.AlreadyExited =>
-                    "That Roblox client was already closed.",
+                    Localize("Clients.CloseResultExited"),
                 CloseRobloxClientStatus.IdentityMismatch =>
-                    "The process identity changed, so SessionDock left it untouched.",
+                    Localize("Clients.CloseResultIdentityChanged"),
                 _ =>
-                    "The selected Roblox client could not be closed."
+                    Localize("Clients.CloseResultFailed")
             };
             if (closeResult.Removed)
             {
@@ -389,7 +420,7 @@ public partial class RunningClientsDialog : Window
             IsExpectedProcessInspectionFailure(exception))
         {
             SetStatus(
-                "The selected Roblox client could not be inspected safely.",
+                Localize("Clients.SelectedInspectFailed"),
                 isError: true);
         }
         finally
@@ -408,10 +439,13 @@ public partial class RunningClientsDialog : Window
             return;
 
         var targets = _clients.ToArray();
+        var confirmationText = targets.Length == 1
+            ? Localize("Clients.CloseAllConfirmOne")
+            : Localize("Clients.CloseAllConfirmMany", targets.Length);
         var confirmation = MessageBox.Show(
             this,
-            $"Close the {targets.Length} verified Roblox clients shown here? Active games will disconnect. Clients launched after this confirmation and any process SessionDock cannot safely verify will be left running.",
-            "Close all Roblox clients",
+            confirmationText,
+            Localize("Clients.CloseAllConfirmTitle"),
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
@@ -419,7 +453,7 @@ public partial class RunningClientsDialog : Window
             return;
 
         SetBusy(true, destructive: true);
-        SetStatus("Closing the displayed Roblox clients…");
+        SetStatus(Localize("Clients.ClosingDisplayed"));
         try
         {
             var results = await CloseIdentitySnapshotAsync(
@@ -446,7 +480,7 @@ public partial class RunningClientsDialog : Window
             RenderClients(focusIndex: 0);
 
             await RefreshAfterActionAsync(
-                GetCloseDisplayedStatus(
+                GetCloseDisplayedStatusLocalized(
                     outcomes.Select(outcome => outcome.Result.Status)),
                 focusIndex: 0);
         }
@@ -459,7 +493,7 @@ public partial class RunningClientsDialog : Window
             IsExpectedProcessInspectionFailure(exception))
         {
             SetStatus(
-                "The displayed Roblox clients could not be inspected or closed safely.",
+                Localize("Clients.CloseDisplayedFailed"),
                 isError: true);
         }
         finally
@@ -513,7 +547,7 @@ public partial class RunningClientsDialog : Window
             _lifetime.Token.ThrowIfCancellationRequested();
             ApplyScan(scan, focusIndex);
             SetStatus(
-                AppendUnverifiedWarning(
+                AppendUnverifiedWarningLocalized(
                     completedActionStatus,
                     scan.UnverifiedCount),
                 accessibleAnnouncement: completedActionStatus);
@@ -526,7 +560,9 @@ public partial class RunningClientsDialog : Window
             IsExpectedProcessInspectionFailure(exception))
         {
             SetStatus(
-                $"{completedActionStatus} The client list could not be refreshed; use Refresh to try again.",
+                Localize(
+                    "Clients.RefreshAfterActionFailed",
+                    completedActionStatus),
                 isError: true);
         }
     }
@@ -576,67 +612,104 @@ public partial class RunningClientsDialog : Window
         });
     }
 
-    private static string GetRefreshStatus(int clientCount) => clientCount switch
+    private string GetRefreshStatus(int clientCount) => clientCount switch
     {
-        0 => "No verified Roblox Player processes are running.",
-        1 => "One verified Roblox client is running.",
-        _ => $"{clientCount} verified Roblox clients are running."
+        0 => Localize("Clients.RefreshNone"),
+        1 => Localize("Clients.RefreshOne"),
+        _ => Localize("Clients.RefreshMany", clientCount)
     };
 
     internal static string GetCloseDisplayedStatus(
-        IEnumerable<CloseRobloxClientStatus> statuses)
+        IEnumerable<CloseRobloxClientStatus> statuses) =>
+        CreateCloseDisplayedStatus(statuses, EnglishLocalize);
+
+    private string GetCloseDisplayedStatusLocalized(
+        IEnumerable<CloseRobloxClientStatus> statuses) =>
+        CreateCloseDisplayedStatus(
+            statuses,
+            (key, arguments) => Localize(key, arguments));
+
+    private static string CreateCloseDisplayedStatus(
+        IEnumerable<CloseRobloxClientStatus> statuses,
+        Func<string, object?[], string> localize)
     {
         ArgumentNullException.ThrowIfNull(statuses);
+        ArgumentNullException.ThrowIfNull(localize);
         var results = statuses.ToArray();
         var messages = new List<string>();
         AddCountMessage(
             messages,
             results.Count(status => status == CloseRobloxClientStatus.Closed),
-            "Closed one verified Roblox client.",
-            count => $"Closed {count} verified Roblox clients.");
+            "Clients.ClosedCountOne",
+            "Clients.ClosedCountMany",
+            localize);
         AddCountMessage(
             messages,
             results.Count(status => status == CloseRobloxClientStatus.AlreadyExited),
-            "One client was already closed.",
-            count => $"{count} clients were already closed.");
+            "Clients.ExitedCountOne",
+            "Clients.ExitedCountMany",
+            localize);
         AddCountMessage(
             messages,
             results.Count(status => status == CloseRobloxClientStatus.IdentityMismatch),
-            "One process changed identity and was left untouched.",
-            count => $"{count} processes changed identity and were left untouched.");
+            "Clients.IdentityChangedCountOne",
+            "Clients.IdentityChangedCountMany",
+            localize);
         AddCountMessage(
             messages,
             results.Count(status => status == CloseRobloxClientStatus.Failed),
-            "One client could not be closed.",
-            count => $"{count} clients could not be closed.");
+            "Clients.FailedCountOne",
+            "Clients.FailedCountMany",
+            localize);
         return messages.Count == 0
-            ? "No displayed Roblox clients needed to be closed."
+            ? localize("Clients.NoneNeededClosing", [])
             : string.Join(" ", messages);
     }
 
     internal static string AppendUnverifiedWarning(
         string status,
-        int unverifiedCount)
+        int unverifiedCount) =>
+        AppendUnverifiedWarning(
+            status,
+            unverifiedCount,
+            EnglishLocalize);
+
+    private string AppendUnverifiedWarningLocalized(
+        string status,
+        int unverifiedCount) =>
+        AppendUnverifiedWarning(
+            status,
+            unverifiedCount,
+            (key, arguments) => Localize(key, arguments));
+
+    private static string AppendUnverifiedWarning(
+        string status,
+        int unverifiedCount,
+        Func<string, object?[], string> localize)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(status);
+        ArgumentNullException.ThrowIfNull(localize);
         return unverifiedCount switch
         {
             <= 0 => status,
-            1 => $"{status} One unverified Roblox-named process was left untouched.",
-            _ => $"{status} {unverifiedCount} unverified Roblox-named processes were left untouched."
+            1 => localize("Clients.AppendUnverifiedOne", [status]),
+            _ => localize(
+                "Clients.AppendUnverifiedMany",
+                [status, unverifiedCount])
         };
     }
 
     private static void AddCountMessage(
         ICollection<string> messages,
         int count,
-        string singular,
-        Func<int, string> plural)
+        string singularKey,
+        string pluralKey,
+        Func<string, object?[], string> localize)
     {
         if (count == 1)
-            messages.Add(singular);
+            messages.Add(localize(singularKey, []));
         else if (count > 1)
-            messages.Add(plural(count));
+            messages.Add(localize(pluralKey, [count]));
     }
 
     private static bool IsExpectedProcessInspectionFailure(
@@ -653,7 +726,7 @@ public partial class RunningClientsDialog : Window
 
         e.Cancel = true;
         SetStatus(
-            "Wait for the current close operation to finish before closing this window.",
+            Localize("Clients.WaitForClose"),
             isError: true);
     }
 
@@ -663,6 +736,31 @@ public partial class RunningClientsDialog : Window
         Closed -= RunningClientsDialog_Closed;
         _lifetime.Cancel();
     }
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
+
+    private static string EnglishLocalize(
+        string key,
+        params object?[] arguments)
+    {
+        var template = EnglishResources.Value[key] as string ?? key;
+        return LocalizationCulture.Format(
+            CultureInfo.GetCultureInfo("en-US"),
+            template,
+            arguments);
+    }
+
+    private static readonly Lazy<ResourceDictionary> EnglishResources = new(
+        () => (ResourceDictionary)Application.LoadComponent(
+            new Uri(
+                "/SessionDock;component/Localization/Strings.en-US.xaml",
+                UriKind.Relative)));
 
     private sealed record ClientCloseTarget(
         RunningRobloxClient Client,

@@ -114,7 +114,8 @@ public partial class MetadataTransferDialog : Window
         {
             _importPlan = await MetadataTransferService.ReadImportAsync(
                 openDialog.FileName,
-                _settings);
+                _settings,
+                Localization);
             ImportPreviewBox.Text = _importPlan.Preview;
             ImportConfirmationCheckBox.IsEnabled = _importPlan.HasChanges;
             SetImportStatus(

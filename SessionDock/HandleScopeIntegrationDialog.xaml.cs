@@ -11,8 +11,10 @@ namespace SessionDock;
 
 public partial class HandleScopeIntegrationDialog : Window
 {
+    internal const string OfficialSetupUrl =
+        "https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md";
+
     private readonly HandleScopeIntegrationService _integrationService = new();
-    private readonly HandleScopeReleaseInstaller _releaseInstaller = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly AccessibilityLiveRegion _stateLiveRegion;
     private readonly AccessibilityLiveRegion _actionStatusLiveRegion;
@@ -21,7 +23,6 @@ public partial class HandleScopeIntegrationDialog : Window
     private bool _canRepairConfiguration;
     private bool _repairEnablesIntegration = true;
     private bool _isBusy;
-    private bool _installCommitInProgress;
     private bool _isClosed;
 
     public HandleScopeIntegrationDialog()
@@ -32,7 +33,6 @@ public partial class HandleScopeIntegrationDialog : Window
             new AccessibilityLiveRegion(ActionStatusText);
         WindowLayoutService.FitToWorkArea(this);
         Loaded += HandleScopeIntegrationDialog_Loaded;
-        Closing += HandleScopeIntegrationDialog_Closing;
         Closed += HandleScopeIntegrationDialog_Closed;
     }
 
@@ -44,20 +44,14 @@ public partial class HandleScopeIntegrationDialog : Window
         WindowLayoutService.FitToWorkArea(this);
         await RunActionAsync(
             cancellationToken => _integrationService.InspectAsync(cancellationToken),
-            "Local setup inspected. Use Test connection to contact the API.",
+            Localize("Handle.ActionInspected"),
             repairEnablesIntegration: true);
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) =>
         await RunActionAsync(
             cancellationToken => _integrationService.InspectAsync(cancellationToken),
-            "Local setup refreshed. No connection test was performed.",
-            repairEnablesIntegration: true);
-
-    private async void StartApiButton_Click(object sender, RoutedEventArgs e) =>
-        await RunActionAsync(
-            cancellationToken => _integrationService.StartAsync(cancellationToken),
-            "Start checked. A validated running API was left unchanged; otherwise a start was requested. Select Test connection to confirm readiness.",
+            Localize("Handle.ActionRefreshed"),
             repairEnablesIntegration: true);
 
     private async void EnableButton_Click(object sender, RoutedEventArgs e) =>
@@ -65,7 +59,7 @@ public partial class HandleScopeIntegrationDialog : Window
             cancellationToken => _integrationService.EnableAsync(
                 repairExisting: false,
                 cancellationToken),
-            "Integration enabled locally. Start the API, then test the connection.",
+            Localize("Handle.ActionEnabled"),
             repairEnablesIntegration: true);
 
     private async void DisableButton_Click(object sender, RoutedEventArgs e) =>
@@ -73,14 +67,14 @@ public partial class HandleScopeIntegrationDialog : Window
             cancellationToken => _integrationService.DisableAsync(
                 repairExisting: false,
                 cancellationToken),
-            "Integration disabled. HandleScope may keep running, but SessionDock will not use it during launches.",
+            Localize("Handle.ActionDisabled"),
             repairEnablesIntegration: false);
 
     private async void TestConnectionButton_Click(object sender, RoutedEventArgs e) =>
         await RunActionAsync(
             cancellationToken =>
                 _integrationService.TestConnectionAsync(cancellationToken),
-            "Connection test completed without closing or inspecting any handles.",
+            Localize("Handle.ActionConnectionTested"),
             repairEnablesIntegration: true);
 
     private async void RepairButton_Click(object sender, RoutedEventArgs e)
@@ -91,7 +85,7 @@ public partial class HandleScopeIntegrationDialog : Window
                 cancellationToken => _integrationService.EnableAsync(
                     repairExisting: true,
                     cancellationToken),
-                "Integration configuration repaired and enabled with the fixed minimal policy. Start the API, then test the connection.",
+                Localize("Handle.ActionRepairEnabled"),
                 repairEnablesIntegration: true);
             return;
         }
@@ -100,108 +94,36 @@ public partial class HandleScopeIntegrationDialog : Window
             cancellationToken => _integrationService.DisableAsync(
                 repairExisting: true,
                 cancellationToken),
-            "Integration configuration repaired and disabled. HandleScope may keep running, but SessionDock will not use it during launches.",
+            Localize("Handle.ActionRepairDisabled"),
             repairEnablesIntegration: false);
     }
 
-    private async void InstallLatestHandleScopeButton_Click(
+    private void OpenHandleScopeSetupButton_Click(
         object sender,
         RoutedEventArgs e)
     {
-        if (_isBusy)
-            return;
-
-        var confirmation = MessageBox.Show(
-            this,
-            "SessionDock will download the latest stable Windows x64 release from the canonical Makmatoe/HandleScope repository. Before anything runs, it verifies the immutable GitHub asset digest, matching checksum, safe ZIP layout, and every file in the internal inventory. It also saves that verified inventory and rechecks the installed API before starting or trusting it.\n\nHandleScope is unsigned, so this confirms the canonical GitHub release rather than a certificate-backed publisher. The per-user installer starts the API now and enables its limited autostart at Windows sign-in. SessionDock will not elevate or change the integration setting.\n\nContinue?",
-            "Install latest HandleScope release",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning,
-            MessageBoxResult.No);
-        if (confirmation != MessageBoxResult.Yes)
-            return;
-
-        SetBusy(true);
-        SetActionStatus("Checking the latest stable HandleScope release...");
         try
         {
-            var progress = new ImmediateProgress<HandleScopeReleaseInstallProgress>(
-                UpdateInstallProgress);
-            var installed = await _releaseInstaller.InstallLatestAsync(
-                progress,
-                _lifetimeCancellation.Token);
-            if (_isClosed)
-                return;
-
-            var result = await _integrationService.TestConnectionAsync(
-                _lifetimeCancellation.Token);
-            _state = result.State;
-            _canRepairConfiguration = result.CanRepairConfiguration;
-            RenderState();
-            SetActionStatus(_state switch
-            {
-                HandleScopeIntegrationState.Ready =>
-                    $"HandleScope {installed.Version} was verified and installed. Its API is running, autostart is enabled, and the integration is ready.",
-                HandleScopeIntegrationState.RunningDisabled =>
-                    $"HandleScope {installed.Version} was verified and installed. Its API is running with autostart enabled; select Enable once to opt in.",
-                _ =>
-                    $"HandleScope {installed.Version} was verified and installed with autostart enabled. Use Start API if it is not yet running."
-            });
+            Process.Start(CreateOfficialSetupStartInfo());
+            SetActionStatus(Localize("Handle.SetupGuideOpened"));
         }
-        catch (OperationCanceledException)
-        {
-            if (!_isClosed)
-            {
-                SetActionStatus(
-                    "HandleScope installation was cancelled before the installer started.");
-            }
-        }
-        catch (HandleScopeInstallException exception)
+        catch (Exception exception) when (
+            exception is Win32Exception or InvalidOperationException or
+                NotSupportedException)
         {
             Trace.WriteLine(
-                $"HandleScope install failed safely: {exception.GetType().Name}.");
-            if (!_isClosed)
-                SetActionStatus(exception.Message, isError: true);
-        }
-        finally
-        {
-            _installCommitInProgress = false;
-            if (!_isClosed)
-                SetBusy(false);
+                $"HandleScope setup guide could not be opened: {exception.GetType().Name}.");
+            SetActionStatus(
+                Localize("Handle.SetupGuideFailed", OfficialSetupUrl),
+                isError: true);
         }
     }
 
-    private void UpdateInstallProgress(HandleScopeReleaseInstallProgress progress)
+    internal static ProcessStartInfo CreateOfficialSetupStartInfo() => new()
     {
-        if (_isClosed)
-            return;
-        var visibleStatus = progress.Stage switch
-        {
-            HandleScopeReleaseInstallStage.CheckingRelease =>
-                "Checking the latest stable HandleScope release...",
-            HandleScopeReleaseInstallStage.DownloadingPackage =>
-                $"Downloading HandleScope {progress.Version}... {progress.Percentage ?? 0}%",
-            HandleScopeReleaseInstallStage.VerifyingPackage =>
-                $"Verifying HandleScope {progress.Version}...",
-            HandleScopeReleaseInstallStage.InstallingPackage =>
-                MarkInstallCommitStarted(progress.Version),
-            _ => throw new InvalidOperationException(
-                "Unexpected HandleScope installation stage.")
-        };
-        var accessibleStatus = progress.Stage ==
-            HandleScopeReleaseInstallStage.DownloadingPackage
-                ? $"Downloading HandleScope {progress.Version}."
-                : visibleStatus;
-        SetActionStatus(
-            visibleStatus,
-            accessibleAnnouncement: accessibleStatus);
-    }
-
-    private string MarkInstallCommitStarted(string? version)
-    {
-        _installCommitInProgress = true;
-        return $"Installing HandleScope {version} for this Windows user...";
-    }
+        FileName = OfficialSetupUrl,
+        UseShellExecute = true
+    };
 
     private async Task RunActionAsync(
         Func<CancellationToken, Task<HandleScopeIntegrationResult>> action,
@@ -212,7 +134,7 @@ public partial class HandleScopeIntegrationDialog : Window
             return;
 
         SetBusy(true);
-        SetActionStatus("Working...");
+        SetActionStatus(Localize("Handle.Working"));
         try
         {
             var result = await action(_lifetimeCancellation.Token);
@@ -226,8 +148,8 @@ public partial class HandleScopeIntegrationDialog : Window
             SetActionStatus(
                 configurationError
                     ? _canRepairConfiguration
-                        ? "The existing opt-in was preserved. Review the warning before choosing Repair."
-                        : "The action was refused safely. Check the official installation, then refresh the status."
+                        ? Localize("Handle.ConfigurationPreservedAction")
+                        : Localize("Handle.ActionRefused")
                     : completedMessage,
                 isError: configurationError);
         }
@@ -251,95 +173,84 @@ public partial class HandleScopeIntegrationDialog : Window
         {
             case HandleScopeIntegrationState.NotInstalled:
                 SetStatePresentation(
-                    "HandleScope is not installed",
-                    "Select Install Latest HandleScope release below. SessionDock will verify the download before installing it for this Windows user.",
-                    "NOT INSTALLED",
+                    Localize("Handle.StateNotInstalledTitle"),
+                    Localize("Handle.StateNotInstalledDescription"),
+                    Localize("Handle.StateNotInstalledBadge"),
                     "MutedBrush",
                     "UtilitySurfaceBrush",
-                    "IconUpdate");
+                    "IconUpdate",
+                    requiresAttention: false);
                 break;
             case HandleScopeIntegrationState.InstalledStopped:
                 SetStatePresentation(
-                    "Installed - connection not tested",
-                    "HandleScope is installed locally. Start its API explicitly, enable the integration if needed, then test the connection.",
-                    "NOT CONNECTED",
+                    Localize("Handle.StateStoppedTitle"),
+                    Localize("Handle.StateStoppedDescription"),
+                    Localize("Handle.StateStoppedBadge"),
                     "VioletTextBrush",
                     "VioletSurfaceBrush",
-                    "IconActivity");
-                break;
-            case HandleScopeIntegrationState.StartPending:
-                SetStatePresentation(
-                    "API start requested",
-                    "SessionDock recently started the expected local API. Wait briefly, then test the connection.",
-                    "STARTING",
-                    "VioletTextBrush",
-                    "VioletSurfaceBrush",
-                    "IconActivity");
-                break;
-            case HandleScopeIntegrationState.RunningUntested:
-                SetStatePresentation(
-                    "API running - connection not tested",
-                    "The expected local API process is already running. Test the loopback connection before relying on the integration.",
-                    "RUNNING",
-                    "VioletTextBrush",
-                    "VioletSurfaceBrush",
-                    "IconActivity");
+                    "IconActivity",
+                    requiresAttention: false);
                 break;
             case HandleScopeIntegrationState.RunningDisabled:
                 SetStatePresentation(
-                    "API running - integration disabled",
-                    "The API at the expected local path answered, but SessionDock's fixed Roblox policy is not enabled.",
-                    "DISABLED",
+                    Localize("Handle.StateDisabledTitle"),
+                    Localize("Handle.StateDisabledDescription"),
+                    Localize("Handle.StateDisabledBadge"),
                     "WarningTextBrush",
                     "WarningSurfaceBrush",
-                    "IconLock");
+                    "IconLock",
+                    requiresAttention: true);
                 break;
             case HandleScopeIntegrationState.Ready:
                 SetStatePresentation(
-                    "Ready for SessionDock",
-                    "The checked loopback API is running and the fixed Roblox policy is enabled.",
-                    "READY",
+                    Localize("Handle.StateReadyTitle"),
+                    Localize("Handle.StateReadyDescription"),
+                    Localize("Handle.StateReadyBadge"),
                     "SuccessTextBrush",
                     "SuccessSurfaceBrush",
-                    "IconCheck");
+                    "IconCheck",
+                    requiresAttention: false);
                 break;
             case HandleScopeIntegrationState.UpdateRequired:
                 SetStatePresentation(
-                    "HandleScope update required",
-                    "Select Install Latest HandleScope release to download, verify, and replace the installed API with the latest stable release.",
-                    "UPDATE REQUIRED",
+                    Localize("Handle.StateUpdateTitle"),
+                    Localize("Handle.StateUpdateDescription"),
+                    Localize("Handle.StateUpdateBadge"),
                     "WarningTextBrush",
                     "WarningSurfaceBrush",
-                    "IconUpdate");
+                    "IconUpdate",
+                    requiresAttention: true);
                 break;
             case HandleScopeIntegrationState.ConfigurationError:
                 if (_canRepairConfiguration)
                 {
                     SetStatePresentation(
-                        "Configuration was preserved",
-                        "The local opt-in is invalid or does not match SessionDock's fixed policy, so the integration remains unavailable.",
-                        "ACTION REQUIRED",
+                        Localize("Handle.StateConfigurationTitle"),
+                        Localize("Handle.StateConfigurationDescription"),
+                        Localize("Handle.StateConfigurationBadge"),
                         "ErrorTextBrush",
                         "ErrorSurfaceBrush",
-                        "IconWarning");
+                        "IconWarning",
+                        requiresAttention: true);
                     RepairWarningPanel.Visibility = Visibility.Visible;
                     RepairButton.Visibility = Visibility.Visible;
                     RepairWarningText.Text = _repairEnablesIntegration
-                        ? "SessionDock preserved the existing configuration and will not use it. Repair replaces only the SessionDock opt-in with the fixed, minimal enabled policy; it does not reinstall or stop HandleScope."
-                        : "SessionDock preserved the existing configuration. Repair replaces only the SessionDock opt-in with the fixed, minimal disabled policy; it does not reinstall or stop HandleScope.";
+                        ? Localize("Handle.RepairWarningEnabled")
+                        : Localize("Handle.RepairWarningDisabled");
                     RepairButtonLabel.Text = _repairEnablesIntegration
-                        ? "Repair and enable"
-                        : "Repair and disable";
+                        ? Localize("Handle.Repair")
+                        : Localize("Handle.RepairDisable");
                 }
                 else
                 {
                     SetStatePresentation(
-                        "Local safety check failed",
-                        "SessionDock refused the local installation, start request, or health response. Use Install Latest HandleScope release to replace it safely, then refresh.",
-                        "UNAVAILABLE",
+                        Localize("Handle.StateUnavailableTitle"),
+                        Localize("Handle.StateUnavailableDescription"),
+                        Localize("Handle.StateUnavailableBadge"),
                         "ErrorTextBrush",
                         "ErrorSurfaceBrush",
-                        "IconError");
+                        "IconError",
+                        requiresAttention: true);
                 }
                 break;
             default:
@@ -355,13 +266,13 @@ public partial class HandleScopeIntegrationDialog : Window
         string badge,
         string foregroundResource,
         string surfaceResource,
-        string iconResource)
+        string iconResource,
+        bool requiresAttention)
     {
-        var tone = StatusToneClassifier.Classify(badge);
         _stateLiveRegion.Update(
             title,
             $"{title} {description} {badge}",
-            tone is StatusTone.Error or StatusTone.Warning
+            requiresAttention
                 ? AccessibilityLiveRegionSeverity.Assertive
                 : AccessibilityLiveRegionSeverity.Polite);
         StateDescriptionText.Text = description;
@@ -400,24 +311,19 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private void UpdateActionAvailability()
     {
-        InstallLatestHandleScopeButton.IsEnabled = !_isBusy;
+        OpenHandleScopeSetupButton.IsEnabled = !_isBusy;
         RefreshButton.IsEnabled = !_isBusy;
-        StartApiButton.IsEnabled = !_isBusy && _state ==
-            HandleScopeIntegrationState.InstalledStopped;
         EnableButton.IsEnabled = !_isBusy && _state is
             HandleScopeIntegrationState.InstalledStopped or
-            HandleScopeIntegrationState.StartPending or
-            HandleScopeIntegrationState.RunningUntested or
             HandleScopeIntegrationState.RunningDisabled;
         DisableButton.IsEnabled = !_isBusy && _state is
             HandleScopeIntegrationState.InstalledStopped or
-            HandleScopeIntegrationState.StartPending or
-            HandleScopeIntegrationState.RunningUntested or
             HandleScopeIntegrationState.Ready or
             HandleScopeIntegrationState.UpdateRequired;
-        TestConnectionButton.IsEnabled = !_isBusy && _state is not
-            HandleScopeIntegrationState.NotInstalled and not
-            HandleScopeIntegrationState.ConfigurationError;
+        TestConnectionButton.IsEnabled = !_isBusy && _state is
+            HandleScopeIntegrationState.InstalledStopped or
+            HandleScopeIntegrationState.Ready or
+            HandleScopeIntegrationState.UpdateRequired;
         RepairButton.IsEnabled = !_isBusy && _state ==
             HandleScopeIntegrationState.ConfigurationError &&
             _canRepairConfiguration;
@@ -425,39 +331,20 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
-    private void HandleScopeIntegrationDialog_Closing(
-        object? sender,
-        CancelEventArgs e)
-    {
-        if (!_installCommitInProgress)
-            return;
-        e.Cancel = true;
-        MessageBox.Show(
-            this,
-            "HandleScope is finishing its verified per-user file replacement. Keep this window open until installation completes.",
-            "HandleScope installation in progress",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
-    }
-
     private void HandleScopeIntegrationDialog_Closed(object? sender, EventArgs e)
     {
         _isClosed = true;
         _lifetimeCancellation.Cancel();
-        _releaseInstaller.Dispose();
         _integrationService.Dispose();
         _lifetimeCancellation.Dispose();
     }
 
-    private sealed class ImmediateProgress<T> : IProgress<T>
-    {
-        private readonly Action<T> _report;
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
 
-        internal ImmediateProgress(Action<T> report)
-        {
-            _report = report ?? throw new ArgumentNullException(nameof(report));
-        }
+    private string Localize(string key) => Localization.GetString(key);
 
-        public void Report(T value) => _report(value);
-    }
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
+
 }

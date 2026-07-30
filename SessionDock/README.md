@@ -36,6 +36,11 @@ sounds, and isolated WebView2 profiles under `%LOCALAPPDATA%\SessionDock`.
 Batch presets do not copy destinations or server identifiers. No account data, cookies,
 passwords, tokens, or private-server codes are compiled into the application.
 
+The display-language preference supports `system`, `en-US`, `nl-NL`, `de-DE`,
+`fr-FR`, and `es-ES`. Language switching is live and affects static resources,
+runtime messages, dialogs, diagnostics, and accessibility text. System default
+uses a supported Windows language and otherwise falls back to English.
+
 The sidebar's safe metadata transfer panel can write a user-reviewed JSON file
 containing Roblox user IDs, account labels/groups/colors/order, and pinned
 public place IDs/names. It never exports local account keys, usernames,
@@ -73,17 +78,12 @@ Roblox pages and are not read or stored by SessionDock.
 SessionDock can notify a user-configured loopback endpoint after a successful
 launch. It can also use the optional HandleScope local API when the user
 explicitly enables the fixed Roblox policy. SessionDock never bundles or
-elevates HandleScope. Its integration panel downloads and installs the latest
-stable canonical GitHub release only after the user explicitly selects
-**Install Latest HandleScope release** and accepts the confirmation. Install is
-per-user, starts the API immediately, and enables HandleScope's limited
-interactive-logon autostart task. It does not change SessionDock's integration
-setting. Before any installer runs, SessionDock verifies the stable immutable
-GitHub release, exact asset digests, matching checksum, safe archive, and full
-internal manifest. It saves that verified inventory and rechecks the installed
-API hash before every start or trust decision. A future signed descriptor is
-also enforced when present. The panel can start only the API at the expected
-per-user installation path after those checks if a manual restart is later needed. See
+downloads, installs, updates, uninstalls, elevates, or starts HandleScope. Its
+integration panel opens the pinned official v0.1.3 setup guide; users verify,
+install, start, and optionally enable HandleScope autostart separately. The
+panel accepts only the exact published v0.1.3 API executable at the expected
+per-user path, then can refresh local state, explicitly enable or disable the
+SessionDock opt-in, and test an already-running loopback API. See
 [SystemProcesses/README.md](SystemProcesses/README.md).
 
 ## Updates

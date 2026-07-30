@@ -45,7 +45,8 @@ internal sealed class AccessibilityLiveRegion
         string? visibleText,
         string? accessibleAnnouncement = null,
         AccessibilityLiveRegionSeverity severity =
-            AccessibilityLiveRegionSeverity.Polite)
+            AccessibilityLiveRegionSeverity.Polite,
+        bool announceChanges = true)
     {
         _target.Dispatcher.VerifyAccess();
 
@@ -76,6 +77,16 @@ internal sealed class AccessibilityLiveRegion
         _target.Text = displayText;
         AutomationProperties.SetName(_target, announcement);
         AutomationProperties.SetLiveSetting(_target, liveSetting);
+
+        if (!announceChanges)
+        {
+            _hasPreviousAnnouncement = true;
+            _previousAnnouncement = announcement;
+            _announcementPending = false;
+            _raiseAttempts = 0;
+            StopWaitingForAvailability();
+            return false;
+        }
 
         if (!changed)
             return false;

@@ -17,38 +17,41 @@ public partial class ReleaseNotesDialog : Window
         InitializeComponent();
         WindowLayoutService.FitToWorkArea(this);
 
-        CurrentVersionText.Text =
-            $"SessionDock {notes.Current.Version.ToString(3)}";
-        CurrentNotesBox.Text = notes.Current.DisplayText;
+        var currentVersion = notes.Current.Version.ToString(3);
+        CurrentVersionText.Text = Localize(
+            "Release.Version",
+            currentVersion);
+        CurrentNotesBox.Text = FormatNotes(notes.Current);
         AutomationProperties.SetName(
             CurrentReleaseButton,
-            $"Current release, SessionDock {notes.Current.Version.ToString(3)}");
+            Localize("Release.CurrentAutomation", currentVersion));
         AutomationProperties.SetName(
             CurrentNotesBox,
-            $"Release notes for SessionDock {notes.Current.Version.ToString(3)}");
+            Localize("Release.NotesAutomation", currentVersion));
 
         _hasPreviousRelease = notes.Previous is not null;
         if (notes.Previous is { } previous)
         {
-            PreviousVersionText.Text =
-                $"SessionDock {previous.Version.ToString(3)}";
-            PreviousNotesBox.Text = previous.DisplayText;
+            var previousVersion = previous.Version.ToString(3);
+            PreviousVersionText.Text = Localize(
+                "Release.Version",
+                previousVersion);
+            PreviousNotesBox.Text = FormatNotes(previous);
             AutomationProperties.SetName(
                 PreviousReleaseButton,
-                $"Previous release, SessionDock {previous.Version.ToString(3)}");
+                Localize("Release.PreviousAutomation", previousVersion));
             AutomationProperties.SetName(
                 PreviousNotesBox,
-                $"Release notes for SessionDock {previous.Version.ToString(3)}");
+                Localize("Release.NotesAutomation", previousVersion));
         }
         else
         {
-            PreviousVersionText.Text = "No earlier notes";
-            PreviousNotesBox.Text =
-                "No earlier bundled release notes are available.";
+            PreviousVersionText.Text = Localize("Release.NoEarlierTitle");
+            PreviousNotesBox.Text = Localize("Release.NoEarlierDetail");
             PreviousReleaseButton.IsEnabled = false;
             AutomationProperties.SetName(
                 PreviousReleaseButton,
-                "No previous release notes available");
+                Localize("Release.NoPreviousAutomation"));
         }
 
         ShowRelease(current: true, moveFocus: false);
@@ -98,10 +101,10 @@ public partial class ReleaseNotesDialog : Window
         SetTabSelected(PreviousReleaseButton, !current);
         AutomationProperties.SetItemStatus(
             CurrentReleaseButton,
-            current ? "Selected" : "Not selected");
+            Localize(current ? "Common.Selected" : "Common.NotSelected"));
         AutomationProperties.SetItemStatus(
             PreviousReleaseButton,
-            current ? "Not selected" : "Selected");
+            Localize(current ? "Common.NotSelected" : "Common.Selected"));
 
         if (moveFocus)
         {
@@ -125,4 +128,18 @@ public partial class ReleaseNotesDialog : Window
                 ? "ReleaseTabSelectedTextBrush"
                 : "ReleaseTabIdleTextBrush");
     }
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
+
+    private string FormatNotes(BundledReleaseNote note) =>
+        note.IsEnglishFallback
+            ? $"{Localize("Release.EnglishFallback")}" +
+              $"{Environment.NewLine}{Environment.NewLine}{note.DisplayText}"
+            : note.DisplayText;
 }

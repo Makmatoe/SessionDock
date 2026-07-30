@@ -237,17 +237,18 @@ public partial class WindowCaptionControls : UserControl
         RestoreGlyph.Visibility = isMaximized
             ? Visibility.Visible
             : Visibility.Collapsed;
-        var localization = ((App)Application.Current).LocalizationService;
         var actionKey = isMaximized
             ? "Caption.Restore"
             : "Caption.Maximize";
         var nameKey = isMaximized
             ? "Caption.RestoreName"
             : "Caption.MaximizeName";
-        MaximizeButton.ToolTip = localization.GetString(actionKey);
-        AutomationProperties.SetName(
-            MaximizeButton,
-            localization.GetString(nameKey));
+        MaximizeButton.SetResourceReference(
+            FrameworkElement.ToolTipProperty,
+            actionKey);
+        MaximizeButton.SetResourceReference(
+            AutomationProperties.NameProperty,
+            nameKey);
     }
 
     private void MinimizeButton_Click(object sender, RoutedEventArgs e)

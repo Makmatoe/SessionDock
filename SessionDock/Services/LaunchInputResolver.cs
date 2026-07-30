@@ -11,6 +11,9 @@ public sealed record ResolvedLaunchInput(
 
 public static class LaunchInputResolver
 {
+    internal const string UntrackedServerJobIdErrorKey =
+        "Validation.Destination.UntrackedServerJobId";
+
     public static bool TryResolve(
         string input,
         IEnumerable<RecentExperience> recentExperiences,
@@ -36,8 +39,7 @@ public static class LaunchInputResolver
         }
         else if (Guid.TryParse(destination, out _))
         {
-            error =
-                "That Server JobId is not in Recent. Rejoin it from the Recent entry where SessionDock tracked it.";
+            error = UntrackedServerJobIdErrorKey;
             return false;
         }
 
@@ -50,6 +52,7 @@ public static class LaunchInputResolver
             target!,
             serverJobId,
             trackedPlaceId);
+        error = string.Empty;
         return true;
     }
 }

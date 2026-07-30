@@ -68,7 +68,10 @@ public partial class SoundSettingsDialog : Window
             Multiselect = false
         };
         if (dialog.ShowDialog(this) != true)
+        {
+            SetValidation(Localize("Sound.ImportCancelled"));
             return;
+        }
 
         try
         {
@@ -81,11 +84,11 @@ public partial class SoundSettingsDialog : Window
             ImportedSoundText.Text = Path.GetFileName(dialog.FileName);
             SetValidation(string.Empty);
         }
-        catch (Exception ex) when (
-            ex is IOException or UnauthorizedAccessException or ArgumentException or
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException or
                 InvalidOperationException or NotSupportedException)
         {
-            SetValidation(ex.Message, isError: true);
+            SetValidation(Localize("Sound.ImportFailed"), isError: true);
         }
     }
 
@@ -99,11 +102,11 @@ public partial class SoundSettingsDialog : Window
                 PendingCustomSourcePath);
             SetValidation(string.Empty);
         }
-        catch (Exception ex) when (
-            ex is IOException or UnauthorizedAccessException or ArgumentException or
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or ArgumentException or
                 InvalidOperationException or NotSupportedException)
         {
-            SetValidation(ex.Message, isError: true);
+            SetValidation(Localize("Sound.PreviewFailed"), isError: true);
         }
     }
 
@@ -115,8 +118,7 @@ public partial class SoundSettingsDialog : Window
             !UiSoundService.IsValidImportedFileName(_existingCustomFileName))
         {
             SetValidation(
-                ((App)Application.Current).LocalizationService.GetString(
-                    "Sound.ImportRequired"),
+                Localize("Sound.ImportRequired"),
                 isError: true);
             return;
         }
@@ -144,4 +146,9 @@ public partial class SoundSettingsDialog : Window
             severity: isError
                 ? AccessibilityLiveRegionSeverity.Assertive
                 : AccessibilityLiveRegionSeverity.Polite);
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
 }

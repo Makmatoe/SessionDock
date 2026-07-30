@@ -67,7 +67,7 @@ public sealed class RobloxClientService
                 if (playerPath is null)
                 {
                     return LaunchResult.Failed(
-                        "Roblox Player was not found. Install Roblox Player, then restart SessionDock.");
+                        "Main.ClientNotFoundDetail");
                 }
 
                 // A cached discovery result is never sufficient for a launch.
@@ -78,14 +78,14 @@ public sealed class RobloxClientService
                         forceRefresh: true))
                 {
                     return LaunchResult.Failed(
-                        "Roblox Player could not be verified by Windows. Check your internet connection or reinstall Roblox Player.");
+                        "Main.ClientVerificationFailureDetail");
                 }
 
                 var startInfo = CreatePlayerStartInfo(playerPath, launchUri);
                 cancellationToken.ThrowIfCancellationRequested();
                 using var process = Process.Start(startInfo);
                 return process is null
-                    ? LaunchResult.Failed("Roblox Player did not return a process.")
+                    ? LaunchResult.Failed("Main.ClientNoProcessDetail")
                     : LaunchResult.Succeeded(
                         process.Id,
                         TryCreatePlayerIdentity(
@@ -99,9 +99,9 @@ public sealed class RobloxClientService
             {
                 throw;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return LaunchResult.Failed($"Roblox Player could not start: {ex.Message}");
+                return LaunchResult.Failed("Main.ClientStartFailureDetail");
             }
         }, cancellationToken);
     }

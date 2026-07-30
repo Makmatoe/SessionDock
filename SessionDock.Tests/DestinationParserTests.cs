@@ -97,7 +97,10 @@ public sealed class DestinationParserTests
 
         Assert.False(parsed);
         Assert.Null(target);
-        Assert.Equal("Only official roblox.com links are accepted.", error);
+        Assert.Equal(DestinationParser.OfficialLinksOnlyErrorKey, error);
+        Assert.Equal(
+            "Only official roblox.com links are accepted.",
+            EnglishResourceText.Get(error));
     }
 
     [Theory]
@@ -109,7 +112,10 @@ public sealed class DestinationParserTests
 
         Assert.False(parsed);
         Assert.Null(target);
-        Assert.Equal("Only official roblox.com links are accepted.", error);
+        Assert.Equal(DestinationParser.OfficialLinksOnlyErrorKey, error);
+        Assert.Equal(
+            "Only official roblox.com links are accepted.",
+            EnglishResourceText.Get(error));
     }
 
     [Theory]
@@ -122,7 +128,10 @@ public sealed class DestinationParserTests
 
         Assert.False(parsed);
         Assert.Null(target);
-        Assert.Equal("That Roblox URL contains an invalid private-server code.", error);
+        Assert.Equal(DestinationParser.InvalidPrivateServerCodeErrorKey, error);
+        Assert.Equal(
+            "That Roblox URL contains an invalid private-server code.",
+            EnglishResourceText.Get(error));
     }
 
     [Fact]
@@ -134,7 +143,10 @@ public sealed class DestinationParserTests
 
         Assert.False(parsed);
         Assert.Null(target);
-        Assert.Equal("The destination is too long.", error);
+        Assert.Equal(DestinationParser.TooLongErrorKey, error);
+        Assert.Equal(
+            "The destination is too long.",
+            EnglishResourceText.Get(error));
     }
 
     [Fact]
@@ -146,7 +158,10 @@ public sealed class DestinationParserTests
 
         Assert.False(parsed);
         Assert.Null(target);
-        Assert.Equal("That Roblox URL contains an invalid private-server code.", error);
+        Assert.Equal(DestinationParser.InvalidPrivateServerCodeErrorKey, error);
+        Assert.Equal(
+            "That Roblox URL contains an invalid private-server code.",
+            EnglishResourceText.Get(error));
     }
 
     [Fact]

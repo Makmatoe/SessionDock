@@ -102,7 +102,7 @@ try {
 
     $version = Get-ProjectVersion
     Assert-LegacyReadableReleaseNotes `
-        -Path (Join-Path $root "SessionDock/ReleaseNotes/$version.md")
+        -Path (Join-Path $root "SessionDock/ReleaseNotes/$version.en-US.md")
 
     [xml] $applicationProject = Get-Content -LiteralPath `
         (Join-Path $root 'SessionDock/SessionDock.csproj') -Raw

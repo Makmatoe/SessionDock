@@ -1,14 +1,14 @@
 using System.Globalization;
 using System.Windows;
+using System.Windows.Markup;
 
 namespace SessionDock.Services;
 
 internal sealed class AppLocalizationService : IDisposable
 {
-    private const string EnglishSource =
-        "/SessionDock;component/Localization/Strings.en-US.xaml";
-    private const string DutchSource =
-        "/SessionDock;component/Localization/Strings.nl-NL.xaml";
+    private const string ResourcePrefix =
+        "/SessionDock;component/Localization/Strings.";
+    private const string ResourceSuffix = ".xaml";
 
     private readonly Application _application;
     private readonly CultureInfo _systemCulture;
@@ -54,11 +54,16 @@ internal sealed class AppLocalizationService : IDisposable
             normalized,
             _systemCulture);
         var culture = CultureInfo.GetCultureInfo(cultureName);
-        var requiresDutchOverlay = cultureName.Equals(
-            LocalizationPreference.Dutch,
-            StringComparison.Ordinal);
-        var overlayIsDutch = HasSource(_activeOverlay, DutchSource);
-        var resourcesChanged = requiresDutchOverlay != overlayIsDutch;
+        var desiredSource = cultureName.Equals(
+            LocalizationPreference.English,
+            StringComparison.Ordinal)
+                ? null
+                : $"{ResourcePrefix}{cultureName}{ResourceSuffix}";
+        var currentSource = _activeOverlay?.Source?.OriginalString;
+        var resourcesChanged = !string.Equals(
+            currentSource,
+            desiredSource,
+            StringComparison.OrdinalIgnoreCase);
 
         if (resourcesChanged)
         {
@@ -68,11 +73,11 @@ internal sealed class AppLocalizationService : IDisposable
                 dictionaries.Remove(_activeOverlay);
                 _activeOverlay = null;
             }
-            if (requiresDutchOverlay)
+            if (desiredSource is not null)
             {
                 _activeOverlay = new ResourceDictionary
                 {
-                    Source = new Uri(DutchSource, UriKind.Relative)
+                    Source = new Uri(desiredSource, UriKind.Relative)
                 };
                 dictionaries.Add(_activeOverlay);
             }
@@ -87,6 +92,7 @@ internal sealed class AppLocalizationService : IDisposable
         CurrentPreference = normalized;
         EffectiveCulture = culture;
         ApplyCulture(culture);
+        ApplyWindowLanguages();
         if (resourcesChanged || preferenceChanged || cultureChanged)
             LanguageChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -102,6 +108,13 @@ internal sealed class AppLocalizationService : IDisposable
             EffectiveCulture,
             GetString(key),
             arguments);
+
+    internal void ApplyWindowLanguage(Window window)
+    {
+        ArgumentNullException.ThrowIfNull(window);
+        window.Language = XmlLanguage.GetLanguage(
+            EffectiveCulture.IetfLanguageTag);
+    }
 
     public void Dispose()
     {
@@ -120,12 +133,11 @@ internal sealed class AppLocalizationService : IDisposable
         _disposed = true;
     }
 
-    private static bool HasSource(
-        ResourceDictionary? dictionary,
-        string expectedSuffix) =>
-        dictionary?.Source?.OriginalString.EndsWith(
-            expectedSuffix,
-            StringComparison.OrdinalIgnoreCase) == true;
+    private void ApplyWindowLanguages()
+    {
+        foreach (Window window in _application.Windows)
+            ApplyWindowLanguage(window);
+    }
 
     private static void ApplyCulture(CultureInfo culture)
     {

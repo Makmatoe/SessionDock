@@ -13,16 +13,17 @@ public sealed class ApplicationStartupTests : IDisposable
     public void TryStart_ExpectedLocalDataFailureIsReportedAndContained(
         Exception failure)
     {
-        string? reportedMessage = null;
+        string? reportedKey = null;
 
         var started = ApplicationStartup.TryStart(
             () => throw failure,
-            message => reportedMessage = message);
+            key => reportedKey = key);
 
         Assert.False(started);
+        Assert.Equal(ApplicationStartup.LocalDataFailureKey, reportedKey);
         Assert.Contains(
             "%LOCALAPPDATA%\\SessionDock",
-            reportedMessage,
+            EnglishResourceText.Get(reportedKey!),
             StringComparison.Ordinal);
     }
 

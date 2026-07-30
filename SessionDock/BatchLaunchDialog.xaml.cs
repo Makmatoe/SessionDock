@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using SessionDock.Models;
@@ -50,7 +51,8 @@ public partial class BatchLaunchDialog : Window
         _accounts = accountArray
             .Select(account => new BatchLaunchAccountOption(
                 account,
-                selectedKeys is null || selectedKeys.Contains(account.Key)))
+                selectedKeys is null || selectedKeys.Contains(account.Key),
+                Localization))
             .ToArray();
         _presets = BatchLaunchPreferences.NormalizePresets(
                 presets,
@@ -64,22 +66,21 @@ public partial class BatchLaunchDialog : Window
 
         if (_retryMode)
         {
-            Title = "Retry failed launches";
-            DialogTitleText.Text = "Retry failed only";
+            Title = Localize("Batch.RetryTitle");
+            DialogTitleText.Text = Localize("Batch.RetryHeading");
             DialogIntroText.Text = _accounts.Count == 1
-                ? "Review the failed account below before retrying it. No account from the completed part of the batch can be added here."
-                : "Review the failed accounts below before retrying them. Accounts that already started are not included.";
-            CloseClientsWarningText.Text =
-                "Retrying closes every currently running verified Roblox Player instance, including clients started by the previous batch.";
+                ? Localize("Batch.RetryIntroOne")
+                : Localize("Batch.RetryIntroMany");
+            CloseClientsWarningText.Text = Localize("Batch.RetryWarning");
             PresetsPanel.Visibility = Visibility.Collapsed;
             StartButton.Content = _accounts.Count == 1
-                ? "Retry account"
-                : "Retry selected";
+                ? Localize("Batch.RetryStartOne")
+                : Localize("Batch.RetryStartMany");
             System.Windows.Automation.AutomationProperties.SetName(
                 StartButton,
                 _accounts.Count == 1
-                    ? "Retry failed account"
-                    : "Retry selected failed accounts");
+                    ? Localize("Batch.RetryStartNameOne")
+                    : Localize("Batch.RetryStartNameMany"));
         }
     }
 
@@ -107,7 +108,7 @@ public partial class BatchLaunchDialog : Window
     {
         if (GroupComboBox.SelectedItem is not BatchGroupOption group)
         {
-            SetValidation("No account group is available.");
+            SetValidation(Localize("Batch.NoGroup"));
             return;
         }
 
@@ -119,7 +120,13 @@ public partial class BatchLaunchDialog : Window
                 StringComparison.OrdinalIgnoreCase);
         }
         AccountsList.Items.Refresh();
-        SetStatus($"Selected {SelectedOptionCount()} account(s) in {group.Name}.");
+        var selectedCount = SelectedOptionCount();
+        SetStatus(selectedCount == 1
+            ? Localize("Batch.SelectedGroupOne", group.Name)
+            : Localize(
+                "Batch.SelectedGroupMany",
+                selectedCount,
+                group.Name));
     }
 
     private void SetAllSelected(bool selected)
@@ -128,15 +135,17 @@ public partial class BatchLaunchDialog : Window
             account.IsSelected = selected;
         AccountsList.Items.Refresh();
         SetStatus(selected
-            ? $"Selected all {_accounts.Count} account(s)."
-            : "Cleared the account selection.");
+            ? _accounts.Count == 1
+                ? Localize("Batch.SelectedAllOne")
+                : Localize("Batch.SelectedAllMany", _accounts.Count)
+            : Localize("Batch.ClearedSelection"));
     }
 
     private void LoadPresetButton_Click(object sender, RoutedEventArgs e)
     {
         if (PresetComboBox.SelectedItem is not BatchLaunchPreset preset)
         {
-            SetValidation("Choose a saved preset to load.");
+            SetValidation(Localize("Batch.ChoosePresetToLoad"));
             return;
         }
 
@@ -148,26 +157,54 @@ public partial class BatchLaunchDialog : Window
         AccountsList.Items.Refresh();
         SetDelay(preset.DelaySeconds);
         PresetNameBox.Text = preset.Name;
-        SetStatus(
-            $"Loaded {preset.Name}: {SelectedOptionCount()} account(s), {preset.DelaySeconds} second delay.");
+        var accountCount = SelectedOptionCount();
+        SetStatus(accountCount == 1
+            ? Localize(
+                "Batch.LoadedPresetOne",
+                preset.Name,
+                preset.DelaySeconds)
+            : Localize(
+                "Batch.LoadedPresetMany",
+                preset.Name,
+                accountCount,
+                preset.DelaySeconds));
     }
 
     private void SavePresetButton_Click(object sender, RoutedEventArgs e)
     {
         if (!TryGetSelectedDelay(out var delaySeconds))
         {
-            SetValidation("Select a valid delay before saving the preset.");
+            SetValidation(Localize("Batch.InvalidDelayForPreset"));
+            return;
+        }
+
+        var selectedProfiles = GetSelectedProfiles();
+        if (BatchLaunchPreferences.NormalizePresetName(PresetNameBox.Text) is null)
+        {
+            SetValidation(Localize("Batch.PresetNameRequired"));
+            return;
+        }
+        if (selectedProfiles.Count < 2)
+        {
+            SetValidation(Localize("Batch.PresetMinimumAccounts"));
+            return;
+        }
+        if (selectedProfiles.Count > BatchLaunchPreferences.MaximumAccountsPerPreset)
+        {
+            SetValidation(Localize(
+                "Batch.PresetMaximumAccounts",
+                BatchLaunchPreferences.MaximumAccountsPerPreset));
             return;
         }
 
         if (!BatchLaunchPreferences.TryCreatePreset(
                 PresetNameBox.Text,
-                GetSelectedProfiles(),
+                selectedProfiles,
                 delaySeconds,
                 out var preset,
-                out var error))
+                out _))
         {
-            SetValidation(error);
+            SetValidation(Localize("Batch.PresetInvalid"));
             return;
         }
 
@@ -179,7 +216,9 @@ public partial class BatchLaunchDialog : Window
             _presets.Count >= BatchLaunchPreferences.MaximumPresets)
         {
             SetValidation(
-                $"You can save up to {BatchLaunchPreferences.MaximumPresets} batch presets. Delete one before adding another.");
+                Localize(
+                    "Batch.MaximumPresets",
+                    BatchLaunchPreferences.MaximumPresets));
             return;
         }
 
@@ -190,15 +229,15 @@ public partial class BatchLaunchDialog : Window
         PresetsChanged = true;
         RefreshPresetList(preset!.Name);
         SetStatus(existingIndex >= 0
-            ? $"Updated preset {preset.Name}."
-            : $"Saved preset {preset.Name}.");
+            ? Localize("Batch.UpdatedPreset", preset.Name)
+            : Localize("Batch.SavedPreset", preset.Name));
     }
 
     private void DeletePresetButton_Click(object sender, RoutedEventArgs e)
     {
         if (PresetComboBox.SelectedItem is not BatchLaunchPreset preset)
         {
-            SetValidation("Choose a saved preset to delete.");
+            SetValidation(Localize("Batch.ChoosePresetToDelete"));
             return;
         }
 
@@ -206,7 +245,7 @@ public partial class BatchLaunchDialog : Window
         PresetsChanged = true;
         RefreshPresetList();
         PresetNameBox.Clear();
-        SetStatus($"Deleted preset {preset.Name}.");
+        SetStatus(Localize("Batch.DeletedPreset", preset.Name));
     }
 
     private void RefreshPresetList(string? selectedName = null)
@@ -221,8 +260,11 @@ public partial class BatchLaunchDialog : Window
         PresetComboBox.SelectedItem = selected;
         PresetComboBox.IsEnabled = _presets.Count > 0;
         PresetCountText.Text = _presets.Count == 0
-            ? "None yet"
-            : $"{_presets.Count} of {BatchLaunchPreferences.MaximumPresets}";
+            ? Localize("Batch.NoPresets")
+            : Localize(
+                "Batch.PresetCount",
+                _presets.Count,
+                BatchLaunchPreferences.MaximumPresets);
     }
 
     private void StartButton_Click(object sender, RoutedEventArgs e)
@@ -232,20 +274,20 @@ public partial class BatchLaunchDialog : Window
         if (selected.Count < minimumSelection)
         {
             SetValidation(_retryMode
-                ? "Select at least one failed account to retry."
-                : "Select at least two accounts for a batch launch.");
+                ? Localize("Batch.RetryMinimumSelection")
+                : Localize("Batch.MinimumSelection"));
             return;
         }
         if (string.IsNullOrWhiteSpace(selected[0].Destination))
         {
             SetValidation(
-                "The first selected account needs a destination. Blank accounts after it will use that destination.");
+                Localize("Batch.FirstDestinationRequired"));
             return;
         }
 
         if (!TryGetSelectedDelay(out var delaySeconds))
         {
-            SetValidation("Select a valid delay.");
+            SetValidation(Localize("Batch.InvalidDelay"));
             return;
         }
 
@@ -310,15 +352,29 @@ public partial class BatchLaunchDialog : Window
     private void CancelButton_Click(object sender, RoutedEventArgs e) =>
         DialogResult = false;
 
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
+
     private sealed class BatchLaunchAccountOption(
         AccountProfile profile,
-        bool isSelected)
+        bool isSelected,
+        AppLocalizationService localization)
     {
         public AccountProfile Profile { get; } = profile;
         public string DisplayName { get; } = profile.Label ?? $"@{profile.Username}";
         public string Identity { get; } = profile.Label is null
-            ? $"User ID {profile.UserId}"
-            : $"@{profile.Username}  -  User ID {profile.UserId}";
+            ? localization.Format(
+                "Main.UserId",
+                profile.UserId.ToString(CultureInfo.InvariantCulture))
+            : localization.Format(
+                "Main.AccountIdentity",
+                profile.Username,
+                profile.UserId.ToString(CultureInfo.InvariantCulture));
         public string ColorHex { get; } = profile.ColorHex ?? "#7C5CFC";
         public string? GroupName { get; } =
             BatchLaunchPreferences.NormalizeAccountGroup(profile.Group);
@@ -327,18 +383,22 @@ public partial class BatchLaunchDialog : Window
             : Visibility.Visible;
         public string DestinationSummary { get; } =
             string.IsNullOrWhiteSpace(profile.Destination)
-                ? "Destination: uses first selected"
-                : $"Destination: {profile.Destination.Trim()}";
+                ? localization.GetString("Batch.DestinationUsesFirst")
+                : localization.Format(
+                    "Batch.DestinationValue",
+                    profile.Destination.Trim());
         public string DestinationToolTip { get; } =
             string.IsNullOrWhiteSpace(profile.Destination)
-                ? "This account will use the first selected account's destination."
+                ? localization.GetString("Batch.DestinationUsesFirstHelp")
                 : profile.Destination.Trim();
         public string AutomationName { get; } =
-            $"Include {profile.Label ?? $"@{profile.Username}"}";
+            localization.Format(
+                "Batch.IncludeAccount",
+                profile.Label ?? $"@{profile.Username}");
         public string AutomationHelpText { get; } =
             string.IsNullOrWhiteSpace(profile.Group)
-                ? "Choose whether this account is part of the batch"
-                : $"Account group: {profile.Group}";
+                ? localization.GetString("Batch.IncludeHelp")
+                : localization.Format("Main.AccountGroup", profile.Group);
         public bool IsSelected { get; set; } = isSelected;
     }
 

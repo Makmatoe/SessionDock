@@ -69,67 +69,53 @@ continues to use the exact HTTP loopback endpoint described below.
 ## HandleScope connector
 
 HandleScope support is disabled by default. SessionDock does not include,
-bundle, or elevate HandleScope. Regular users can install and opt in without
-PowerShell:
+bundle, download, install, update, uninstall, elevate, or start HandleScope. It
+never invokes the HandleScope installer or lifecycle scripts and never uses an
+execution-policy override. Installation, startup, and optional per-user
+autostart remain separate explicit HandleScope actions.
 
 1. Select **Integrations** in the SessionDock sidebar to open the HandleScope
-   panel. Opening the panel and selecting Refresh inspect local files only.
-2. Select **Install Latest HandleScope release** and review the confirmation.
-   This is the only panel action that contacts the canonical
-   `Makmatoe/HandleScope` GitHub repository. SessionDock requires a stable,
-   immutable release with the exact versioned Windows x64 package and checksum
-   assets. SessionDock verifies GitHub's asset digests, the matching checksum,
-   safe bounded archive extraction, and every internal file before it runs the included standard-user
-   installer with `StartNow` and limited per-user `EnableAutostart`. The scoped
-   child PowerShell execution-policy argument does not change saved policy or
-   override Group Policy. SessionDock never supplies integration, downgrade, or
-   elevation switches.
-3. Select **Enable** to write the fixed, minimal per-user opt-in.
-4. The installer starts the API immediately and its limited task starts it at
-   future Windows sign-ins. Select **Start API** only if a manual restart is
-   later needed; SessionDock still never starts it merely because the app or
-   integration panel opens.
-5. Select **Test connection** to check only its loopback health endpoint after
-   the connection file and same-session process identity pass local checks.
-   This test never enumerates or closes a handle.
+   panel. Opening the panel and selecting **Refresh** inspect local files only.
+2. Select **Open official v0.1.3 setup guide**. This opens the immutable
+   [HandleScope v0.1.3 installation instructions](https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md)
+   in the user's browser. Follow those instructions from a normal,
+   non-administrator PowerShell window. Verify the release before installation,
+   do not use `-ExecutionPolicy Bypass`, and start the API separately or choose
+   HandleScope's optional limited per-user autostart.
+3. Return to SessionDock and select **Refresh**. SessionDock accepts only
+   `%LOCALAPPDATA%\Programs\HandleScope\Api\HandleScope.Api.exe` from v0.1.3:
+   exactly 50,275,056 bytes with SHA-256
+   `ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
+4. Select **Enable** to write the fixed, minimal per-user SessionDock opt-in.
+   This does not install or start HandleScope and does not change its autostart.
+5. Select **Test connection** to check only an already-running API's loopback
+   health endpoint after the connection file and same-session process identity
+   pass local checks. This test never enumerates or closes a handle.
 
-HandleScope is not Authenticode-signed and its current release has no separate
-signed descriptor. The install therefore trusts the canonical immutable GitHub
-release, its published SHA-256 digests, and its same-release checksum; these
-checks do not prove a certificate-backed publisher. If a future release adds a
-signed descriptor, SessionDock also requires its pinned HandleScope key. After
-installation, SessionDock stores the verified manifest and a local GitHub
-release receipt under its own data, hashes `HandleScope.Api.exe` against that
-inventory before start or trust, checks the exact standard path and reparse points, and retains the
-process-path, session, owner, non-elevated token, PID, start-time, and loopback
-discovery checks. Replacing the installed executable makes the integration fail
-closed unless the same-user receipt and manifest are also replaced.
-
-Installation starts HandleScope immediately and enables its limited per-user
-interactive-logon task, but it does not change SessionDock's opt-in. Updating
-an already running API may stop it briefly while its files are atomically
-replaced; the install then starts the updated API. A cancellation before the
-installer starts removes the staged download. Once HandleScope's installer
-begins its atomic replacement, SessionDock lets it finish rather than
-deliberately interrupting the file swap. HandleScope refuses automatic
-downgrades and preserves the prior installation if its staged replacement
-fails.
+The exact executable hash is only one part of the trust boundary. SessionDock
+also checks the standard per-user path and reparse points, process path,
+current Windows session, owner, non-elevated token, PID, discovery start time,
+strict numeric loopback URL, rotating token, API version, and fixed policy. It
+does not persist or display the token. A different HandleScope build fails
+closed until a future immutable release and the cross-repository contract are
+reviewed and the pin is deliberately updated.
 
 The panel reports **Not installed**, **Installed - connection not tested**,
-**API start requested**, **API running - connection not tested**,
-**API running - integration disabled**, **Ready**, **Update required**, or a
-configuration warning. A bounded start-pending state prevents rapid or
-concurrent requests from spawning another API before discovery is published.
-The interval uses a monotonic clock. After that window, SessionDock verifies
-the process ID returned by the explicit start request before it will allow
-another API process to be launched. It also checks for an already-running,
-fully verified API at the exact install path when no valid discovery file is
-available.
-An invalid or nonminimal existing configuration is preserved. Only after
-displaying that warning does the panel offer an explicit **Repair integration**
-action, which replaces the SessionDock opt-in with the fixed minimal policy.
-**Disable** prevents future SessionDock launch operations but does not stop the
-HandleScope API.
+**Integration disabled**, **Ready**, **Update required**, or a configuration
+warning. The disabled state is based only on the pinned local install and opt-in;
+SessionDock does not inspect the process, discovery file, or API until the user
+enables the integration and selects **Test connection**. An invalid or
+nonminimal existing configuration is
+preserved. Only after displaying that warning does the panel offer an explicit
+**Repair integration** action, which replaces the SessionDock opt-in with the
+fixed minimal policy. **Disable** prevents future SessionDock post-launch
+operations but does not stop HandleScope.
+
+Upgrading from SessionDock v2.7.0 does not replace the HandleScope installation,
+stop its process, change its optional autostart task, or alter the existing
+SessionDock opt-in. Any legacy public verification metadata under
+`%LOCALAPPDATA%\SessionDock\HandleScopeAuthorization` is left unchanged and
+ignored by v2.7.1; it is not required for a separately installed v0.1.3 API.
 
 Developers working from a SessionDock source checkout may instead run
 `./scripts/Enable-HandleScope.ps1` from the repository root. HandleScope's

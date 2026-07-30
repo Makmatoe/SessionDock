@@ -8,6 +8,100 @@
         FontFamily="Segoe UI Variable Text"
         UseLayoutRounding="True" ShowInTaskbar="False"
         AutomationProperties.Name="{DynamicResource Metadata.AutomationName}">
+    <Window.Resources>
+        <Style x:Key="MetadataTabItem" TargetType="{x:Type TabItem}">
+            <Setter Property="Background"
+                    Value="{DynamicResource ControlSurfaceBrush}"/>
+            <Setter Property="Foreground"
+                    Value="{DynamicResource ControlTextBrush}"/>
+            <Setter Property="BorderBrush"
+                    Value="{DynamicResource StrokeBrush}"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="Margin" Value="0,0,4,0"/>
+            <Setter Property="FocusVisualStyle"
+                    Value="{StaticResource KeyboardFocusVisual}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TabItem}">
+                        <Border x:Name="TabSurface"
+                                Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8,8,0,0">
+                            <ContentPresenter ContentSource="Header"
+                                              RecognizesAccessKey="True"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Panel.ZIndex" Value="1"/>
+                                <Setter Property="Background"
+                                        Value="{DynamicResource SelectedControlSurfaceBrush}"/>
+                                <Setter Property="Foreground"
+                                        Value="{DynamicResource SelectedControlTextBrush}"/>
+                                <Setter Property="BorderBrush"
+                                        Value="{DynamicResource FieldHoverBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabSurface"
+                                        Property="Opacity" Value=".9"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="TabSurface"
+                                        Property="Opacity" Value=".45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="MetadataTabControl"
+               TargetType="{x:Type TabControl}">
+            <Setter Property="Background"
+                    Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="Foreground"
+                    Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush"
+                    Value="{DynamicResource StrokeBrush}"/>
+            <Setter Property="ItemContainerStyle"
+                    Value="{StaticResource MetadataTabItem}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type TabControl}">
+                        <Grid ClipToBounds="True"
+                              KeyboardNavigation.TabNavigation="Local">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <TabPanel Grid.Row="0"
+                                      IsItemsHost="True"
+                                      KeyboardNavigation.TabIndex="1"
+                                      Panel.ZIndex="1"/>
+                            <Border Grid.Row="1"
+                                    Margin="0,-1,0,0"
+                                    Padding="1"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="0,0,9,9">
+                                <ContentPresenter x:Name="PART_SelectedContentHost"
+                                                  Content="{TemplateBinding SelectedContent}"
+                                                  ContentTemplate="{TemplateBinding SelectedContentTemplate}"
+                                                  ContentTemplateSelector="{TemplateBinding SelectedContentTemplateSelector}"
+                                                  ContentStringFormat="{TemplateBinding SelectedContentStringFormat}"/>
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
     <Border Style="{StaticResource DialogShell}">
         <Grid>
             <Grid.RowDefinitions>
@@ -58,6 +152,7 @@
             </Border>
 
             <TabControl Grid.Row="2"
+                        Style="{StaticResource MetadataTabControl}"
                         AutomationProperties.Name="{DynamicResource Metadata.ActionName}">
                 <TabItem Header="{DynamicResource Metadata.ExportTab}"
                          AutomationProperties.Name="{DynamicResource Metadata.ExportTab}">

@@ -34,9 +34,10 @@ public partial class MainWindow
 
         SupportDiagnosticsDocument document;
         SetStatus(
-            "Gathering privacy-safe diagnostics",
-            "Checking installed components without collecting local paths or account details...",
-            "DIAGNOSTICS");
+            Localize("Main.DiagnosticsGatheringTitle"),
+            Localize("Main.DiagnosticsGatheringDetail"),
+            Localize("Main.DiagnosticsBadge"),
+            StatusTone.Neutral);
         SetOperationBusy(true);
         try
         {
@@ -46,7 +47,9 @@ public partial class MainWindow
                     _robloxClient.FindPlayerPath),
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            document = SupportDiagnosticsService.BuildDocument(snapshot);
+            document = SupportDiagnosticsService.BuildDocument(
+                snapshot,
+                Localization);
         }
         finally
         {
@@ -63,8 +66,9 @@ public partial class MainWindow
         };
         _ = dialog.ShowDialog();
         SetStatus(
-            "Diagnostics ready",
-            "The privacy-safe summary stayed local unless you chose Copy or Export.",
-            "LOCAL ONLY");
+            Localize("Main.DiagnosticsReadyTitle"),
+            Localize("Main.DiagnosticsReadyDetail"),
+            Localize("Main.LocalOnlyBadge"),
+            StatusTone.Success);
     }
 }

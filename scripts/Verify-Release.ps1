@@ -25,7 +25,7 @@ try {
         throw "Tag '$Tag' must exactly match project version '$version' as v$version."
     }
 
-    $notesPath = Join-Path $root "SessionDock/ReleaseNotes/$version.md"
+    $notesPath = Join-Path $root "SessionDock/ReleaseNotes/$version.en-US.md"
     Assert-LegacyReadableReleaseNotes -Path $notesPath
 
     $head = (& git rev-parse HEAD).Trim()

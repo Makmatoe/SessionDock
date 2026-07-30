@@ -50,24 +50,16 @@ SessionDock is designed around these boundaries:
   hooks are rejected.
 - HandleScope uses a separate verified loopback process, discovery-file, and
   rotating-token boundary. Its API is optional, explicitly enabled, and never
-  elevated or bundled by SessionDock. Only the explicit **Install Latest HandleScope
-  release** action may contact the canonical HandleScope GitHub repository and
-  run its per-user installer. That path requires a stable immutable release,
-  exact Windows asset names and sizes, GitHub's published asset digests, the
-  matching same-release checksum, a safe bounded ZIP layout, and exact internal
-  manifest verification. The current HandleScope release is unsigned and has no
-  independent release descriptor, so this model trusts the canonical immutable
-  GitHub release and does not provide certificate-backed publisher identity. If
-  a future release supplies a signed descriptor, SessionDock requires its
-  distinct pinned HandleScope key. The installed API is rehashed against the
-  saved verified inventory before SessionDock starts or trusts it; replacement
-  fails closed unless the same-user authorization state is also modified. The
-  verified installer runs with an execution-policy override scoped only to its
-  child PowerShell process; no saved policy is changed and Windows Group Policy
-  still takes precedence.
-  Install starts the API and enables HandleScope's limited, per-user,
-  interactive-logon autostart task. It does not elevate or enable the
-  SessionDock integration.
+  bundled, downloaded, installed, updated, uninstalled, elevated, or started by
+  SessionDock. SessionDock never invokes the HandleScope installer or lifecycle
+  scripts and never supplies an execution-policy override. The panel opens a
+  pinned official v0.1.3 setup guide in the user's browser; installation,
+  startup, and optional per-user autostart remain separate explicit HandleScope
+  actions. Before inspecting or trusting the local API, SessionDock requires
+  the exact published v0.1.3 executable size and SHA-256 hash at the expected
+  non-reparse per-user path, then retains the process-path, session, owner,
+  non-elevated token, PID, discovery-time, strict loopback, rotating-token, and
+  health-policy checks. The integration opt-in is a separate explicit action.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content.
 - Safe metadata transfer uses a small versioned allowlist and bounded strict

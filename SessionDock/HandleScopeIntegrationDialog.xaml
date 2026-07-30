@@ -130,17 +130,17 @@
                                    Margin="0,7,0,0" TextWrapping="Wrap"/>
 
                         <WrapPanel Margin="0,15,0,0">
-                            <Button x:Name="InstallLatestHandleScopeButton"
-                                    Click="InstallLatestHandleScopeButton_Click"
+                            <Button x:Name="OpenHandleScopeSetupButton"
+                                    Click="OpenHandleScopeSetupButton_Click"
                                     Background="{DynamicResource ControlSurfaceBrush}"
                                     Foreground="{DynamicResource ControlTextBrush}"
                                     Padding="14,10" Margin="0,0,8,8"
-                            ToolTip="{DynamicResource Handle.InstallTooltip}"
-                            AutomationProperties.Name="{DynamicResource Handle.InstallName}">
+                            ToolTip="{DynamicResource Handle.SetupGuideTooltip}"
+                            AutomationProperties.Name="{DynamicResource Handle.SetupGuideName}">
                                 <StackPanel Orientation="Horizontal">
                                     <Path Style="{StaticResource ButtonIcon}"
-                                          Data="{StaticResource IconUpdate}" Margin="0,0,7,0"/>
-                        <TextBlock Text="{DynamicResource Handle.Install}"/>
+                                          Data="{StaticResource IconLaunch}" Margin="0,0,7,0"/>
+                        <TextBlock Text="{DynamicResource Handle.SetupGuide}"/>
                                 </StackPanel>
                             </Button>
                             <Button x:Name="RefreshButton" Click="RefreshButton_Click"
@@ -152,15 +152,6 @@
                                     <Path Style="{StaticResource ButtonIcon}"
                                           Data="{StaticResource IconRefresh}" Margin="0,0,7,0"/>
                         <TextBlock Text="{DynamicResource Common.Refresh}"/>
-                                </StackPanel>
-                            </Button>
-                            <Button x:Name="StartApiButton" Click="StartApiButton_Click"
-                                    Padding="14,10" Margin="0,0,8,8"
-                            AutomationProperties.Name="{DynamicResource Handle.StartName}">
-                                <StackPanel Orientation="Horizontal">
-                                    <Path Style="{StaticResource ButtonIcon}"
-                                          Data="{StaticResource IconLaunch}" Margin="0,0,7,0"/>
-                        <TextBlock Text="{DynamicResource Handle.Start}"/>
                                 </StackPanel>
                             </Button>
                             <Button x:Name="EnableButton" Click="EnableButton_Click"

@@ -7,9 +7,10 @@ using Velopack.Exceptions;
 namespace SessionDock.Services;
 
 internal sealed record UpdateFailurePresentation(
-    string Title,
-    string Detail,
-    string Badge)
+    string TitleKey,
+    string DetailKey,
+    string BadgeKey,
+    StatusTone Tone)
 {
     public static UpdateFailurePresentation Create(Exception exception)
     {
@@ -29,58 +30,71 @@ internal sealed record UpdateFailurePresentation(
 
         presentation = exception switch
         {
-            ReleaseTrustException trustFailure => new(
-                "Update was rejected",
-                trustFailure.Message,
-                "UPDATE REJECTED"),
+            ReleaseTrustException => new(
+                "UpdateFailure.Trust.Title",
+                "UpdateFailure.Trust.Detail",
+                "UpdateFailure.Badge.Rejected",
+                StatusTone.Error),
             AcquireLockFailedException => new(
-                "Update files are busy",
-                "Another update operation is using SessionDock's update files. Close every SessionDock or Roblox One window and installer, wait a few seconds, reopen the app, and try again. The installed version was left unchanged.",
-                "UPDATE BUSY"),
+                "UpdateFailure.Busy.Title",
+                "UpdateFailure.Busy.Detail",
+                "UpdateFailure.Badge.Busy",
+                StatusTone.Warning),
             ChecksumFailedException => new(
-                "Downloaded update was rejected",
-                "The downloaded package did not match the release feed and was not installed. Try again; if this repeats, keep both local data directories unchanged and download the current Setup and checksum from the canonical GitHub release page.",
-                "UPDATE REJECTED"),
+                "UpdateFailure.DownloadRejected.Title",
+                "UpdateFailure.Checksum.Detail",
+                "UpdateFailure.Badge.Rejected",
+                StatusTone.Error),
             InvalidDataException => new(
-                "Downloaded update was rejected",
-                "The downloaded package did not pass integrity checks and was not installed. Try again; if this repeats, keep both local data directories unchanged and download the current Setup and checksum from the canonical GitHub release page.",
-                "UPDATE REJECTED"),
+                "UpdateFailure.DownloadRejected.Title",
+                "UpdateFailure.InvalidData.Detail",
+                "UpdateFailure.Badge.Rejected",
+                StatusTone.Error),
             NotInstalledException => new(
-                "Setup is required",
-                "This copy is no longer recognized as an installed app. Keep the SessionDock and RobloxOne local data directories unchanged, then run the current verified SessionDock Setup from the canonical GitHub release page. Do not uninstall or delete local data first.",
-                "SETUP REQUIRED"),
+                "UpdateFailure.SetupRequired.Title",
+                "UpdateFailure.SetupRequired.Detail",
+                "UpdateFailure.Badge.SetupRequired",
+                StatusTone.Error),
             TaskCanceledException => new(
-                "GitHub did not respond in time",
-                "The update request timed out. Check the internet connection and try again. The installed version was left unchanged.",
-                "NETWORK TIMEOUT"),
+                "UpdateFailure.Timeout.Title",
+                "UpdateFailure.Timeout.Detail",
+                "UpdateFailure.Badge.NetworkTimeout",
+                StatusTone.Error),
             OperationCanceledException => new(
-                "GitHub did not respond in time",
-                "The update request ended before GitHub responded. Check the internet connection and try again. The installed version was left unchanged.",
-                "NETWORK TIMEOUT"),
+                "UpdateFailure.Timeout.Title",
+                "UpdateFailure.Cancelled.Detail",
+                "UpdateFailure.Badge.NetworkTimeout",
+                StatusTone.Error),
             TimeoutException => new(
-                "GitHub did not respond in time",
-                "The update request timed out. Check the internet connection and try again. The installed version was left unchanged.",
-                "NETWORK TIMEOUT"),
+                "UpdateFailure.Timeout.Title",
+                "UpdateFailure.Timeout.Detail",
+                "UpdateFailure.Badge.NetworkTimeout",
+                StatusTone.Error),
             HttpIOException => new(
-                "GitHub connection was interrupted",
-                "The connection to the official GitHub release feed ended unexpectedly. Check the internet connection and try again. The installed version was left unchanged.",
-                "NETWORK ERROR"),
+                "UpdateFailure.Interrupted.Title",
+                "UpdateFailure.Interrupted.Detail",
+                "UpdateFailure.Badge.NetworkError",
+                StatusTone.Error),
             HttpRequestException => new(
-                "GitHub could not be reached",
-                "SessionDock could not contact the official GitHub release feed. Check the internet connection and try again. The installed version was left unchanged.",
-                "NETWORK ERROR"),
+                "UpdateFailure.Unreachable.Title",
+                "UpdateFailure.Unreachable.Detail",
+                "UpdateFailure.Badge.NetworkError",
+                StatusTone.Error),
             UnauthorizedAccessException => new(
-                "Update access was denied",
-                "SessionDock could not write its update files. Reopen it as the same Windows user that installed it and check whether security software is blocking it, then try again.",
-                "ACCESS DENIED"),
+                "UpdateFailure.AccessDenied.Title",
+                "UpdateFailure.AccessDenied.Detail",
+                "UpdateFailure.Badge.AccessDenied",
+                StatusTone.Error),
             IOException => new(
-                "Update files are unavailable",
-                "An update file or folder is unavailable or locked. Close every SessionDock or Roblox One window and installer, reopen the app, and try again. The installed version was left unchanged.",
-                "UPDATE FILE ERROR"),
+                "UpdateFailure.FilesUnavailable.Title",
+                "UpdateFailure.FilesUnavailable.Detail",
+                "UpdateFailure.Badge.FileError",
+                StatusTone.Error),
             Win32Exception => new(
-                "Updater could not start",
-                "Windows could not start the SessionDock updater. Close the app, keep both local data directories unchanged, and run the current verified SessionDock Setup from the canonical GitHub release page. Do not uninstall or delete local data first.",
-                "UPDATER ERROR"),
+                "UpdateFailure.UpdaterStart.Title",
+                "UpdateFailure.UpdaterStart.Detail",
+                "UpdateFailure.Badge.UpdaterError",
+                StatusTone.Error),
             _ => null!
         };
         return presentation is not null;

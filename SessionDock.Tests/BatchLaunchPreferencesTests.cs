@@ -275,6 +275,11 @@ public sealed class BatchLaunchPreferencesTests : IDisposable
             root,
             "SessionDock",
             "BatchLaunchDialog.xaml.cs"));
+        var englishResources = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "Localization",
+            "Strings.en-US.xaml"));
 
         Assert.Contains(
             "result.Failures.Select(failure => failure.AccountKey)",
@@ -290,8 +295,15 @@ public sealed class BatchLaunchPreferencesTests : IDisposable
                     StringComparison.Ordinal)],
             StringComparison.Ordinal);
         Assert.Contains(
-            "including clients started by the previous batch",
+            "Localize(\"Batch.RetryWarning\")",
             dialogSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<sys:String x:Key=\"Batch.RetryWarning\">" +
+            "Retrying closes every currently running verified Roblox " +
+            "Player instance, including clients started by the previous " +
+            "batch.</sys:String>",
+            englishResources,
             StringComparison.Ordinal);
         Assert.Contains(
             "var minimumSelection = _retryMode ? 1 : 2;",

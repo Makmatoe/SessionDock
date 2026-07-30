@@ -25,8 +25,8 @@ public partial class AboutDiagnosticsDialog : Window
         _document = document;
         DiagnosticsPreviewBox.Text = document.Text;
         VersionText.Text = version is null
-            ? "Version unavailable"
-            : $"Version {FormatVersion(version)}";
+            ? Localize("About.VersionUnavailable")
+            : Localize("About.Version", FormatVersion(version));
         Loaded += AboutDiagnosticsDialog_Loaded;
     }
 
@@ -44,14 +44,14 @@ public partial class AboutDiagnosticsDialog : Window
         {
             Clipboard.SetText(_document.Text);
             SetActionStatus(
-                "Copied the complete preview. Nothing else was included.",
+                Localize("About.Copied"),
                 succeeded: true);
         }
         catch (Exception exception) when (
             exception is ExternalException or ThreadStateException)
         {
             SetActionStatus(
-                "The clipboard is busy. Close other clipboard tools and try again.",
+                Localize("About.ClipboardBusy"),
                 succeeded: false);
         }
     }
@@ -64,33 +64,33 @@ public partial class AboutDiagnosticsDialog : Window
             CheckPathExists = true,
             DefaultExt = ".txt",
             FileName = SupportDiagnosticsExporter.SuggestedFileName,
-            Filter = "Text document (*.txt)|*.txt",
+            Filter = Localize("About.TextFilter"),
             OverwritePrompt = true,
-            Title = "Export privacy-safe SessionDock diagnostics"
+            Title = Localize("About.ExportPickerTitle")
         };
         if (saveDialog.ShowDialog(this) != true)
         {
             SetActionStatus(
-                "Export cancelled. No file was written.",
+                Localize("About.ExportCancelled"),
                 succeeded: null);
             return;
         }
 
         SetButtonsEnabled(false);
-        SetActionStatus("Saving the diagnostics preview...", succeeded: null);
+        SetActionStatus(Localize("About.Saving"), succeeded: null);
         try
         {
             await SupportDiagnosticsExporter.ExportAsync(
                 saveDialog.FileName,
                 _document);
             SetActionStatus(
-                "Saved the complete preview as a text file.",
+                Localize("About.Saved"),
                 succeeded: true);
         }
         catch (Exception exception) when (IsExpectedExportFailure(exception))
         {
             SetActionStatus(
-                "The diagnostics file could not be saved there. Choose another folder and try again.",
+                Localize("About.SaveFailed"),
                 succeeded: false);
         }
         finally
@@ -132,4 +132,12 @@ public partial class AboutDiagnosticsDialog : Window
         var fieldCount = version.Build >= 0 ? 3 : 2;
         return version.ToString(fieldCount);
     }
+
+    private AppLocalizationService Localization =>
+        ((App)Application.Current).LocalizationService;
+
+    private string Localize(string key) => Localization.GetString(key);
+
+    private string Localize(string key, params object?[] arguments) =>
+        Localization.Format(key, arguments);
 }

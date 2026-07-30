@@ -16,6 +16,8 @@ release candidate.
 
 Record the Windows version, display scale, theme, SessionDock language, build
 commit, result, and any issue link for each run.
+Use the expanded per-locale workflow checklist in
+[`docs/LOCALIZATION_QA.md`](LOCALIZATION_QA.md) alongside this matrix.
 
 | Area | Setup and action | Expected result |
 | --- | --- | --- |
@@ -30,7 +32,8 @@ commit, result, and any issue link for each run.
 | Dark and light themes | Check main and all dialogs in both themes, including hover, pressed, disabled, selected, success, warning, and error states. | Text and icons remain legible and state distinctions remain clear. |
 | Text scaling | Test Windows text size at 100%, 150%, and 200%; resize the main window and scroll every dialog. | Text is not clipped or overlapped, controls remain operable, horizontal scrolling appears only for exact code/JSON previews, and primary actions stay reachable. |
 | DPI and multiple monitors | Test 100% and mixed-DPI displays. Move/resize/maximize the main window on a secondary display, close, relaunch, disconnect that display, and relaunch again. | Size/state restore on the saved monitor when available; otherwise the window is clamped visibly onto the primary work area. Dialogs remain on the active monitor. A minimized window never relaunches minimized. |
-| Language switching | Switch live among System default, English, and Dutch on the open main window. After each switch, open every dialog and exercise its status and confirmation paths. | The main window updates without restart; each newly opened workflow uses the selected language for static labels, accessible names, and tooltips. Some runtime confirmations and detailed technical content, such as exact JSON and structured import plans, may use the complete English fallback. Controls do not resize into unusable layouts. |
+| Language switching | Switch live among System default, English, Dutch, German, French, and Spanish on the open main window. After each switch, open every dialog and exercise normal, empty, loading, success, failure, cancellation, and retry states. | The main window updates without restart; each newly opened workflow uses the selected language for static labels, runtime text, accessible names, help, item status, and tooltips. Invariant usernames, IDs, URLs, filenames, JSON, and protocol values remain unchanged. Older release notes without a translation visibly identify the English fallback. Controls do not resize into unusable layouts. |
+| Translation expansion | At 100%, 125%, and 200% scaling, inspect the main window and every dialog in German and French, including Batch retry, Running clients, diagnostics, metadata preview, HandleScope, updates, and release notes. | Long translated labels wrap or trim intentionally, every action remains reachable, and no button, status badge, automation name, or validation message is clipped into ambiguity. |
 | Reduced input precision | At 150% scale, use touch or a coarse pointer for sidebar and account Add/Edit/Remove actions. | Primary icon targets are comfortably hittable, do not overlap, and expose the same accessible names as keyboard navigation. |
 
 ## Reporting

@@ -67,14 +67,63 @@ internal sealed class SupportDiagnosticsDocument
     public string Text { get; }
 
     internal static SupportDiagnosticsDocument Create(
-        SupportDiagnosticsSnapshot snapshot) =>
-        new(SupportDiagnosticsService.BuildReportText(snapshot));
+        SupportDiagnosticsSnapshot snapshot,
+        LocalizedTextSnapshot localization) =>
+        new(SupportDiagnosticsService.BuildReportText(
+            snapshot,
+            localization));
 }
 
 internal static partial class SupportDiagnosticsService
 {
     internal const int MaximumReportLength = 8 * 1024;
     internal const int MaximumDisplayedCount = 10_000;
+    private static readonly string[] ReportLocalizationKeys =
+    [
+        "Diagnostics.Report.Title",
+        "Diagnostics.Report.Summary",
+        "Diagnostics.Report.ApplicationHeading",
+        "Diagnostics.Report.ApplicationVersion",
+        "Diagnostics.Report.InstallMode",
+        "Diagnostics.Report.InstallModeInstalled",
+        "Diagnostics.Report.InstallModePortable",
+        "Diagnostics.Report.SystemHeading",
+        "Diagnostics.Report.WindowsVersion",
+        "Diagnostics.Report.DotNetRuntime",
+        "Diagnostics.Report.OsArchitecture",
+        "Diagnostics.Report.ProcessArchitecture",
+        "Diagnostics.Report.ComponentsHeading",
+        "Diagnostics.Report.WebView2",
+        "Diagnostics.Report.RobloxPlayer",
+        "Diagnostics.Report.LocalStateHeading",
+        "Diagnostics.Report.SavedAccounts",
+        "Diagnostics.Report.RecentEntries",
+        "Diagnostics.Report.Favorites",
+        "Diagnostics.Report.TrackedClients",
+        "Diagnostics.Report.PreferencesHeading",
+        "Diagnostics.Report.Theme",
+        "Diagnostics.Report.InterfaceSounds",
+        "Diagnostics.Report.ExcludedHeading",
+        "Diagnostics.Report.ExcludedIdentity",
+        "Diagnostics.Report.ExcludedDestinations",
+        "Diagnostics.Report.ExcludedBrowserData",
+        "Diagnostics.Value.AvailableVersion",
+        "Diagnostics.Value.Available",
+        "Diagnostics.Value.NotFound",
+        "Diagnostics.Value.InspectionUnavailable",
+        "Diagnostics.Value.RobloxVerified",
+        "Diagnostics.Value.RobloxNotFound",
+        "Diagnostics.Value.ThemeLight",
+        "Diagnostics.Value.ThemeHighContrast",
+        "Diagnostics.Value.ThemeDark",
+        "Diagnostics.Value.Unknown",
+        "Diagnostics.Value.CountOrMore",
+        "Diagnostics.Value.On",
+        "Diagnostics.Value.Off"
+    ];
+    private static readonly Lazy<LocalizedTextSnapshot> EnglishLocalization =
+        new(() => CreateLocalizationSnapshot(
+            CultureInfo.GetCultureInfo(LocalizationPreference.English)));
 
     public static SupportDiagnosticsSnapshot Capture(
         SupportDiagnosticsContext context,
@@ -120,47 +169,125 @@ internal static partial class SupportDiagnosticsService
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        return SupportDiagnosticsDocument.Create(snapshot);
+        return BuildDocument(
+            snapshot,
+            EnglishLocalization.Value);
+    }
+
+    internal static SupportDiagnosticsDocument BuildDocument(
+        SupportDiagnosticsSnapshot snapshot,
+        AppLocalizationService localization)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(localization);
+
+        return BuildDocument(
+            snapshot,
+            LocalizedTextSnapshot.Capture(
+                localization,
+                ReportLocalizationKeys));
+    }
+
+    internal static LocalizedTextSnapshot CreateLocalizationSnapshot(
+        CultureInfo culture) =>
+        LocalizedTextSnapshot.FromResources(
+            culture,
+            ReportLocalizationKeys);
+
+    internal static SupportDiagnosticsDocument BuildDocument(
+        SupportDiagnosticsSnapshot snapshot,
+        LocalizedTextSnapshot localization)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(localization);
+
+        return SupportDiagnosticsDocument.Create(snapshot, localization);
     }
 
     internal static string BuildReportText(
-        SupportDiagnosticsSnapshot snapshot)
+        SupportDiagnosticsSnapshot snapshot,
+        LocalizedTextSnapshot localization)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(localization);
 
         var report = string.Join(
             "\n",
-            "SessionDock support diagnostics",
-            "Privacy-safe summary; review before sharing.",
+            localization.GetString("Diagnostics.Report.Title"),
+            localization.GetString("Diagnostics.Report.Summary"),
             string.Empty,
-            "Application",
-            $"- Version: {FormatApplicationVersion(snapshot.SessionDockVersion)}",
-            $"- Install/update mode: {(snapshot.CanSelfUpdate ? "Installed; in-app updates available" : "Portable or development copy; in-app updates unavailable")}",
+            localization.GetString("Diagnostics.Report.ApplicationHeading"),
+            localization.Format(
+                "Diagnostics.Report.ApplicationVersion",
+                FormatApplicationVersion(
+                    snapshot.SessionDockVersion,
+                    localization)),
+            localization.Format(
+                "Diagnostics.Report.InstallMode",
+                localization.GetString(
+                    snapshot.CanSelfUpdate
+                        ? "Diagnostics.Report.InstallModeInstalled"
+                        : "Diagnostics.Report.InstallModePortable")),
             string.Empty,
-            "System",
-            $"- Windows version: {FormatVersion(snapshot.OperatingSystemVersion)}",
-            $"- .NET runtime: {FormatVersion(snapshot.RuntimeVersion)}",
-            $"- OS architecture: {FormatArchitecture(snapshot.OperatingSystemArchitecture)}",
-            $"- Process architecture: {FormatArchitecture(snapshot.ProcessArchitecture)}",
+            localization.GetString("Diagnostics.Report.SystemHeading"),
+            localization.Format(
+                "Diagnostics.Report.WindowsVersion",
+                FormatVersion(snapshot.OperatingSystemVersion, localization)),
+            localization.Format(
+                "Diagnostics.Report.DotNetRuntime",
+                FormatVersion(snapshot.RuntimeVersion, localization)),
+            localization.Format(
+                "Diagnostics.Report.OsArchitecture",
+                FormatArchitecture(
+                    snapshot.OperatingSystemArchitecture,
+                    localization)),
+            localization.Format(
+                "Diagnostics.Report.ProcessArchitecture",
+                FormatArchitecture(
+                    snapshot.ProcessArchitecture,
+                    localization)),
             string.Empty,
-            "Required components",
-            $"- Microsoft Edge WebView2 Runtime: {FormatWebView2(snapshot)}",
-            $"- Roblox Player: {FormatRobloxPlayer(snapshot.RobloxPlayerState)}",
+            localization.GetString("Diagnostics.Report.ComponentsHeading"),
+            localization.Format(
+                "Diagnostics.Report.WebView2",
+                FormatWebView2(snapshot, localization)),
+            localization.Format(
+                "Diagnostics.Report.RobloxPlayer",
+                FormatRobloxPlayer(
+                    snapshot.RobloxPlayerState,
+                    localization)),
             string.Empty,
-            "Local state (counts only)",
-            $"- Saved accounts: {FormatCount(snapshot.AccountCount)}",
-            $"- Recent entries: {FormatCount(snapshot.RecentCount)}",
-            $"- Favorites: {FormatCount(snapshot.FavoriteCount)}",
-            $"- Roblox clients tracked this run: {FormatCount(snapshot.TrackedRunningClientCount)}",
+            localization.GetString("Diagnostics.Report.LocalStateHeading"),
+            localization.Format(
+                "Diagnostics.Report.SavedAccounts",
+                FormatCount(snapshot.AccountCount, localization)),
+            localization.Format(
+                "Diagnostics.Report.RecentEntries",
+                FormatCount(snapshot.RecentCount, localization)),
+            localization.Format(
+                "Diagnostics.Report.Favorites",
+                FormatCount(snapshot.FavoriteCount, localization)),
+            localization.Format(
+                "Diagnostics.Report.TrackedClients",
+                FormatCount(
+                    snapshot.TrackedRunningClientCount,
+                    localization)),
             string.Empty,
-            "Preferences",
-            $"- Theme: {FormatTheme(snapshot.Theme)}",
-            $"- Interface sounds: {(snapshot.UiSoundsEnabled ? "On" : "Off")}",
+            localization.GetString("Diagnostics.Report.PreferencesHeading"),
+            localization.Format(
+                "Diagnostics.Report.Theme",
+                FormatTheme(snapshot.Theme, localization)),
+            localization.Format(
+                "Diagnostics.Report.InterfaceSounds",
+                localization.GetString(
+                    snapshot.UiSoundsEnabled
+                        ? "Diagnostics.Value.On"
+                        : "Diagnostics.Value.Off")),
             string.Empty,
-            "Excluded by design",
-            "- User and computer names; account names, labels, IDs, and keys",
-            "- Local paths; destinations; place, server, and private-server details",
-            "- Browser profiles, cookies, tokens, URLs, configuration files, logs, and exception details",
+            localization.GetString("Diagnostics.Report.ExcludedHeading"),
+            localization.GetString("Diagnostics.Report.ExcludedIdentity"),
+            localization.GetString("Diagnostics.Report.ExcludedDestinations"),
+            localization.GetString("Diagnostics.Report.ExcludedBrowserData"),
             string.Empty);
 
         if (report.Length > MaximumReportLength)
@@ -229,53 +356,70 @@ internal static partial class SupportDiagnosticsService
         }
     }
 
-    private static string FormatWebView2(SupportDiagnosticsSnapshot snapshot)
+    private static string FormatWebView2(
+        SupportDiagnosticsSnapshot snapshot,
+        LocalizedTextSnapshot localization)
     {
         return snapshot.WebView2State switch
         {
             DiagnosticDependencyState.Available
                 when snapshot.WebView2Version is not null =>
-                $"Available (version {FormatVersion(snapshot.WebView2Version)})",
-            DiagnosticDependencyState.Available => "Available",
+                localization.Format(
+                    "Diagnostics.Value.AvailableVersion",
+                    FormatVersion(snapshot.WebView2Version, localization)),
+            DiagnosticDependencyState.Available =>
+                localization.GetString("Diagnostics.Value.Available"),
             DiagnosticDependencyState.MissingOrUnverified =>
-                "Not found",
-            _ => "Could not be inspected"
+                localization.GetString("Diagnostics.Value.NotFound"),
+            _ => localization.GetString(
+                "Diagnostics.Value.InspectionUnavailable")
         };
     }
 
     private static string FormatRobloxPlayer(
-        DiagnosticDependencyState state) =>
+        DiagnosticDependencyState state,
+        LocalizedTextSnapshot localization) =>
         state switch
         {
             DiagnosticDependencyState.Available =>
-                "Available and Windows-verified",
+                localization.GetString("Diagnostics.Value.RobloxVerified"),
             DiagnosticDependencyState.MissingOrUnverified =>
-                "Not found or could not be verified",
-            _ => "Could not be inspected"
+                localization.GetString("Diagnostics.Value.RobloxNotFound"),
+            _ => localization.GetString(
+                "Diagnostics.Value.InspectionUnavailable")
         };
 
-    private static string FormatTheme(DiagnosticTheme theme) =>
+    private static string FormatTheme(
+        DiagnosticTheme theme,
+        LocalizedTextSnapshot localization) =>
         theme switch
         {
-            DiagnosticTheme.Light => "Light",
-            DiagnosticTheme.WindowsHighContrast => "Windows high contrast",
-            _ => "Dark"
+            DiagnosticTheme.Light =>
+                localization.GetString("Diagnostics.Value.ThemeLight"),
+            DiagnosticTheme.WindowsHighContrast =>
+                localization.GetString(
+                    "Diagnostics.Value.ThemeHighContrast"),
+            _ => localization.GetString("Diagnostics.Value.ThemeDark")
         };
 
-    private static string FormatArchitecture(Architecture architecture) =>
+    private static string FormatArchitecture(
+        Architecture architecture,
+        LocalizedTextSnapshot localization) =>
         architecture switch
         {
             Architecture.X64 => "x64",
             Architecture.X86 => "x86",
             Architecture.Arm64 => "Arm64",
             Architecture.Arm => "Arm",
-            _ => "Unknown"
+            _ => localization.GetString("Diagnostics.Value.Unknown")
         };
 
-    private static string FormatVersion(Version? version)
+    private static string FormatVersion(
+        Version? version,
+        LocalizedTextSnapshot localization)
     {
         if (version is null)
-            return "Unknown";
+            return localization.GetString("Diagnostics.Value.Unknown");
 
         var fieldCount = version.Build >= 0
             ? version.Revision >= 0 ? 4 : 3
@@ -283,28 +427,33 @@ internal static partial class SupportDiagnosticsService
         return version.ToString(fieldCount);
     }
 
-    private static string FormatApplicationVersion(Version? version)
+    private static string FormatApplicationVersion(
+        Version? version,
+        LocalizedTextSnapshot localization)
     {
         if (version is null)
-            return "Unknown";
+            return localization.GetString("Diagnostics.Value.Unknown");
         if (version.Build >= 0)
             return version.ToString(3);
         return version.ToString(2);
     }
 
-    private static string FormatCount(int count)
+    private static string FormatCount(
+        int count,
+        LocalizedTextSnapshot localization)
     {
         if (count <= 0)
             return "0";
         if (count >= MaximumDisplayedCount)
         {
-            return MaximumDisplayedCount.ToString(
+            return localization.Format(
+                "Diagnostics.Value.CountOrMore",
+                MaximumDisplayedCount.ToString(
                     "N0",
-                    CultureInfo.InvariantCulture) +
-                " or more";
+                    localization.Culture));
         }
 
-        return count.ToString(CultureInfo.InvariantCulture);
+        return count.ToString(localization.Culture);
     }
 
     [GeneratedRegex(
