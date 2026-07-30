@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -474,6 +483,106 @@ test("generation rejects mismatched notes without leaving a partial output", (t)
   );
   assert.throws(() => readFileSync(path.join(root, "artifacts", "announcement", "announcement.json")));
 });
+
+test("generation rejects symlinked canonical release notes", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-symlink-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
+  mkdirSync(notesDirectory, { recursive: true });
+  const target = path.join(root, "untrusted-notes.md");
+  const notesPath = path.join(notesDirectory, "2.7.2.en-US.md");
+  writeFileSync(target, fixtureNotes());
+  try {
+    symlinkSync(target, notesPath, "file");
+  } catch (error) {
+    if (error?.code === "EPERM" || error?.code === "EACCES") {
+      t.skip("This Windows environment does not permit file symlink creation.");
+      return;
+    }
+    throw error;
+  }
+
+  assert.throws(
+    () =>
+      generateAnnouncement({
+        root,
+        version: "2.7.2",
+        sourceCommit: COMMIT,
+        notesPath: "SessionDock/ReleaseNotes/2.7.2.en-US.md",
+        outputPath: "artifacts/announcement",
+      }),
+    (error) => error instanceof ReleaseAutomationError && error.code === "INVALID_FILE",
+  );
+});
+
+test("canonical release note reads enforce the exact byte ceiling", (t) => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-bounded-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
+  mkdirSync(notesDirectory, { recursive: true });
+  const notesPath = path.join(notesDirectory, "2.7.2.en-US.md");
+  const header = Buffer.from("SessionDock 2.7.2\n\n", "utf8");
+  const exact = Buffer.concat([
+    header,
+    Buffer.alloc(64 * 1024 - header.length - 1, 0x61),
+    Buffer.from("\n", "utf8"),
+  ]);
+  assert.equal(exact.length, 64 * 1024);
+  writeFileSync(notesPath, exact);
+
+  const generate = () =>
+    generateAnnouncement({
+      root,
+      version: "2.7.2",
+      sourceCommit: COMMIT,
+      notesPath: "SessionDock/ReleaseNotes/2.7.2.en-US.md",
+      outputPath: "artifacts/announcement",
+    });
+  assert.throws(
+    generate,
+    (error) => error instanceof ReleaseAutomationError && error.code === "INVALID_NOTES",
+  );
+
+  writeFileSync(notesPath, Buffer.concat([exact, Buffer.from("x")]));
+  assert.throws(
+    generate,
+    (error) => error instanceof ReleaseAutomationError && error.code === "FILE_TOO_LARGE",
+  );
+});
+
+test(
+  "non-regular canonical release notes fail without blocking",
+  { skip: process.platform === "win32" },
+  (t) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-fifo-"));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
+    mkdirSync(notesDirectory, { recursive: true });
+    const notesPath = path.join(notesDirectory, "2.7.2.en-US.md");
+    const fifo = spawnSync("mkfifo", [notesPath], { encoding: "utf8" });
+    assert.equal(fifo.status, 0, fifo.stderr);
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        AUTOMATION_SCRIPT,
+        "generate",
+        "--version",
+        "2.7.2",
+        "--source-commit",
+        COMMIT,
+        "--notes",
+        "SessionDock/ReleaseNotes/2.7.2.en-US.md",
+        "--output",
+        "artifacts/announcement",
+      ],
+      { cwd: root, encoding: "utf8", timeout: 2_000 },
+    );
+    assert.notEqual(result.error?.code, "ETIMEDOUT");
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /INVALID_FILE/);
+  },
+);
 
 test("bundle validation fails after any canonical source is altered", (t) => {
   const fixture = createFixture(t);
