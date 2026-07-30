@@ -478,7 +478,7 @@
     <sys:String x:Key="Handle.ActionEnabled">Integratie lokaal ingeschakeld. Start HandleScope afzonderlijk en test daarna de verbinding.</sys:String>
     <sys:String x:Key="Handle.ActionInspected">Lokale installatie gecontroleerd. Bekijk de status en beschikbare acties.</sys:String>
     <sys:String x:Key="Handle.ActionRefreshed">Lokale installatie opnieuw gecontroleerd. Er is geen verbindingstest uitgevoerd.</sys:String>
-    <sys:String x:Key="Handle.ActionRefused">De actie is veilig geweigerd. Controleer de officiële installatie van HandleScope v0.1.3 en vernieuw daarna de status.</sys:String>
+    <sys:String x:Key="Handle.ActionRefused">De actie is om veiligheidsredenen geweigerd. Controleer de officiële installatie van HandleScope v0.1.3 en vernieuw daarna de status.</sys:String>
     <sys:String x:Key="Handle.ActionRepairDisabled">Integratieconfiguratie gerepareerd en uitgeschakeld. HandleScope kan actief blijven, maar SessionDock gebruikt het niet tijdens starts.</sys:String>
     <sys:String x:Key="Handle.ActionRepairEnabled">Integratieconfiguratie gerepareerd en ingeschakeld met het vaste minimale beleid. Start HandleScope afzonderlijk en test daarna de verbinding.</sys:String>
     <sys:String x:Key="Handle.ConfigurationPreservedAction">De bestaande opt-in is behouden. Bekijk de waarschuwing voordat je Repareren kiest.</sys:String>
@@ -498,7 +498,7 @@
     <sys:String x:Key="Handle.StateReadyDescription">De gecontroleerde lokale API is actief en het vaste Roblox-beleid is ingeschakeld.</sys:String>
     <sys:String x:Key="Handle.StateReadyTitle">Gereed voor SessionDock</sys:String>
     <sys:String x:Key="Handle.StateStoppedBadge">NIET VERBONDEN</sys:String>
-    <sys:String x:Key="Handle.StateStoppedDescription">De exact ondersteunde HandleScope-API v0.1.3 is geïnstalleerd. Start deze afzonderlijk met het officiële geïnstalleerde script of de optionele autostart en test daarna de verbinding.</sys:String>
+    <sys:String x:Key="Handle.StateStoppedDescription">De exact ondersteunde versie v0.1.3 van de HandleScope-API is geïnstalleerd. Start deze afzonderlijk met het officiële script uit de installatie of de optionele autostart en test daarna de verbinding.</sys:String>
     <sys:String x:Key="Handle.StateStoppedTitle">Geïnstalleerd - verbinding niet getest</sys:String>
     <sys:String x:Key="Handle.StateUnavailableBadge">NIET BESCHIKBAAR</sys:String>
     <sys:String x:Key="Handle.StateUnavailableDescription">SessionDock heeft het lokale uitvoerbare v0.1.3-bestand, de opt-in of het antwoord van de statuscontrole niet geaccepteerd. Volg buiten SessionDock de vastgezette officiële installatiehandleiding en vernieuw daarna de status.</sys:String>

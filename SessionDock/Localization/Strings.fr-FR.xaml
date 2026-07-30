@@ -296,7 +296,7 @@
     <sys:String x:Key="Handle.CheckingSetup">Vérification de l’installation locale...</sys:String>
     <sys:String x:Key="Handle.CheckingDetail">SessionDock inspecte uniquement les fichiers locaux.</sys:String>
     <sys:String x:Key="Handle.Attention">La configuration exige votre attention</sys:String>
-    <sys:String x:Key="Handle.AttentionDetail">SessionDock a conservé la configuration existante et ne l’utilisera pas. La réparation remplace uniquement l’activation explicite de SessionDock par la stratégie Roblox fixe et minimale ; elle n’installe, ne démarre ni n’arrête HandleScope.</sys:String>
+    <sys:String x:Key="Handle.AttentionDetail">SessionDock a conservé la configuration existante et ne l’utilisera pas. La réparation remplace uniquement l’activation explicite de SessionDock par la stratégie Roblox minimale prédéfinie ; elle n’installe, ne démarre ni n’arrête HandleScope.</sys:String>
     <sys:String x:Key="Handle.Controls">CONNEXION ET COMMANDES</sys:String>
     <sys:String x:Key="Handle.SecurityDetail">SessionDock ne télécharge, n’installe, ne met à jour, ne désinstalle ni ne démarre jamais HandleScope et n’élève jamais les privilèges. Ouvrez le guide officiel épinglé de configuration v0.1.3, vérifiez et installez cette version, puis démarrez son API séparément ou activez son démarrage automatique limité par utilisateur. Avant d’utiliser l’API locale, SessionDock exige la taille exacte publiée et le hachage SHA-256 de l’exécutable v0.1.3, le chemin par utilisateur attendu, ainsi que l’identité vérifiée du processus, du fichier de découverte et de la boucle locale. L’activation de l’intégration SessionDock reste un choix explicite distinct.</sys:String>
     <sys:String x:Key="Handle.SetupGuideTooltip">Ouvrir les instructions officielles épinglées d’installation et de démarrage de HandleScope v0.1.3</sys:String>
@@ -314,20 +314,20 @@
     <sys:String x:Key="Handle.RepairName">Réparer la configuration de l’intégration de HandleScope</sys:String>
     <sys:String x:Key="Handle.Repair">Réparer et activer</sys:String>
     <sys:String x:Key="Handle.TestDetail">Le test n’est disponible qu’après l’activation de l’intégration. Il contacte uniquement le point de contrôle d’intégrité vérifié sur la boucle locale et ne ferme jamais aucun handle.</sys:String>
-    <sys:String x:Key="Handle.ActionConnectionTested">Test de connexion terminé sans fermer ni inspecter aucun handle.</sys:String>
+    <sys:String x:Key="Handle.ActionConnectionTested">Test de connexion terminé sans fermer ni inspecter de handle.</sys:String>
     <sys:String x:Key="Handle.ActionDisabled">Intégration désactivée. HandleScope peut rester en cours d’exécution, mais SessionDock ne l’utilisera pas pendant les lancements.</sys:String>
     <sys:String x:Key="Handle.ActionEnabled">Intégration activée localement. Démarrez HandleScope séparément, puis testez la connexion.</sys:String>
-    <sys:String x:Key="Handle.ActionInspected">Installation locale inspectée. Consultez l’état et les actions disponibles.</sys:String>
-    <sys:String x:Key="Handle.ActionRefreshed">Installation locale actualisée. Aucun test de connexion n’a été effectué.</sys:String>
+    <sys:String x:Key="Handle.ActionInspected">Configuration locale vérifiée. Consultez l’état et les actions disponibles.</sys:String>
+    <sys:String x:Key="Handle.ActionRefreshed">Configuration locale vérifiée à nouveau. Aucun test de connexion n’a été effectué.</sys:String>
     <sys:String x:Key="Handle.ActionRefused">L’action a été refusée par mesure de sécurité. Vérifiez l’installation officielle de HandleScope v0.1.3, puis actualisez l’état.</sys:String>
     <sys:String x:Key="Handle.ActionRepairDisabled">Configuration de l’intégration réparée et désactivée. HandleScope peut rester en cours d’exécution, mais SessionDock ne l’utilisera pas pendant les lancements.</sys:String>
-    <sys:String x:Key="Handle.ActionRepairEnabled">Configuration de l’intégration réparée et activée avec la stratégie fixe et minimale. Démarrez HandleScope séparément, puis testez la connexion.</sys:String>
+    <sys:String x:Key="Handle.ActionRepairEnabled">Configuration de l’intégration réparée et activée avec la stratégie minimale prédéfinie. Démarrez HandleScope séparément, puis testez la connexion.</sys:String>
     <sys:String x:Key="Handle.ConfigurationPreservedAction">L’activation explicite existante a été conservée. Lisez l’avertissement avant de choisir Réparer.</sys:String>
     <sys:String x:Key="Handle.RepairDisable">Réparer et désactiver</sys:String>
-    <sys:String x:Key="Handle.RepairWarningDisabled">SessionDock a conservé la configuration existante. La réparation remplace uniquement l’activation explicite de SessionDock par la stratégie désactivée, fixe et minimale ; elle n’installe, ne démarre ni n’arrête HandleScope.</sys:String>
-    <sys:String x:Key="Handle.RepairWarningEnabled">SessionDock a conservé la configuration existante et ne l’utilisera pas. La réparation remplace uniquement l’activation explicite de SessionDock par la stratégie activée, fixe et minimale ; elle n’installe, ne démarre ni n’arrête HandleScope.</sys:String>
+    <sys:String x:Key="Handle.RepairWarningDisabled">SessionDock a conservé la configuration existante. La réparation remplace uniquement l’activation explicite de SessionDock par la stratégie minimale prédéfinie, avec l’intégration désactivée ; elle n’installe, ne démarre ni n’arrête HandleScope.</sys:String>
+    <sys:String x:Key="Handle.RepairWarningEnabled">SessionDock a conservé la configuration existante et ne l’utilisera pas. La réparation remplace uniquement l’activation explicite de SessionDock par la stratégie minimale prédéfinie, avec l’intégration activée ; elle n’installe, ne démarre ni n’arrête HandleScope.</sys:String>
     <sys:String x:Key="Handle.StateConfigurationBadge">ACTION REQUISE</sys:String>
-    <sys:String x:Key="Handle.StateConfigurationDescription">L’activation explicite locale n’est pas valide ou ne correspond pas à la stratégie fixe de SessionDock ; l’intégration reste donc indisponible.</sys:String>
+    <sys:String x:Key="Handle.StateConfigurationDescription">L’activation explicite locale n’est pas valide ou ne correspond pas à la stratégie prédéfinie de SessionDock ; l’intégration reste donc indisponible.</sys:String>
     <sys:String x:Key="Handle.StateConfigurationTitle">Configuration conservée</sys:String>
     <sys:String x:Key="Handle.StateDisabledBadge">DÉSACTIVÉE</sys:String>
     <sys:String x:Key="Handle.StateDisabledDescription">Une installation compatible de HandleScope est présente. SessionDock n’a pas contacté l’API ; activez l’intégration avant de la tester.</sys:String>
@@ -336,10 +336,10 @@
     <sys:String x:Key="Handle.StateNotInstalledDescription">Ouvrez ci-dessous le guide officiel épinglé de configuration v0.1.3. Vérifiez, installez et démarrez HandleScope séparément, puis revenez ici pour actualiser et tester la connexion.</sys:String>
     <sys:String x:Key="Handle.StateNotInstalledTitle">HandleScope n’est pas installé</sys:String>
     <sys:String x:Key="Handle.StateReadyBadge">PRÊT</sys:String>
-    <sys:String x:Key="Handle.StateReadyDescription">L’API vérifiée sur la boucle locale fonctionne et la stratégie Roblox fixe est activée.</sys:String>
+    <sys:String x:Key="Handle.StateReadyDescription">L’API vérifiée sur la boucle locale fonctionne et la stratégie Roblox prédéfinie est activée.</sys:String>
     <sys:String x:Key="Handle.StateReadyTitle">Prêt pour SessionDock</sys:String>
     <sys:String x:Key="Handle.StateStoppedBadge">NON CONNECTÉE</sys:String>
-    <sys:String x:Key="Handle.StateStoppedDescription">L’API HandleScope v0.1.3 exactement prise en charge est installée. Démarrez-la séparément avec son script installé officiel ou son démarrage automatique facultatif, puis testez la connexion.</sys:String>
+    <sys:String x:Key="Handle.StateStoppedDescription">La version exacte prise en charge de l’API HandleScope, v0.1.3, est installée. Démarrez-la séparément à l’aide du script officiel fourni avec l’installation ou du démarrage automatique facultatif, puis testez la connexion.</sys:String>
     <sys:String x:Key="Handle.StateStoppedTitle">Installé — connexion non testée</sys:String>
     <sys:String x:Key="Handle.StateUnavailableBadge">INDISPONIBLE</sys:String>
     <sys:String x:Key="Handle.StateUnavailableDescription">SessionDock n’a pas accepté l’exécutable v0.1.3 local, l’activation explicite ou la réponse du contrôle d’intégrité. Suivez le guide officiel épinglé hors de SessionDock, puis actualisez.</sys:String>
@@ -656,7 +656,7 @@
     <sys:String x:Key="Main.AutoJoinNotJoinableTitle">{0} ne dispose d’aucun serveur actif utilisable</sys:String>
     <sys:String x:Key="Main.AutoJoinNotJoinableDetail">Les informations de confidentialité, d’expérience ou de serveur sont peut-être indisponibles. SessionDock effectuera une nouvelle vérification dans environ {0}.</sys:String>
     <sys:String x:Key="Main.AutoJoinRateLimitedTitle">Roblox a demandé à SessionDock de ralentir les vérifications</sys:String>
-    <sys:String x:Key="Main.AutoJoinRateLimitedDetail">La surveillance reste active et réessaiera dans environ {0}. Aucun lancement n’a été tenté.</sys:String>
+    <sys:String x:Key="Main.AutoJoinRateLimitedDetail">La surveillance reste active. SessionDock réessaiera dans environ {0}. Aucun lancement n’a été tenté.</sys:String>
     <sys:String x:Key="Main.AutoJoinPresenceCheckFailedTitle">Roblox n’a pas pu vérifier {0}</sys:String>
     <sys:String x:Key="Main.AutoJoinPresenceRetryDetail">La surveillance reste active. SessionDock réessaiera dans environ {0} ; aucun lancement n’a été tenté.</sys:String>
     <sys:String x:Key="Main.AutoJoinExpiredTitle">Surveillance de connexion automatique expirée</sys:String>
@@ -704,7 +704,7 @@
     <sys:String x:Key="Main.BatchClosedClientTitleMany">{0} instances de Roblox Player fermées</sys:String>
     <sys:String x:Key="Main.BatchCleanupSettlingDetail">SessionDock laisse le nettoyage de Roblox se stabiliser tout en préparant le premier lancement en attente…</sys:String>
     <sys:String x:Key="Main.BatchPosition">{0} sur {1}</sys:String>
-    <sys:String x:Key="Main.BatchAccountStartedTitle">Lot {0} sur {1} : @{2} a démarré</sys:String>
+    <sys:String x:Key="Main.BatchAccountStartedTitle">Lot {0} sur {1} : Roblox démarré avec @{2}</sys:String>
     <sys:String x:Key="Main.BatchWaitDetailSecondOne">Le compte suivant est en attente. Pause de 1 seconde pour laisser Roblox et les hooks locaux se stabiliser…</sys:String>
     <sys:String x:Key="Main.BatchWaitDetailSecondMany">Le compte suivant est en attente. Pause de {0} secondes pour laisser Roblox et les hooks locaux se stabiliser…</sys:String>
     <sys:String x:Key="Main.BatchWaitBadge">ATTENTE DU LOT</sys:String>
@@ -756,7 +756,7 @@
     <sys:String x:Key="Main.BatchLaunchingAccountTitle">Lot {0} : lancement de @{1}</sys:String>
     <sys:String x:Key="Main.BatchLaunchingDetail">Transmission directe de ce nouveau ticket de compte à Roblox Player…</sys:String>
     <sys:String x:Key="Main.BatchLaunchBadge">LANCEMENT DU LOT</sys:String>
-    <sys:String x:Key="Main.BatchHookTitle">Lot {0} : @{1} a démarré</sys:String>
+    <sys:String x:Key="Main.BatchHookTitle">Lot {0} : Roblox démarré avec @{1}</sys:String>
     <sys:String x:Key="Main.BatchHookDetail">Attente de la fin des hooks de lancement locaux facultatifs pendant la préparation du compte suivant…</sys:String>
     <sys:String x:Key="Main.BatchHookBadge">HOOK DU LOT</sys:String>
 
@@ -1052,10 +1052,10 @@
     <sys:String x:Key="UpdateFailure.Busy.Title">Les fichiers de mise à jour sont occupés</sys:String>
     <sys:String x:Key="UpdateFailure.Busy.Detail">Une autre opération de mise à jour utilise les fichiers de mise à jour de SessionDock. Fermez toutes les fenêtres et tous les programmes d’installation de SessionDock ou Roblox One, patientez quelques secondes, rouvrez l’application, puis réessayez. La version installée est restée inchangée.</sys:String>
     <sys:String x:Key="UpdateFailure.DownloadRejected.Title">Mise à jour téléchargée refusée</sys:String>
-    <sys:String x:Key="UpdateFailure.Checksum.Detail">Le paquet téléchargé ne correspondait pas au flux de versions et n’a pas été installé. Réessayez ; si le problème persiste, ne modifiez aucun des deux répertoires de données locales et téléchargez le programme d’installation et la somme de contrôle actuels depuis la page de version GitHub canonique.</sys:String>
-    <sys:String x:Key="UpdateFailure.InvalidData.Detail">Le paquet téléchargé n’a pas satisfait aux contrôles d’intégrité et n’a pas été installé. Réessayez ; si le problème persiste, ne modifiez aucun des deux répertoires de données locales et téléchargez le programme d’installation et la somme de contrôle actuels depuis la page de version GitHub canonique.</sys:String>
+    <sys:String x:Key="UpdateFailure.Checksum.Detail">Le paquet téléchargé ne correspondait pas au flux de versions et n’a pas été installé. Réessayez ; si le problème persiste, ne modifiez aucun des deux répertoires de données locales et téléchargez le programme d’installation et la somme de contrôle actuels depuis la page officielle de la version sur GitHub.</sys:String>
+    <sys:String x:Key="UpdateFailure.InvalidData.Detail">Le paquet téléchargé n’a pas satisfait aux contrôles d’intégrité et n’a pas été installé. Réessayez ; si le problème persiste, ne modifiez aucun des deux répertoires de données locales et téléchargez le programme d’installation et la somme de contrôle actuels depuis la page officielle de la version sur GitHub.</sys:String>
     <sys:String x:Key="UpdateFailure.SetupRequired.Title">Programme d’installation requis</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Detail">Cette copie n’est plus reconnue comme une application installée. Ne modifiez pas les répertoires de données locales SessionDock et RobloxOne, puis exécutez le programme d’installation SessionDock actuel et vérifié depuis la page de version GitHub canonique. Ne désinstallez pas l’application et ne supprimez pas les données locales au préalable.</sys:String>
+    <sys:String x:Key="UpdateFailure.SetupRequired.Detail">Cette copie n’est plus reconnue comme une application installée. Ne modifiez pas les répertoires de données locales SessionDock et RobloxOne, puis exécutez le programme d’installation SessionDock actuel et vérifié depuis la page officielle de la version sur GitHub. Ne désinstallez pas l’application et ne supprimez pas les données locales au préalable.</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Title">GitHub n’a pas répondu à temps</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Detail">La demande de mise à jour a expiré. Vérifiez la connexion Internet, puis réessayez. La version installée est restée inchangée.</sys:String>
     <sys:String x:Key="UpdateFailure.Cancelled.Detail">La demande de mise à jour s’est terminée avant la réponse de GitHub. Vérifiez la connexion Internet, puis réessayez. La version installée est restée inchangée.</sys:String>
@@ -1064,11 +1064,11 @@
     <sys:String x:Key="UpdateFailure.Unreachable.Title">Impossible de joindre GitHub</sys:String>
     <sys:String x:Key="UpdateFailure.Unreachable.Detail">SessionDock n’a pas pu contacter le flux de versions GitHub officiel. Vérifiez la connexion Internet, puis réessayez. La version installée est restée inchangée.</sys:String>
     <sys:String x:Key="UpdateFailure.AccessDenied.Title">Accès à la mise à jour refusé</sys:String>
-    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock n’a pas pu écrire ses fichiers de mise à jour. Rouvrez-le avec le même utilisateur Windows que celui qui l’a installé, vérifiez si un logiciel de sécurité le bloque, puis réessayez.</sys:String>
+    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock n’a pas pu écrire ses fichiers de mise à jour. Rouvrez-le sous le même compte utilisateur Windows que celui ayant servi à l’installation, vérifiez si un logiciel de sécurité le bloque, puis réessayez.</sys:String>
     <sys:String x:Key="UpdateFailure.FilesUnavailable.Title">Fichiers de mise à jour indisponibles</sys:String>
     <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">Un fichier ou dossier de mise à jour est indisponible ou verrouillé. Fermez toutes les fenêtres et tous les programmes d’installation de SessionDock ou Roblox One, rouvrez l’application, puis réessayez. La version installée est restée inchangée.</sys:String>
     <sys:String x:Key="UpdateFailure.UpdaterStart.Title">Impossible de démarrer le programme de mise à jour</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows n’a pas pu démarrer le programme de mise à jour de SessionDock. Fermez l’application, ne modifiez aucun des deux répertoires de données locales, puis exécutez le programme d’installation SessionDock actuel et vérifié depuis la page de version GitHub canonique. Ne désinstallez pas l’application et ne supprimez pas les données locales au préalable.</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows n’a pas pu démarrer le programme de mise à jour de SessionDock. Fermez l’application, ne modifiez aucun des deux répertoires de données locales, puis exécutez le programme d’installation SessionDock actuel et vérifié depuis la page officielle de la version sur GitHub. Ne désinstallez pas l’application et ne supprimez pas les données locales au préalable.</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Rejected">MISE À JOUR REFUSÉE</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Busy">FICHIERS OCCUPÉS</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.SetupRequired">INSTALLATION REQUISE</sys:String>
@@ -1121,7 +1121,7 @@
 
     <sys:String x:Key="Metadata.Preview.Title">Aperçu de l’importation des métadonnées SessionDock</sys:String>
     <sys:String x:Key="Metadata.Preview.Format">Format : {0} version {1}</sys:String>
-    <sys:String x:Key="Metadata.Preview.MatchedAccounts">Comptes existants correspondants : {0}</sys:String>
+    <sys:String x:Key="Metadata.Preview.MatchedAccounts">Comptes existants mis en correspondance : {0}</sys:String>
     <sys:String x:Key="Metadata.Preview.AppearanceUpdates">Mises à jour de l’apparence des comptes : {0}</sys:String>
     <sys:String x:Key="Metadata.Preview.AccountOrder">Ordre des comptes : {0}</sys:String>
     <sys:String x:Key="Metadata.Preview.OrderWillUpdate">sera mis à jour</sys:String>
