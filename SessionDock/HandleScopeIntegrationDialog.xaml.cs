@@ -15,6 +15,7 @@ public partial class HandleScopeIntegrationDialog : Window
         "https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md";
 
     private readonly HandleScopeIntegrationService _integrationService = new();
+    private readonly HandleScopeReleaseInstaller _releaseInstaller = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly AccessibilityLiveRegion _stateLiveRegion;
     private readonly AccessibilityLiveRegion _actionStatusLiveRegion;
@@ -23,6 +24,7 @@ public partial class HandleScopeIntegrationDialog : Window
     private bool _canRepairConfiguration;
     private bool _repairEnablesIntegration = true;
     private bool _isBusy;
+    private bool _installCommitInProgress;
     private bool _isClosed;
 
     public HandleScopeIntegrationDialog()
@@ -33,6 +35,7 @@ public partial class HandleScopeIntegrationDialog : Window
             new AccessibilityLiveRegion(ActionStatusText);
         WindowLayoutService.FitToWorkArea(this);
         Loaded += HandleScopeIntegrationDialog_Loaded;
+        Closing += HandleScopeIntegrationDialog_Closing;
         Closed += HandleScopeIntegrationDialog_Closed;
     }
 
@@ -96,6 +99,108 @@ public partial class HandleScopeIntegrationDialog : Window
                 cancellationToken),
             Localize("Handle.ActionRepairDisabled"),
             repairEnablesIntegration: false);
+    }
+
+    private async void InstallHandleScopeButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_isBusy)
+            return;
+
+        var confirmation = MessageBox.Show(
+            this,
+            Localize("Handle.InstallConfirm"),
+            Localize("Handle.InstallConfirmTitle"),
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+            return;
+
+        SetBusy(true);
+        SetActionStatus(Localize("Handle.ProgressPreparing"));
+        try
+        {
+            var progress = new ImmediateProgress<HandleScopeReleaseInstallProgress>(
+                UpdateInstallProgress);
+            var installed = await _releaseInstaller.InstallPinnedAsync(
+                progress,
+                _lifetimeCancellation.Token);
+            if (_isClosed)
+                return;
+
+            var result = await _integrationService.InspectAsync(
+                _lifetimeCancellation.Token);
+            _state = result.State;
+            _canRepairConfiguration = result.CanRepairConfiguration;
+            RenderState();
+            SetActionStatus(Localize(
+                "Handle.InstallSucceeded",
+                installed.Version));
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_isClosed)
+                SetActionStatus(Localize("Handle.InstallCanceled"));
+        }
+        catch (ObjectDisposedException) when (
+            _lifetimeCancellation.IsCancellationRequested)
+        {
+            // Closing the dialog cancels and disposes an in-flight download.
+        }
+        catch (HandleScopeInstallException exception)
+        {
+            Trace.WriteLine(
+                $"HandleScope installation failed safely: {exception.GetType().Name}.");
+            SetActionStatus(
+                Localize("Handle.InstallFailed", OfficialSetupUrl),
+                isError: true);
+        }
+        finally
+        {
+            _installCommitInProgress = false;
+            if (!_isClosed)
+                SetBusy(false);
+        }
+    }
+
+    private void UpdateInstallProgress(HandleScopeReleaseInstallProgress progress)
+    {
+        if (_isClosed)
+            return;
+
+        var visibleStatus = progress.Stage switch
+        {
+            HandleScopeReleaseInstallStage.CheckingRelease =>
+                Localize("Handle.ProgressPreparing"),
+            HandleScopeReleaseInstallStage.DownloadingPackage =>
+                Localize(
+                    "Handle.ProgressDownloading",
+                    progress.Version,
+                    progress.Percentage ?? 0),
+            HandleScopeReleaseInstallStage.VerifyingPackage =>
+                Localize("Handle.ProgressVerifying", progress.Version),
+            HandleScopeReleaseInstallStage.InstallingPackage =>
+                MarkInstallCommitStarted(progress.Version),
+            _ => throw new InvalidOperationException(
+                "Unexpected HandleScope installation stage.")
+        };
+        var accessibleStatus = progress.Stage ==
+            HandleScopeReleaseInstallStage.DownloadingPackage
+                ? Localize(
+                    "Handle.ProgressDownloadingAccessible",
+                    progress.Version)
+                : visibleStatus;
+        SetActionStatus(
+            visibleStatus,
+            accessibleAnnouncement: accessibleStatus);
+    }
+
+    private string MarkInstallCommitStarted(string? version)
+    {
+        _installCommitInProgress = true;
+        return Localize("Handle.ProgressInstalling", version);
     }
 
     private void OpenHandleScopeSetupButton_Click(
@@ -311,6 +416,7 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private void UpdateActionAvailability()
     {
+        InstallHandleScopeButton.IsEnabled = !_isBusy;
         OpenHandleScopeSetupButton.IsEnabled = !_isBusy;
         RefreshButton.IsEnabled = !_isBusy;
         EnableButton.IsEnabled = !_isBusy && _state is
@@ -331,10 +437,27 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private void CloseButton_Click(object sender, RoutedEventArgs e) => Close();
 
+    private void HandleScopeIntegrationDialog_Closing(
+        object? sender,
+        CancelEventArgs e)
+    {
+        if (!_installCommitInProgress)
+            return;
+
+        e.Cancel = true;
+        MessageBox.Show(
+            this,
+            Localize("Handle.InstallCommitInProgress"),
+            Localize("Handle.InstallCommitInProgressTitle"),
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
     private void HandleScopeIntegrationDialog_Closed(object? sender, EventArgs e)
     {
         _isClosed = true;
         _lifetimeCancellation.Cancel();
+        _releaseInstaller.Dispose();
         _integrationService.Dispose();
         _lifetimeCancellation.Dispose();
     }
@@ -346,5 +469,17 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private string Localize(string key, params object?[] arguments) =>
         Localization.Format(key, arguments);
+
+    private sealed class ImmediateProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _report;
+
+        internal ImmediateProgress(Action<T> report)
+        {
+            _report = report ?? throw new ArgumentNullException(nameof(report));
+        }
+
+        public void Report(T value) => _report(value);
+    }
 
 }

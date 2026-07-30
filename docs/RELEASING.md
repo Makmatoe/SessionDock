@@ -54,11 +54,11 @@ releases.
 
 ## HandleScope compatibility pin
 
-SessionDock does not bundle, download, install, update, uninstall, elevate, or
-start HandleScope. It never invokes HandleScope PowerShell lifecycle scripts or
-uses `-ExecutionPolicy Bypass`. The panel opens only the official installation
-guide pinned to immutable tag `v0.1.3`; users perform installation, startup, and
-optional autostart separately.
+SessionDock does not bundle or elevate HandleScope. Its confirmed install action
+downloads and invokes only the immutable HandleScope v0.1.3 standard-user
+installer. It never uses `-ExecutionPolicy Bypass`, requests elevation, permits
+a downgrade, or automatically enables the SessionDock integration. The pinned
+official installation guide remains available for manual setup.
 
 The supported runtime is HandleScope v0.1.3 from commit
 `952c16ee800a936d6d6fb48d78f8fbfe2483cee0`. Its published
@@ -69,11 +69,17 @@ path or process can be trusted. Existing path, reparse-point, standard-user,
 current-session, PID, discovery-time, strict loopback, rotating-token, and
 health-policy checks remain mandatory.
 
-Do not change the pinned setup URL, version, size, or digest until a newer
-immutable HandleScope release and its integration contract have been reviewed
-together. A future change must retain the manual lifecycle boundary, update the
-five localized resources and current release notes, and extend the focused
-boundary/runtime tests.
+The managed installer additionally pins `HandleScope-0.1.3-win-x64.zip` to
+100,839,933 bytes and SHA-256
+`64934117a3dc7b9aa52a0d3ef34df9627e898e045895a3bd3817f46da0531aee`,
+and `SHA256SUMS.txt` to 198 bytes and SHA-256
+`f6dec9303d3520d69f4b19123818aee8e502b2379c5e225035eb4d65d5549631`.
+
+Do not change the pinned setup URL, version, asset sizes, or digests until a
+newer immutable HandleScope release and its integration contract have been
+reviewed together. A future change must retain the explicit confirmation,
+standard-user/no-bypass boundary, update all five localized resources and
+current release notes, and extend the focused installer/runtime tests.
 
 ## Prepare and validate
 

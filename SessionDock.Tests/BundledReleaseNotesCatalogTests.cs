@@ -116,7 +116,8 @@ public sealed class BundledReleaseNotesCatalogTests
     [Fact]
     public void LoadForCurrentAssembly_ContainsReadableCurrentAndPreviousNotes()
     {
-        var assemblyVersion = typeof(MainWindow).Assembly.GetName().Version!;
+        var assembly = typeof(MainWindow).Assembly;
+        var assemblyVersion = assembly.GetName().Version!;
         var expectedCurrent = new Version(
             assemblyVersion.Major,
             assemblyVersion.Minor,
@@ -142,8 +143,21 @@ public sealed class BundledReleaseNotesCatalogTests
             Assert.DoesNotContain("**", notes.Current.DisplayText);
             Assert.DoesNotContain("# SessionDock", notes.Previous.DisplayText);
             Assert.DoesNotContain("**", notes.Previous.DisplayText);
+            var localizedPreviousResource =
+                $"SessionDock.Embedded.ReleaseNotes.{notes.Previous.Version.ToString(3)}.{cultureName}.md";
+            var previousHasRequestedCulture = assembly
+                .GetManifestResourceNames()
+                .Contains(
+                    localizedPreviousResource,
+                    StringComparer.Ordinal);
             Assert.Equal(
-                cultureName != LocalizationPreference.English,
+                previousHasRequestedCulture
+                    ? cultureName
+                    : LocalizationPreference.English,
+                notes.Previous.CultureName);
+            Assert.Equal(
+                !previousHasRequestedCulture &&
+                    cultureName != LocalizationPreference.English,
                 notes.Previous.IsEnglishFallback);
         }
     }

@@ -130,6 +130,17 @@
                                    Margin="0,7,0,0" TextWrapping="Wrap"/>
 
                         <WrapPanel Margin="0,15,0,0">
+                            <Button x:Name="InstallHandleScopeButton"
+                                    Click="InstallHandleScopeButton_Click"
+                                    Padding="14,10" Margin="0,0,8,8"
+                                    ToolTip="{DynamicResource Handle.InstallTooltip}"
+                                    AutomationProperties.Name="{DynamicResource Handle.InstallName}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Style="{StaticResource ButtonIcon}"
+                                          Data="{StaticResource IconUpdate}" Margin="0,0,7,0"/>
+                                    <TextBlock Text="{DynamicResource Handle.Install}"/>
+                                </StackPanel>
+                            </Button>
                             <Button x:Name="OpenHandleScopeSetupButton"
                                     Click="OpenHandleScopeSetupButton_Click"
                                     Background="{DynamicResource ControlSurfaceBrush}"

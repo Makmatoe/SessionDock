@@ -153,13 +153,18 @@ load subresources chosen by Roblox. The Player executable is location-checked
 and Windows-signature-checked before launch.
 Optional post-launch integrations accept loopback addresses only and are off
 until the user configures them. HandleScope is optional, off by default, and
-never bundled, downloaded, installed, updated, uninstalled, elevated, or
-started by SessionDock. The integration panel opens only the pinned
-[official HandleScope v0.1.3 setup guide](https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md).
-Users verify, install, and start HandleScope separately and may explicitly
-choose its limited per-user autostart. SessionDock accepts only the exact
-published v0.1.3 API executable at its expected per-user path: 50,275,056 bytes
-with SHA-256
+never bundled or elevated by SessionDock. The explicit **Install HandleScope
+v0.1.3** action downloads only the pinned Windows x64 package and matching
+checksum from the immutable canonical release. SessionDock verifies the fixed
+asset sizes and SHA-256 hashes, same-release checksum, safe ZIP layout, and
+every internal file before running HandleScope's standard-user installer. It
+does not bypass PowerShell execution policy. The installer starts the API and
+enables HandleScope's limited per-user autostart; enabling the SessionDock
+integration remains a separate explicit action. The pinned
+[official HandleScope v0.1.3 setup guide](https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md)
+remains available for review and manual setup. SessionDock accepts only the
+exact published v0.1.3 API executable at its expected per-user path: 50,275,056
+bytes with SHA-256
 `ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
 
 To use the optional connector, select **Integrations** in the SessionDock
@@ -177,13 +182,13 @@ keeps the link in memory only as needed to forward, review, and confirm it;
 private codes are hidden from the preview and not persisted. This is not a
 boundary against another process already running as the same Windows user.
 
-The HandleScope panel can inspect that pinned local runtime, enable or disable
-the fixed per-user Roblox policy, and test an already-running API's loopback
-health endpoint. It never starts the API or changes HandleScope's autostart.
-Testing never enumerates or closes a handle. SessionDock stores only the
-minimal enabled/disabled opt-in in v2.7.1; it ignores and leaves unchanged any
-public HandleScope verification metadata written by v2.7.0. Its narrow Roblox
-handle policy remains compiled into the app. Manual setup and source opt-in details are documented under
+The HandleScope panel can install that pinned runtime after confirmation,
+inspect it, enable or disable the fixed per-user Roblox policy, and test the
+checked loopback API. Installation starts HandleScope and enables its limited
+per-user autostart, but does not enable the SessionDock integration. Testing
+never enumerates or closes a handle. SessionDock stores only the minimal
+enabled/disabled opt-in; its narrow Roblox handle policy remains compiled into
+the app. Verification and manual setup details are documented under
 [SystemProcesses](SessionDock/SystemProcesses/README.md).
 
 The embedded sign-in view intentionally does not load extensions or password
