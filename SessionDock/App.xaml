@@ -378,6 +378,7 @@
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="MaxDropDownHeight" Value="280"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusVisual}"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
