@@ -16,6 +16,9 @@ Safety/privacy notes:
 ## Validation
 
 - [ ] `./scripts/Build.ps1 -Configuration Release -Runtime win-x64 -CI`
+- [ ] If `discord-release-bot` changed: `npm ci`, `npm test`, and
+      `npm run check` pass from that directory without real Discord traffic;
+      `npm audit --omit=dev --audit-level=moderate` reports no findings.
 - [ ] Relevant manual behavior was exercised on Windows x64.
 - [ ] Tests and documentation were added or updated where needed.
 

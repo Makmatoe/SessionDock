@@ -12,7 +12,7 @@ public sealed class InstallationDocumentationTests
         "SessionDock-win-x64-Setup.exe";
 
     [Fact]
-    public void EveryReadmeOffersTheExpectedOneClickSetupDownload()
+    public void EveryProductReadmeOffersTheExpectedOneClickSetupDownload()
     {
         var root = FindRepositoryRoot();
         var readmes = Directory.EnumerateFiles(
@@ -97,6 +97,10 @@ public sealed class InstallationDocumentationTests
             "artifacts",
             StringComparison.OrdinalIgnoreCase) || segment.Equals(
             "bin",
+            StringComparison.OrdinalIgnoreCase) || segment.Equals(
+            "discord-release-bot",
+            StringComparison.OrdinalIgnoreCase) || segment.Equals(
+            "node_modules",
             StringComparison.OrdinalIgnoreCase) || segment.Equals(
             "obj",
             StringComparison.OrdinalIgnoreCase));

@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: sessiondock-release-publication
+  queue: max
   cancel-in-progress: false
 
 jobs:
@@ -26,6 +27,12 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      - name: Install the pinned Node.js runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
 
       - name: Fetch the protected main branch
         shell: pwsh
@@ -84,6 +91,7 @@ jobs:
         shell: pwsh
         env:
           RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
         run: |
           [xml] $project = Get-Content SessionDock/SessionDock.csproj -Raw
           $version = @($project.SelectNodes('/Project/PropertyGroup/Version') | ForEach-Object { $_.InnerText } | Where-Object { $_ })
@@ -102,6 +110,22 @@ jobs:
           Copy-Item scripts/Sign-ReleaseDescriptorDigest.ps1 artifacts/release-input/scripts/Sign-ReleaseDescriptorDigest.ps1
           Copy-Item scripts/Verify-Assets.ps1 artifacts/release-input/scripts/Verify-Assets.ps1
           Copy-Item scripts/Verify-ReleaseLicense.ps1 artifacts/release-input/scripts/Verify-ReleaseLicense.ps1
+          Copy-Item discord-release-bot/src/release-automation.js artifacts/release-input/release-automation.mjs
+
+          $announcementArguments = @(
+            'generate'
+            '--version', $version
+            '--source-commit', $env:SOURCE_COMMIT
+            '--notes', "SessionDock/ReleaseNotes/$version.en-US.md"
+            '--output', 'artifacts/release-input/discord-announcement'
+          )
+          $reviewedImageDirectory = "docs/images/sessiondock-v$version"
+          if (Test-Path -LiteralPath "$reviewedImageDirectory/discord.json" -PathType Leaf) {
+            $announcementArguments += @('--images', $reviewedImageDirectory)
+          }
+          & node ./artifacts/release-input/release-automation.mjs @announcementArguments
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to generate the immutable Discord announcement.' }
+
           "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
@@ -113,11 +137,63 @@ jobs:
           if-no-files-found: error
           include-hidden-files: true
           compression-level: 0
-          retention-days: 1
+          retention-days: 7
+
+  preflight-discord-announcement:
+    name: Validate Discord announcement readiness
+    needs: validate-and-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-announcement
+    permissions: {}
+    steps:
+      - name: Download immutable release input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-input-${{ github.sha }}
+          path: release-input
+
+      - name: Install the pinned Node.js runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Verify the deterministic announcement artifact
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: >-
+          node ./release-input/release-automation.mjs verify
+          --artifact-dir release-input/discord-announcement
+          --expected-tag "$RELEASE_TAG"
+          --expected-ref "$SOURCE_REF"
+          --expected-commit "$SOURCE_COMMIT"
+
+      - name: Read-only preflight of Bota and the release channel
+        shell: bash
+        env:
+          DISCORD_RELEASE_BOT_ID: ${{ vars.DISCORD_RELEASE_BOT_ID }}
+          DISCORD_RELEASE_BOT_TOKEN: ${{ secrets.DISCORD_RELEASE_BOT_TOKEN }}
+          DISCORD_RELEASE_CHANNEL_ID: ${{ vars.DISCORD_RELEASE_CHANNEL_ID }}
+          DISCORD_RELEASE_ROLE_ID: ${{ vars.DISCORD_RELEASE_ROLE_ID }}
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: >-
+          node ./release-input/release-automation.mjs preflight
+          --artifact-dir release-input/discord-announcement
+          --expected-tag "$RELEASE_TAG"
+          --expected-ref "$SOURCE_REF"
+          --expected-commit "$SOURCE_COMMIT"
 
   sign-attest-and-stage:
     name: Sign, attest, and stage verified draft
-    needs: validate-and-build
+    needs:
+      - validate-and-build
+      - preflight-discord-announcement
     runs-on: windows-latest
     timeout-minutes: 30
     environment: release
@@ -297,11 +373,13 @@ jobs:
     name: Approve and publish verified release
     needs:
       - validate-and-build
+      - preflight-discord-announcement
       - sign-attest-and-stage
     runs-on: windows-latest
     timeout-minutes: 15
     environment: release-publication
     permissions:
+      actions: read
       contents: write
       attestations: read
     steps:
@@ -312,6 +390,7 @@ jobs:
           path: release-verification
 
       - name: Re-download and verify the approved draft
+        id: verify-release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -320,6 +399,7 @@ jobs:
           EXPECTED_SIGNER_WORKFLOW: Makmatoe/SessionDock/.github/workflows/release.yml
           EXPECTED_SOURCE_REF: ${{ github.ref }}
           EXPECTED_SOURCE_DIGEST: ${{ github.sha }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           if ($env:GITHUB_REPOSITORY -cne 'Makmatoe/SessionDock') {
             throw 'This workflow may publish only from Makmatoe/SessionDock.'
@@ -329,13 +409,32 @@ jobs:
             throw 'The approved release provenance does not identify the expected tag commit.'
           }
 
-          $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft,tagName,name
+          $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json body,isDraft,isPrerelease,tagName,name
           if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the approved draft release.' }
           $release = $releaseJson | ConvertFrom-Json
-          if (-not $release.isDraft -or
-              $release.tagName -cne $env:RELEASE_TAG -or
+          if ($release.tagName -cne $env:RELEASE_TAG -or
               $release.name -cne "SessionDock $env:RELEASE_VERSION") {
-            throw 'The approved release is not the expected verified draft.'
+            throw 'The approved release does not have the expected immutable identity.'
+          }
+          if ($release.isPrerelease) {
+            throw 'The approved release unexpectedly became a prerelease.'
+          }
+          function ConvertTo-NormalizedReleaseBody([string] $value) {
+            if ($null -eq $value) { return '' }
+            return (($value -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd("`n")
+          }
+          $expectedBody = ConvertTo-NormalizedReleaseBody `
+            (Get-Content -LiteralPath release-verification/notes.md -Raw)
+          $actualBody = ConvertTo-NormalizedReleaseBody $release.body
+          if ($actualBody -cne $expectedBody) {
+            throw 'The approved release notes differ from the immutable release notes.'
+          }
+          [int] $runAttempt = 0
+          if (-not [int]::TryParse($env:RELEASE_RUN_ATTEMPT, [ref] $runAttempt) -or $runAttempt -lt 1) {
+            throw 'The GitHub workflow run attempt is invalid.'
+          }
+          if (-not $release.isDraft -and $runAttempt -eq 1) {
+            throw 'The release became public before the first guarded publication attempt.'
           }
 
           New-Item -ItemType Directory approved-assets -Force | Out-Null
@@ -396,13 +495,281 @@ jobs:
             }
           }
 
+          $releaseState = if ($release.isDraft) { 'draft' } else { 'public' }
+          "state=$releaseState" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Create guarded publication intent
+        if: steps.verify-release.outputs.state == 'draft'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_SOURCE_REF: ${{ github.ref }}
+          EXPECTED_SOURCE_DIGEST: ${{ github.sha }}
+        run: |
+          [int] $runAttempt = 0
+          if (-not [int]::TryParse($env:RELEASE_RUN_ATTEMPT, [ref] $runAttempt) -or $runAttempt -lt 1) {
+            throw 'The GitHub workflow run attempt is invalid.'
+          }
+          $notesBytes = [IO.File]::ReadAllBytes(
+            (Resolve-Path -LiteralPath release-verification/notes.md))
+          $notesSha256 = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData($notesBytes)).ToLowerInvariant()
+          $intent = [ordered]@{
+            schema = 'sessiondock-release-publication-intent/v1'
+            repository = $env:GITHUB_REPOSITORY
+            workflowRunId = $env:GITHUB_RUN_ID
+            runAttempt = $runAttempt
+            releaseTag = $env:RELEASE_TAG
+            releaseVersion = $env:RELEASE_VERSION
+            sourceRef = $env:EXPECTED_SOURCE_REF
+            sourceCommit = $env:EXPECTED_SOURCE_DIGEST
+            notesSha256 = $notesSha256
+          }
+          New-Item -ItemType Directory guarded-publication-intent -Force | Out-Null
+          $intent | ConvertTo-Json | Set-Content `
+            -LiteralPath guarded-publication-intent/intent.json `
+            -Encoding utf8 `
+            -NoNewline
+
+      - name: Preserve the guarded publication intent
+        if: steps.verify-release.outputs.state == 'draft'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-publication-intent-${{ github.sha }}-${{ github.run_attempt }}
+          path: guarded-publication-intent/intent.json
+          if-no-files-found: error
+          include-hidden-files: false
+          compression-level: 0
+          overwrite: false
+          retention-days: 30
+
+      - name: Verify an earlier guarded publication intent
+        id: prior-publication-intent
+        if: steps.verify-release.outputs.state == 'public'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          EXPECTED_SOURCE_REF: ${{ github.ref }}
+          EXPECTED_SOURCE_DIGEST: ${{ github.sha }}
+        run: |
+          [int] $runAttempt = 0
+          if (-not [int]::TryParse($env:RELEASE_RUN_ATTEMPT, [ref] $runAttempt) -or $runAttempt -le 1) {
+            throw 'An already-public release requires evidence from an earlier guarded publication attempt.'
+          }
+
+          $intentPrefix = "release-publication-intent-$env:EXPECTED_SOURCE_DIGEST-"
+          $candidates = [Collections.Generic.List[object]]::new()
+          [int] $page = 1
+          do {
+            $artifactJson = gh api `
+              -H 'Accept: application/vnd.github+json' `
+              -H 'X-GitHub-Api-Version: 2022-11-28' `
+              "/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID/artifacts?per_page=100&page=$page"
+            if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect earlier publication-intent artifacts.' }
+            $artifactPage = $artifactJson | ConvertFrom-Json
+            foreach ($artifact in @($artifactPage.artifacts)) {
+              if (-not $artifact.expired -and
+                  $artifact.name.StartsWith($intentPrefix, [StringComparison]::Ordinal)) {
+                $attemptText = $artifact.name.Substring($intentPrefix.Length)
+                [int] $artifactAttempt = 0
+                if ([int]::TryParse($attemptText, [ref] $artifactAttempt) -and
+                    $artifactAttempt -ge 1 -and
+                    $artifactAttempt -lt $runAttempt) {
+                  $candidates.Add([pscustomobject]@{
+                      Name = $artifact.name
+                      Attempt = $artifactAttempt
+                    })
+                }
+              }
+            }
+            $pageCount = @($artifactPage.artifacts).Count
+            $page++
+          } while ($pageCount -eq 100)
+
+          $candidate = $candidates | Sort-Object Attempt -Descending | Select-Object -First 1
+          if ($null -eq $candidate) {
+            throw 'No earlier guarded publication-intent artifact exists for this tag commit.'
+          }
+          New-Item -ItemType Directory prior-publication-intent -Force | Out-Null
+          gh run download $env:GITHUB_RUN_ID `
+            --repo $env:GITHUB_REPOSITORY `
+            --name $candidate.Name `
+            --dir prior-publication-intent
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to download the earlier publication intent.' }
+
+          $intentFiles = @(Get-ChildItem prior-publication-intent -File -Recurse)
+          if ($intentFiles.Count -ne 1 -or $intentFiles[0].Name -cne 'intent.json') {
+            throw 'The earlier publication-intent artifact has an unexpected inventory.'
+          }
+          $intent = Get-Content -LiteralPath $intentFiles[0].FullName -Raw | ConvertFrom-Json
+          $expectedProperties = @(
+            'notesSha256'
+            'releaseTag'
+            'releaseVersion'
+            'repository'
+            'runAttempt'
+            'schema'
+            'sourceCommit'
+            'sourceRef'
+            'workflowRunId'
+          ) | Sort-Object
+          $actualProperties = @($intent.psobject.Properties.Name | Sort-Object)
+          if (Compare-Object $expectedProperties $actualProperties -CaseSensitive) {
+            throw 'The earlier publication intent has an unexpected schema.'
+          }
+          $notesBytes = [IO.File]::ReadAllBytes(
+            (Resolve-Path -LiteralPath release-verification/notes.md))
+          $expectedNotesSha256 = [Convert]::ToHexString(
+            [Security.Cryptography.SHA256]::HashData($notesBytes)).ToLowerInvariant()
+          if ($intent.schema -cne 'sessiondock-release-publication-intent/v1' -or
+              $intent.repository -cne $env:GITHUB_REPOSITORY -or
+              $intent.workflowRunId -cne $env:GITHUB_RUN_ID -or
+              [int] $intent.runAttempt -ne $candidate.Attempt -or
+              $intent.releaseTag -cne $env:RELEASE_TAG -or
+              $intent.releaseVersion -cne $env:RELEASE_VERSION -or
+              $intent.sourceRef -cne $env:EXPECTED_SOURCE_REF -or
+              $intent.sourceCommit -cne $env:EXPECTED_SOURCE_DIGEST -or
+              $intent.notesSha256 -cne $expectedNotesSha256) {
+            throw 'The earlier publication intent does not match this exact release.'
+          }
+          'verified=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       - name: Publish the reverified draft
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
+          RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          PRIOR_PUBLICATION_INTENT_VERIFIED: ${{ steps.prior-publication-intent.outputs.verified }}
         run: |
-          $draftState = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json isDraft --jq .isDraft
-          if ($LASTEXITCODE -ne 0 -or $draftState -ne 'true') { throw 'The reverified release is no longer a draft.' }
+          $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json body,isDraft,isPrerelease,tagName,name
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the reverified release before publication.' }
+          $release = $releaseJson | ConvertFrom-Json
+          if ($release.tagName -cne $env:RELEASE_TAG -or
+              $release.name -cne "SessionDock $env:RELEASE_VERSION") {
+            throw 'The reverified release identity changed before publication.'
+          }
+          if ($release.isPrerelease) {
+            throw 'The reverified release unexpectedly became a prerelease.'
+          }
+          function ConvertTo-NormalizedReleaseBody([string] $value) {
+            if ($null -eq $value) { return '' }
+            return (($value -replace "`r`n", "`n") -replace "`r", "`n").TrimEnd("`n")
+          }
+          $expectedBody = ConvertTo-NormalizedReleaseBody `
+            (Get-Content -LiteralPath release-verification/notes.md -Raw)
+          $actualBody = ConvertTo-NormalizedReleaseBody $release.body
+          if ($actualBody -cne $expectedBody) {
+            throw 'The reverified release notes changed before publication.'
+          }
+          [int] $runAttempt = 0
+          if (-not [int]::TryParse($env:RELEASE_RUN_ATTEMPT, [ref] $runAttempt) -or $runAttempt -lt 1) {
+            throw 'The GitHub workflow run attempt is invalid.'
+          }
+          if (-not $release.isDraft) {
+            if ($env:PRIOR_PUBLICATION_INTENT_VERIFIED -cne 'true') {
+              throw 'The already-public release lacks verified evidence from an earlier guarded publication attempt.'
+            }
+            Write-Host 'A later run attempt reverified the already-public release and its earlier guarded publication intent; continuing to automatic announcement.'
+            exit 0
+          }
           gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --latest
           if ($LASTEXITCODE -ne 0) { throw 'Unable to publish the verified draft release.' }
+          $publishedJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json body,isDraft,isPrerelease,tagName,name
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The verified release publication could not be confirmed.'
+          }
+          $published = $publishedJson | ConvertFrom-Json
+          $publishedBody = ConvertTo-NormalizedReleaseBody $published.body
+          if ($published.isDraft -or
+              $published.isPrerelease -or
+              $published.tagName -cne $env:RELEASE_TAG -or
+              $published.name -cne "SessionDock $env:RELEASE_VERSION" -or
+              $publishedBody -cne $expectedBody) {
+            throw 'The published release does not exactly match the reverified release.'
+          }
+
+  announce-published-release:
+    name: Automatically announce the published release
+    needs:
+      - validate-and-build
+      - publish-verified-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-announcement
+    permissions: {}
+    steps:
+      - name: Download immutable release input
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-input-${{ github.sha }}
+          path: release-input
+
+      - name: Install the pinned Node.js runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Verify the deterministic announcement artifact
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: >-
+          node ./release-input/release-automation.mjs verify
+          --artifact-dir release-input/discord-announcement
+          --expected-tag "$RELEASE_TAG"
+          --expected-ref "$SOURCE_REF"
+          --expected-commit "$SOURCE_COMMIT"
+
+      - name: Upload the deterministic announcement artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: discord-release-announcement-${{ github.sha }}-${{ github.run_attempt }}
+          path: release-input/discord-announcement
+          if-no-files-found: error
+          include-hidden-files: false
+          compression-level: 0
+          overwrite: false
+          retention-days: 30
+
+      - name: Add the immutable announcement audit summary
+        shell: bash
+        run: cat ./release-input/discord-announcement/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post and verify Bota's release announcement
+        shell: bash
+        env:
+          DISCORD_RELEASE_BOT_ID: ${{ vars.DISCORD_RELEASE_BOT_ID }}
+          DISCORD_RELEASE_BOT_TOKEN: ${{ secrets.DISCORD_RELEASE_BOT_TOKEN }}
+          DISCORD_RELEASE_CHANNEL_ID: ${{ vars.DISCORD_RELEASE_CHANNEL_ID }}
+          DISCORD_RELEASE_ROLE_ID: ${{ vars.DISCORD_RELEASE_ROLE_ID }}
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          SOURCE_REF: ${{ github.ref }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: >-
+          node ./release-input/release-automation.mjs post
+          --artifact-dir release-input/discord-announcement
+          --expected-tag "$RELEASE_TAG"
+          --expected-ref "$SOURCE_REF"
+          --expected-commit "$SOURCE_COMMIT"
+          --receipt discord-release-receipt/receipt.json
+
+      - name: Upload the verified delivery receipt
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: discord-release-receipt-${{ github.sha }}-${{ github.run_attempt }}
+          path: discord-release-receipt/receipt.json
+          if-no-files-found: error
+          include-hidden-files: false
+          overwrite: false
+          retention-days: 30

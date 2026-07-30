@@ -24,6 +24,8 @@ coverage.*
 *.nupkg
 *.snupkg
 *.sessiondock-update
+**/node_modules/
+**/npm-debug.log*
 
 # Local application state and machine-specific configuration
 SessionDock/handlescope.json

@@ -2,9 +2,12 @@
 
 SessionDock releases are tag-triggered, environment-approved,
 descriptor-signed, checksummed, attested, re-downloaded, and separately approved
-before publication. The Windows executables and Setup are currently unsigned
-because the project does not have a paid Authenticode certificate. Windows may
-therefore show **Unknown publisher** or a SmartScreen warning.
+before publication. A GET-only Discord readiness gate must pass before staging;
+after publication succeeds, the guarded workflow prepares an audit artifact and
+asks Bota to post the release announcement automatically.
+The Windows executables and Setup are currently unsigned because the project
+does not have a paid Authenticode certificate. Windows may therefore show
+**Unknown publisher** or a SmartScreen warning.
 
 Unsigned does not mean unverified. The release workflow retains the controls
 that can operate without a commercial certificate: a signed update descriptor,
@@ -27,13 +30,104 @@ The current one-maintainer repository may allow the named reviewer to approve
 their own deployment. Do not enable prevent-self-review until another trusted
 reviewer exists.
 
+### Discord announcement environment
+
+The automatic announcement uses a separate `release-announcement` environment
+with no GitHub repository permissions. Configure these values only on that
+environment:
+
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Secret | `DISCORD_RELEASE_BOT_TOKEN` | Bota's private bot token |
+| Variable | `DISCORD_RELEASE_BOT_ID` | Bota's pinned bot user/Application ID |
+| Variable | `DISCORD_RELEASE_CHANNEL_ID` | Dedicated release channel |
+| Variable | `DISCORD_RELEASE_ROLE_ID` | Mentionable SessionDock notification role |
+
+Tagging is blocked until the repository owner creates `release-announcement`,
+restricts deployments to tags matching `v*`, and configures the exact values
+above. GitHub does not reveal an existing secret value, so retrieve Bota's token
+from its approved secure source or rotate it rather than attempting to read or
+copy it from GitHub. Pin the bot user/Application ID shown in the Discord
+Developer Portal. After the new environment contains the re-entered token and
+reviewed IDs, remove the legacy Discord secret and variables from `release`,
+then run the audit below. The audit passes only after that migration is complete.
+Do not intentionally configure these names at repository or organization scope.
+
+GitHub Actions expression lookup is an important provenance limitation: if an
+environment-scoped secret or variable is absent, a same-named repository or
+organization value can be selected instead. The workflow can validate the
+effective IDs and credentials, but it cannot determine which scope supplied
+them. A missing effective value fails before any Discord request; a missing
+*environment-scoped* value is not by itself proof that the expression will be
+empty. The repository-owner audit is therefore mandatory before enabling live
+posting:
+
+```powershell
+./scripts/Configure-GitHubSecurity.ps1 -WhatIf
+```
+
+The audit reads the environment details, its deployment policies, and the
+names of its environment secrets and variables. It requires exactly one
+custom deployment policy (`tag` / `v*`), no required-reviewer rule, exactly
+the environment-scoped `DISCORD_RELEASE_BOT_TOKEN` secret name, and exactly
+the three environment-scoped ID variable names. It also checks repository-scoped
+names, and, for an organization-owned repository, the organization names that
+GitHub reports as shared with this repository. It also rejects legacy Discord
+values on `release`. Any violation makes the audit exit nonzero; warnings are
+release blockers. The audit never prints a secret or variable value.
+
+GitHub's API does not expose the stored token, prove that a re-entered token
+came from the approved source, or let the workflow cryptographically attest
+value provenance. Organization owners must confirm the organization access
+policy with an organization-admin account as well: a repository-admin token
+may lack the organization visibility needed for a complete independent audit.
+The `tag` / `v*` environment policy controls deployment eligibility; the
+repository's separate `v*` tag ruleset supplies tag protection.
+
+Use the protected-tag restriction without a required-reviewer gate on this
+environment. The separate `release-publication` approval is the human release
+gate; adding another approval here would turn the announcement into a manual
+confirmation step instead of the required automatic post-publication action.
+
+Bota needs View Channel, Read Message History, Send Messages, and Embed Links
+in the configured channel, plus Attach Files when reviewed images are selected.
+Keep the configured role mentionable. The preflight computes effective access
+from Bota's guild roles and channel overwrites and fails if any required access
+is missing or Administrator, Manage Server, Manage Messages, or Mention
+Everyone is effective.
+
+The official path has no form, preview confirmation button, or manual publish
+step. Before signing or drafting, a GET-only preflight verifies the immutable
+bundle, pinned bot identity, channel, role, effective permissions, and complete
+bounded marker history; an exact announcement already present at that point is
+treated as early disclosure. The sender repeats those checks after guarded
+GitHub publication, uses the canonical
+`SessionDock/ReleaseNotes/<version>.en-US.md`, optionally includes images
+reviewed for that same version, and pings exactly the configured SessionDock
+role. The optional interactive `/release` command is a separate community tool
+and is never a source or publishing path for official releases.
+
+The pre-send JSON/Markdown artifact is deterministic and auditable, but it does
+not replace delivery. Reruns must find and verify an existing matching Discord
+message from the protected, pinned Bota ID before reporting success; the token's
+`/users/@me` response must match that exact bot identity. Ambiguous history or
+delivery fails closed and leaves a token-free receipt for review. The sender
+reserves that receipt path before any network request, reconciles unreadable or
+malformed POST responses through message history, and honors Discord's full
+`Retry-After` within its overall deadline. It never replaces a delivery error
+with a receipt write error.
+
 ## Required update-descriptor key
 
-The protected `release` environment uses exactly one repository secret:
+The protected signing job consumes exactly one secret:
 
 ```text
 UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64
 ```
+
+Discord values must not remain on `release`; the fail-closed configuration audit
+rejects the legacy Discord secret and variable names from that signing
+environment.
 
 It contains the Base64-encoded PKCS#8 form of the P-256 private key whose public
 half is pinned at `SessionDock/Resources/update-public-key.pem`. GitHub never
@@ -123,33 +217,90 @@ checks so stale overlays and live-switch regressions block the release.
 The smoke feature is compiled only into a separate test artifact. Production
 publish verification proves the privileged smoke switch is absent.
 
+### Optional reviewed Discord images
+
+An announcement has no image unless the current version's reviewed image
+directory contains `discord.json`. Never reuse an older version's artwork. Put
+the selection beside that version's `manifest.json` at
+`docs/images/sessiondock-vX.Y.Z/discord.json`:
+
+```json
+{
+  "images": [
+    "sessiondock-vX.Y.Z-social-wide.png"
+  ],
+  "product": "SessionDock",
+  "schemaVersion": 1,
+  "version": "X.Y.Z"
+}
+```
+
+Select one to four PNG, JPEG, WebP, or GIF files already covered by that
+version's reviewed manifest, with at most 8 MiB per file and 20 MiB total. The
+generator verifies the selected bytes and copies them into the immutable
+announcement bundle. After posting, the sender binds every displayed embed
+image to its reviewed attachment URL and verifies the downloaded bytes again;
+its reviewed alt text and non-spoiler attachment presentation metadata must
+also match, and unexpected display-bearing message or embed fields fail closed.
+Omitting `discord.json` intentionally produces a text-only announcement.
+
 ## Protected workflow order
 
 After an annotated `vX.Y.Z` tag is pushed from the protected `main` tip, the
-workflow:
+workflow enters one repository-wide, non-cancelling FIFO release queue. This
+prevents queued tag runs from replacing each other and keeps versions from
+publishing or announcing concurrently. It then:
 
 1. validates release metadata, locked restore, NuGet audit, tests, production
    publish, and the separate smoke build;
-2. enters the reviewer-gated `release` environment;
-3. packages the verified but unsigned production application;
-4. prepares the canonical update descriptor and signs its digest with the
+2. enters `release-announcement` and performs a GET-only readiness check; a
+   failure stops the run before any draft or public release exists;
+3. enters the reviewer-gated `release` environment;
+4. packages the verified but unsigned production application;
+5. prepares the canonical update descriptor and signs its digest with the
    protected P-256 descriptor key;
-5. verifies the descriptor, exact package hash and package/portable contents;
-6. generates the SBOM and complete SHA-256 checksums;
-7. creates a fresh draft, uploads, re-downloads, byte-compares, and attests all
+6. verifies the descriptor, exact package hash and package/portable contents;
+7. generates the SBOM and complete SHA-256 checksums;
+8. creates a fresh draft, uploads, re-downloads, byte-compares, and attests all
    assets;
-8. waits for `release-publication` approval, then re-downloads and verifies the
-   exact inventory, checksums, attestations, source tag and commit before making
-   the release public.
+9. waits for `release-publication` approval, then re-downloads and verifies the
+   exact inventory, checksums, attestations, release body, prerelease state,
+   source tag, and commit; it preserves an attempt-specific guarded publication
+   intent before making the release public;
+10. re-enters `release-announcement`, publishes the deterministic audit artifact,
+   and automatically asks Bota to find or create and then verify one Discord
+   announcement from the immutable canonical inputs.
 
 Never mutate an executable, package, descriptor, Setup, SBOM, or checksum after
 the stage that binds it. Investigate and explicitly remove only a failed
 unpublished draft before retrying. Never reuse a published tag or asset.
 
+### Recovery after publication or announcement failure
+
+Use **Re-run failed jobs** for the same workflow run. Do not start a full new
+release run and do not edit the tag, release, announcement artifact, or assets.
+If publication succeeded server-side but its response was lost, a later run
+attempt re-downloads and re-verifies the already-public release before allowing
+the automatic announcement job to continue. Recovery also requires an immutable
+publication-intent artifact created by an earlier attempt after that attempt
+finished verification and reached the guarded publication boundary. A bare
+rerun count is never sufficient, so the workflow rejects an unexpectedly public
+release when no matching earlier intent exists.
+
+For an announcement failure, inspect the token-free receipt artifact. A status
+of `ambiguous` means the message may exist; inspect the configured channel, then
+re-run the failed announcement job. Bota's marker, enforced nonce, complete
+history scan, exact message-ID binding, and read-back verification make that
+rerun a verified no-op when the correct message already exists. A `reserved`
+receipt means the attempt began but final receipt replacement failed; preserve
+it as evidence and investigate the job log before rerunning. Never compensate
+with a manual official post.
+
 ## User verification
 
-Before announcing a release, confirm the in-app updater accepts the signed
+Before tagging a release, confirm the in-app updater accepts the signed
 descriptor and the manual checksum and GitHub attestation commands in
 `docs/UPDATES.md` succeed. Tell users plainly that Windows will show Unknown
 publisher and that checksums or attestations should be verified before they
-continue through that warning.
+continue through that warning. Bota sends the reviewed canonical notes only
+after publication succeeds.
