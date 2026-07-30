@@ -1,6 +1,6 @@
 # SessionDock marketing assets
 
-[Install Latest SessionDock release](https://github.com/Makmatoe/SessionDock/releases/latest/download/SessionDock-win-x64-Setup.exe)
+[Install SessionDock v2.7.0](https://github.com/Makmatoe/SessionDock/releases/download/v2.7.0/SessionDock-win-x64-Setup.exe)
 
 Use only the files under [`trusted/v2.7.0`](trusted/v2.7.0). They are derived
 from real installed SessionDock 2.7.0 windows and use deterministic privacy
