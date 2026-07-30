@@ -1,4 +1,10 @@
-<!-- Attach: marketing/trusted/v2.7.0/sessiondock-v2.7.0-social-wide.png -->
+<!-- Attach: docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-social-wide.png -->
+
+> Archived v2.7.0 example only. The guarded release workflow never reads this
+> file, and it must not be used as an official release template. Bota posts
+> automatically after successful publication from the matching canonical
+> versioned notes and optional reviewed-image selection. No form or manual
+> confirmation is part of that path.
 
 Hello @everyone :wave:
 

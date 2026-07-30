@@ -247,6 +247,16 @@ Maintainer setup and the tag-driven release checklist are in
 [Releasing](docs/RELEASING.md). Optional local hook configuration is documented
 under [SystemProcesses](SessionDock/SystemProcesses/README.md).
 
+Official Discord release announcements are generated from the canonical
+versioned notes. A read-only gate validates Bota, the target channel, the role,
+effective permissions, and release history before any draft is staged; Bota
+posts automatically only after guarded GitHub publication succeeds. The
+optional interactive `/release` community tool is noncanonical and must not
+publish official releases; it is not a preview or confirmation step for the
+guarded workflow. See
+[`discord-release-bot`](discord-release-bot/README.md) for its separate
+automation and community-tool boundaries.
+
 ## License and contributions
 
 SessionDock is open source under the [MIT License](LICENSE.md). Read

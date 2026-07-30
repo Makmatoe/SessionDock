@@ -36,6 +36,14 @@ not included in the SessionDock application or release package. They remain
 subject to the licenses identified in their NuGet packages and upstream
 projects.
 
+## Discord release tools
+
+The guarded automatic release sender uses only Node.js built-in modules. The
+separate optional community bot depends on `discord.js` 14.27.0 (Apache-2.0)
+and `dotenv` 17.4.2 (BSD-2-Clause). Their exact packages are pinned in
+`discord-release-bot/package-lock.json` and are not included in SessionDock
+application or release packages.
+
 ## .NET and bundled runtime components
 
 Self-contained releases pin and include the .NET 10.0.10 runtime selected by the

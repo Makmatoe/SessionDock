@@ -1,0 +1,21 @@
+{
+  "name": "discord-release-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Guarded SessionDock release automation plus a noncanonical community announcement bot.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "community:start": "node src/index.js",
+    "community:deploy": "node src/deploy-commands.js",
+    "community:invite": "node src/invite.js",
+    "test": "node --test",
+    "check": "node --check src/config.js && node --check src/deploy-commands.js && node --check src/index.js && node --check src/invite.js && node --check src/pending-releases.js && node --check src/release.js && node --check src/release-automation.js"
+  },
+  "dependencies": {
+    "discord.js": "14.27.0",
+    "dotenv": "17.4.2"
+  }
+}

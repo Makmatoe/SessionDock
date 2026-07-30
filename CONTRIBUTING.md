@@ -24,6 +24,18 @@ dotnet restore --locked-mode
 ./scripts/Build.ps1 -Configuration Release -Runtime win-x64 -CI
 ```
 
+Changes under `discord-release-bot` must also pass its dependency, test, and
+syntax checks. These checks use mocked HTTP and must never contact Discord:
+
+```powershell
+Push-Location ./discord-release-bot
+npm ci
+npm test
+npm run check
+npm audit --omit=dev --audit-level=moderate
+Pop-Location
+```
+
 Keep changes narrowly scoped. Preserve the project's local-first behavior and
 do not add network destinations, telemetry, automatic updates, elevated helper
 processes, or third-party packages without an explicit security and maintenance
@@ -41,6 +53,12 @@ An approved pull request should:
 - update user and maintainer documentation when behavior changes;
 - pass formatting, build, test, dependency, and secret-scanning checks; and
 - avoid generated build output, local settings, or release secrets.
+
+Changes to the official Discord sender or release workflow must preserve the
+GET-only pre-publication readiness gate, automatic post-publication delivery,
+canonical versioned inputs, exact role-only mention, idempotency, and fail-closed
+verification. Do not add a form, preview confirmation, or manual publishing
+path for official announcements.
 
 Do not edit a release tag after publication. Release preparation and descriptor signing
 follow [docs/RELEASING.md](docs/RELEASING.md).

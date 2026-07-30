@@ -47,3 +47,16 @@ updates:
       test-packages:
         patterns:
           - "*"
+
+  - package-ecosystem: npm
+    directory: /discord-release-bot
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 5
+    groups:
+      discord-bot-packages:
+        patterns:
+          - "*"
