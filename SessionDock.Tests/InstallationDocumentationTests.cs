@@ -19,7 +19,29 @@ public sealed class InstallationDocumentationTests
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        Assert.Equal(3, readmes.Length);
+        var expectedReadmes = new[]
+        {
+            "README.md",
+            Path.Combine(
+                "docs",
+                "images",
+                "sessiondock-v2.7.0",
+                "README.md"),
+            Path.Combine("marketing", "README.md"),
+            Path.Combine(
+                "marketing",
+                "trusted",
+                "v2.7.0",
+                "README.md"),
+            Path.Combine("SessionDock", "README.md"),
+            Path.Combine(
+                "SessionDock",
+                "SystemProcesses",
+                "README.md")
+        }.OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(
+            expectedReadmes,
+            readmes.Select(path => Path.GetRelativePath(root, path)));
         foreach (var readme in readmes)
         {
             var contents = File.ReadAllText(readme);

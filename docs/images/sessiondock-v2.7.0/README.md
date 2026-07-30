@@ -1,5 +1,7 @@
 # SessionDock 2.7.0 visual assets
 
+[Install Latest SessionDock release](https://github.com/Makmatoe/SessionDock/releases/latest/download/SessionDock-win-x64-Setup.exe)
+
 This directory contains documentation and marketing images derived from the
 real installed SessionDock 2.7.0 interface. The source build is
 `2.7.0+e30ad6acf8165befe11e00d9f1f5d1de1f7e90de`.

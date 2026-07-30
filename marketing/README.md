@@ -1,5 +1,7 @@
 # SessionDock marketing assets
 
+[Install Latest SessionDock release](https://github.com/Makmatoe/SessionDock/releases/latest/download/SessionDock-win-x64-Setup.exe)
+
 Use only the files under [`trusted/v2.7.0`](trusted/v2.7.0). They are derived
 from real installed SessionDock 2.7.0 windows and use deterministic privacy
 redaction. The manifest records source hashes, dimensions, output hashes, and
