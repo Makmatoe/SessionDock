@@ -136,33 +136,39 @@ destinations, private-server codes, and server job IDs.
 
 The optional HandleScope integration inspects only the expected local install
 and SessionDock opt-in files when its panel opens or the user selects Refresh.
-SessionDock contacts GitHub for `Makmatoe/HandleScope` only when the user
-selects **Install Latest HandleScope release**, to resolve the latest stable
-immutable release and download its checksum and Windows package. A future
-release may also supply an independently signed descriptor. Those requests contain
-ordinary request metadata such as the source IP address and user agent; they do
-not include a HandleScope token, configuration, local path, or Roblox account
-data. The verified package is staged in a random temporary directory and
-removed after the install attempt when cleanup succeeds.
+It hashes the expected executable locally and accepts only the exact published
+HandleScope v0.1.3 size and SHA-256 digest. SessionDock does not contact GitHub
+to resolve or download HandleScope releases. Selecting **Open official v0.1.3
+setup guide** asks the user's default browser to open the pinned official GitHub
+documentation; that browser request has the browser's ordinary network and
+privacy behavior. SessionDock sends no HandleScope token, configuration, local
+path, or Roblox account data with that link.
 
-It contacts the loopback health endpoint only when the user selects **Test
-connection** and only after local connection-file and same-session process
-checks. The user can explicitly ask SessionDock to start the separately
-installed API at its expected per-user path. The explicit install action also
-starts it and enables its limited per-user sign-in task; opening SessionDock or
-the integration panel never starts it by itself. SessionDock verifies the
-immutable GitHub asset digest, same-release checksum, and internal inventory,
-then saves a local receipt and rehashes the installed API against that inventory
-before it starts or trusts the process. This is repository-based verification,
-not certificate-backed publisher identity.
-SessionDock never bundles or elevates HandleScope. When testing or using the
+After enablement, SessionDock contacts the checked loopback health endpoint only
+when the user selects **Test connection** or when the integration runs after a
+successful Roblox launch, and only after local connection-file and same-session
+process checks. While the integration is disabled, opening the panel and
+selecting Refresh or Test performs no process, discovery-file, or API probe.
+SessionDock never bundles, downloads, installs, updates, uninstalls,
+elevates, or starts HandleScope and never changes its optional autostart task.
+Users perform those lifecycle actions separately under HandleScope's official
+instructions. When testing or using the
 enabled integration, it reads the rotating bearer token from HandleScope's
 checked local connection file and sends it only to the validated loopback API;
 it does not send the token off-machine, log it, or copy it into SessionDock's
-persistent configuration. Installation starts the API and enables HandleScope's
-limited per-user autostart task for future Windows sign-ins, but does not change
-SessionDock's integration setting. The connection test does not enumerate or
-close handles.
+persistent configuration. The connection test does not enumerate or close
+handles. An enabled post-launch operation may ask HandleScope to dry-run and
+close only matching Roblox singleton handles: first for the newly launched PID
+and, if configured, in a separately planned all-process sweep. Each execution
+uses only its matching one-time plan ID. SessionDock's minimal enabled/disabled
+opt-in remains separate from HandleScope installation, startup, and autostart.
+
+SessionDock v2.7.1 does not use or delete the public verification metadata that
+v2.7.0 may have stored under
+`%LOCALAPPDATA%\SessionDock\HandleScopeAuthorization`. An upgrade leaves that
+legacy directory unchanged and ignored. It contains release hashes and public
+package metadata, not the HandleScope bearer token, Roblox credentials, or
+account data.
 
 The optional **Open with SessionDock** feature is off by default. Enabling it
 writes only SessionDock-owned per-user URL-handler keys under

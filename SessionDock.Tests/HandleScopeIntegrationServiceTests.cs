@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Http;
@@ -49,10 +48,39 @@ public sealed class HandleScopeIntegrationServiceTests
     }
 
     [Fact]
+    public async Task InspectAsync_DisabledSetting_ReturnsRunningDisabledWithoutProbing()
+    {
+        using var environment = new TestEnvironment();
+        environment.InstallApi();
+        environment.WriteConfiguration(enabled: false);
+        environment.WriteConnection();
+        var processInspectionCount = 0;
+        using var handler = new RecordingHandler(
+            _ => throw new InvalidOperationException("HTTP requires opt-in."));
+        using var service = environment.CreateService(
+            handler,
+            isExpectedProcess: (_, _) =>
+            {
+                processInspectionCount++;
+                return true;
+            });
+
+        var result = await service.InspectAsync(
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            HandleScopeIntegrationState.RunningDisabled,
+            result.State);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Equal(0, processInspectionCount);
+    }
+
+    [Fact]
     public async Task TestConnectionAsync_MissingDiscovery_ReturnsInstalledStopped()
     {
         using var environment = new TestEnvironment();
         environment.InstallApi();
+        environment.WriteConfiguration(enabled: true);
         using var handler = new RecordingHandler(_ => ValidHealthResponse());
         using var service = environment.CreateService(handler);
 
@@ -61,130 +89,6 @@ public sealed class HandleScopeIntegrationServiceTests
         Assert.Equal(
             HandleScopeIntegrationState.InstalledStopped,
             result.State);
-        Assert.Equal(0, handler.RequestCount);
-    }
-
-    [Fact]
-    public async Task StartAsync_BackToBackRequests_StartOnlyOneProcess()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        var startCount = 0;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            isExpectedProcess: (_, _) => false,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            });
-
-        var first = await service.StartAsync(TestContext.Current.CancellationToken);
-        var inspect = await service.InspectAsync(TestContext.Current.CancellationToken);
-        var enable = await service.EnableAsync(
-            cancellationToken: TestContext.Current.CancellationToken);
-        var connection = await service.TestConnectionAsync(
-            TestContext.Current.CancellationToken);
-        var second = await service.StartAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(HandleScopeIntegrationState.StartPending, first.State);
-        Assert.Equal(HandleScopeIntegrationState.StartPending, inspect.State);
-        Assert.Equal(HandleScopeIntegrationState.StartPending, enable.State);
-        Assert.Equal(HandleScopeIntegrationState.StartPending, connection.State);
-        Assert.Equal(HandleScopeIntegrationState.StartPending, second.State);
-        Assert.Equal(1, startCount);
-        Assert.Equal(0, handler.RequestCount);
-    }
-
-    [Fact]
-    public async Task StartAsync_ConcurrentRequests_StartOnlyOneProcess()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        var startCount = 0;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            isExpectedProcess: (_, _) => false,
-            startProcess: _ =>
-            {
-                Interlocked.Increment(ref startCount);
-                return ApiProcessId;
-            });
-
-        var starts = Enumerable.Range(0, 8)
-            .Select(_ => Task.Run(
-                () => service.StartAsync(TestContext.Current.CancellationToken)))
-            .ToArray();
-        var results = await Task.WhenAll(starts);
-
-        Assert.All(results, result => Assert.Equal(
-            HandleScopeIntegrationState.StartPending,
-            result.State));
-        Assert.Equal(1, startCount);
-    }
-
-    [Fact]
-    public async Task StartAsync_AfterPendingWindow_TracksLiveStartedProcess()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        var startCount = 0;
-        var clock = new ManualTimeProvider(
-            new DateTimeOffset(2026, 7, 21, 12, 0, 0, TimeSpan.Zero));
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            isExpectedProcess: (_, _) => false,
-            isExpectedStartedProcess: processId => processId == ApiProcessId,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            },
-            timeProvider: clock);
-
-        var first = await service.StartAsync(
-            TestContext.Current.CancellationToken);
-        clock.Advance(TimeSpan.FromSeconds(6));
-        var second = await service.StartAsync(
-            TestContext.Current.CancellationToken);
-        var connection = await service.TestConnectionAsync(
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(HandleScopeIntegrationState.StartPending, first.State);
-        Assert.Equal(HandleScopeIntegrationState.RunningUntested, second.State);
-        Assert.Equal(
-            HandleScopeIntegrationState.RunningUntested,
-            connection.State);
-        Assert.Equal(1, startCount);
-        Assert.Equal(0, handler.RequestCount);
-    }
-
-    [Fact]
-    public async Task StartAsync_PreexistingVerifiedProcessWithoutDiscovery_IsNotDuplicated()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        var startCount = 0;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            findExpectedRunningProcess: () => ApiProcessId,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId + 1;
-            });
-
-        var result = await service.StartAsync(
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            HandleScopeIntegrationState.RunningUntested,
-            result.State);
-        Assert.Equal(0, startCount);
         Assert.Equal(0, handler.RequestCount);
     }
 
@@ -210,20 +114,30 @@ public sealed class HandleScopeIntegrationServiceTests
     }
 
     [Fact]
-    public async Task TestConnectionAsync_HealthyApiAndDisabledSetting_ReturnsRunningDisabled()
+    public async Task TestConnectionAsync_DisabledSetting_ReturnsRunningDisabledWithoutProbing()
     {
         using var environment = new TestEnvironment();
         environment.InstallApi();
         environment.WriteConfiguration(enabled: false);
         environment.WriteConnection();
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(handler);
+        var processInspectionCount = 0;
+        using var handler = new RecordingHandler(
+            _ => throw new InvalidOperationException("HTTP requires opt-in."));
+        using var service = environment.CreateService(
+            handler,
+            isExpectedProcess: (_, _) =>
+            {
+                processInspectionCount++;
+                return true;
+            });
 
         var result = await service.TestConnectionAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(
             HandleScopeIntegrationState.RunningDisabled,
             result.State);
+        Assert.Equal(0, handler.RequestCount);
+        Assert.Equal(0, processInspectionCount);
     }
 
     [Fact]
@@ -376,30 +290,19 @@ public sealed class HandleScopeIntegrationServiceTests
     {
         using var environment = new TestEnvironment();
         environment.InstallApi();
-        var startCount = 0;
         using var handler = new RecordingHandler(_ => ValidHealthResponse());
         using var service = environment.CreateService(
             handler,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            },
             isReparsePoint: path => path.Equals(
                 environment.InstallRoot,
                 StringComparison.OrdinalIgnoreCase));
 
         var inspect = await service.InspectAsync(TestContext.Current.CancellationToken);
-        var start = await service.StartAsync(TestContext.Current.CancellationToken);
 
         Assert.Equal(
             HandleScopeIntegrationState.ConfigurationError,
             inspect.State);
         Assert.False(inspect.CanRepairConfiguration);
-        Assert.Equal(
-            HandleScopeIntegrationState.ConfigurationError,
-            start.State);
-        Assert.Equal(0, startCount);
         Assert.Equal(0, handler.RequestCount);
     }
 
@@ -498,187 +401,12 @@ public sealed class HandleScopeIntegrationServiceTests
     }
 
     [Fact]
-    public async Task StartAsync_UsesOnlyValidatedExactExecutableWithoutArgumentsOrShell()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        ProcessStartSnapshot? captured = null;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            startProcess: startInfo =>
-            {
-                captured = new ProcessStartSnapshot(
-                    startInfo.FileName,
-                    startInfo.WorkingDirectory,
-                    startInfo.Arguments,
-                    startInfo.ArgumentList.Count,
-                    startInfo.UseShellExecute,
-                    startInfo.Verb,
-                    startInfo.ErrorDialog);
-                return ApiProcessId;
-            });
-
-        var result = await service.StartAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            HandleScopeIntegrationState.StartPending,
-            result.State);
-        Assert.NotNull(captured);
-        Assert.Equal(environment.ExecutablePath, captured.FileName);
-        Assert.Equal(environment.InstallRoot, captured.WorkingDirectory);
-        Assert.Equal(string.Empty, captured.Arguments);
-        Assert.Equal(0, captured.ArgumentCount);
-        Assert.False(captured.UseShellExecute);
-        Assert.Equal(string.Empty, captured.Verb);
-        Assert.False(captured.ErrorDialog);
-        Assert.Equal(0, handler.RequestCount);
-    }
-
-    [Fact]
-    public void CreateApiStartInfo_RemovesLaunchHookConfiguration()
-    {
-        var inheritedEnvironment = new Dictionary<string, string?>(
-            StringComparer.OrdinalIgnoreCase)
-        {
-            [LocalApiLaunchHook.UrlEnvironmentVariable] =
-                "http://127.0.0.1:4312/launch",
-            [LocalApiLaunchHook.TokenEnvironmentVariable] = "current-secret",
-            [LocalApiLaunchHook.LegacyUrlEnvironmentVariable] =
-                "http://127.0.0.1:4313/legacy",
-            [LocalApiLaunchHook.LegacyTokenEnvironmentVariable] =
-                "legacy-secret",
-            ["SESSIONDOCK_ORDINARY_TEST_VALUE"] = "preserve-me"
-        };
-
-        var startInfo = HandleScopeIntegrationService.CreateApiStartInfo(
-            @"C:\HandleScope\Api\HandleScope.Api.exe",
-            @"C:\HandleScope\Api",
-            inheritedEnvironment);
-
-        Assert.False(startInfo.UseShellExecute);
-        Assert.Equal(
-            @"C:\HandleScope\Api\HandleScope.Api.exe",
-            startInfo.FileName);
-        Assert.Equal(@"C:\HandleScope\Api", startInfo.WorkingDirectory);
-        Assert.Equal(
-            "preserve-me",
-            startInfo.Environment["SESSIONDOCK_ORDINARY_TEST_VALUE"]);
-        Assert.DoesNotContain(
-            LocalApiLaunchHook.UrlEnvironmentVariable,
-            startInfo.Environment.Keys,
-            StringComparer.OrdinalIgnoreCase);
-        Assert.DoesNotContain(
-            LocalApiLaunchHook.TokenEnvironmentVariable,
-            startInfo.Environment.Keys,
-            StringComparer.OrdinalIgnoreCase);
-        Assert.DoesNotContain(
-            LocalApiLaunchHook.LegacyUrlEnvironmentVariable,
-            startInfo.Environment.Keys,
-            StringComparer.OrdinalIgnoreCase);
-        Assert.DoesNotContain(
-            LocalApiLaunchHook.LegacyTokenEnvironmentVariable,
-            startInfo.Environment.Keys,
-            StringComparer.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task StartAsync_ValidatedRunningApi_DoesNotStartDuplicateProcess()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        environment.WriteConnection();
-        var startCount = 0;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            isExpectedProcess: (_, _) => true,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            });
-
-        var result = await service.StartAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            HandleScopeIntegrationState.RunningUntested,
-            result.State);
-        Assert.Equal(0, startCount);
-        Assert.Equal(0, handler.RequestCount);
-    }
-
-    [Fact]
-    public async Task StartAsync_MalformedExecutableNeverReachesProcessStarter()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallMalformedApi();
-        var startCount = 0;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            });
-
-        var result = await service.StartAsync(TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            HandleScopeIntegrationState.ConfigurationError,
-            result.State);
-        Assert.Equal(0, startCount);
-    }
-
-    [Fact]
-    public async Task StartAsync_CancellationDuringInspection_PreventsProcessStart()
-    {
-        using var environment = new TestEnvironment();
-        environment.InstallApi();
-        using var cancellation = new CancellationTokenSource();
-        var startCount = 0;
-        using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            },
-            isReparsePoint: path =>
-            {
-                if (path.Equals(
-                        environment.ExecutablePath,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    cancellation.Cancel();
-                }
-
-                return false;
-            });
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => service.StartAsync(cancellation.Token));
-
-        Assert.Equal(0, startCount);
-        Assert.Equal(0, handler.RequestCount);
-    }
-
-    [Fact]
     public async Task EnableAndDisable_WriteOnlyMinimalConfigurationWithoutProbing()
     {
         using var environment = new TestEnvironment();
         environment.InstallApi();
-        var startCount = 0;
         using var handler = new RecordingHandler(_ => ValidHealthResponse());
-        using var service = environment.CreateService(
-            handler,
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
-            });
+        using var service = environment.CreateService(handler);
 
         var enabled = await service.EnableAsync(
             cancellationToken: TestContext.Current.CancellationToken);
@@ -692,14 +420,13 @@ public sealed class HandleScopeIntegrationServiceTests
             enabled.State);
         Assert.Equal("{\"enabled\":true}\n", enabledJson);
         Assert.Equal(
-            HandleScopeIntegrationState.InstalledStopped,
+            HandleScopeIntegrationState.RunningDisabled,
             disabled.State);
         Assert.Equal("{\"enabled\":false}\n", disabledJson);
         Assert.Empty(Directory.EnumerateFiles(
             environment.SessionDockDataRoot,
             ".handlescope.*.tmp"));
         Assert.Equal(0, handler.RequestCount);
-        Assert.Equal(0, startCount);
     }
 
     [Fact]
@@ -773,7 +500,7 @@ public sealed class HandleScopeIntegrationServiceTests
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            HandleScopeIntegrationState.InstalledStopped,
+            HandleScopeIntegrationState.RunningDisabled,
             repairedDisable.State);
         Assert.Equal(
             "{\"enabled\":false}\n",
@@ -781,7 +508,7 @@ public sealed class HandleScopeIntegrationServiceTests
     }
 
     [Fact]
-    public async Task DisableAsync_DoesNotProbeStartOrStopTheApi()
+    public async Task DisableAsync_DoesNotProbeOrModifyTheApiConnection()
     {
         using var environment = new TestEnvironment();
         environment.InstallApi();
@@ -789,7 +516,6 @@ public sealed class HandleScopeIntegrationServiceTests
         environment.WriteConnection();
         var connectionBefore = File.ReadAllBytes(environment.ConnectionPath);
         var processInspectionCount = 0;
-        var startCount = 0;
         using var handler = new RecordingHandler(_ => ValidHealthResponse());
         using var service = environment.CreateService(
             handler,
@@ -797,27 +523,21 @@ public sealed class HandleScopeIntegrationServiceTests
             {
                 processInspectionCount++;
                 return true;
-            },
-            startProcess: _ =>
-            {
-                startCount++;
-                return ApiProcessId;
             });
 
         var result = await service.DisableAsync(
             cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(
-            HandleScopeIntegrationState.InstalledStopped,
+            HandleScopeIntegrationState.RunningDisabled,
             result.State);
         Assert.Equal(0, handler.RequestCount);
         Assert.Equal(0, processInspectionCount);
-        Assert.Equal(0, startCount);
         Assert.Equal(connectionBefore, File.ReadAllBytes(environment.ConnectionPath));
     }
 
     [Fact]
-    public async Task ConnectionAndStartFailuresRemainIsolated()
+    public async Task ConnectionFailuresRemainIsolated()
     {
         using var environment = new TestEnvironment();
         environment.InstallApi();
@@ -833,19 +553,6 @@ public sealed class HandleScopeIntegrationServiceTests
         Assert.Equal(
             HandleScopeIntegrationState.InstalledStopped,
             connectionResult.State);
-
-        using var unusedHandler = new RecordingHandler(_ => ValidHealthResponse());
-        using var startService = environment.CreateService(
-            unusedHandler,
-            isExpectedProcess: (_, _) => false,
-            startProcess: _ => throw new Win32Exception("isolated"));
-
-        var startResult = await startService.StartAsync(
-            TestContext.Current.CancellationToken);
-
-        Assert.Equal(
-            HandleScopeIntegrationState.ConfigurationError,
-            startResult.State);
     }
 
     [Fact]
@@ -882,10 +589,6 @@ public sealed class HandleScopeIntegrationServiceTests
         });
         await Assert.ThrowsAsync<ObjectDisposedException>(() =>
             service.TestConnectionAsync(TestContext.Current.CancellationToken));
-        Assert.Throws<ObjectDisposedException>(() =>
-        {
-            _ = service.StartAsync(TestContext.Current.CancellationToken);
-        });
         Assert.Throws<ObjectDisposedException>(() =>
         {
             _ = service.EnableAsync(
@@ -1001,28 +704,20 @@ public sealed class HandleScopeIntegrationServiceTests
         internal HandleScopeIntegrationService CreateService(
             HttpMessageHandler handler,
             Func<HandleScopeConnection, string, bool>? isExpectedProcess = null,
-            Func<int, bool>? isExpectedStartedProcess = null,
-            Func<int?>? findExpectedRunningProcess = null,
-            Func<ProcessStartInfo, int?>? startProcess = null,
-            Func<string, bool>? isReparsePoint = null,
-            TimeProvider? timeProvider = null)
+            Func<string, bool>? isReparsePoint = null)
         {
             var processVerifier = new TestProcessVerifier(
                 connection => (isExpectedProcess ?? ((_, path) => path.Equals(
                     ExecutablePath,
                     StringComparison.OrdinalIgnoreCase)))(
                         connection,
-                        ExecutablePath),
-                isExpectedStartedProcess ?? (_ => false),
-                findExpectedRunningProcess ?? (() => null));
+                        ExecutablePath));
             return new HandleScopeIntegrationService(
                 LocalAppDataRoot,
                 SessionDockDataRoot,
                 handler,
                 processVerifier,
-                startProcess ?? (_ => null),
                 isReparsePoint,
-                timeProvider,
                 new TestInstalledRuntimeVerifier());
         }
 
@@ -1047,42 +742,13 @@ public sealed class HandleScopeIntegrationServiceTests
     }
 
     private sealed class TestProcessVerifier(
-        Func<HandleScopeConnection, bool> connectionVerifier,
-        Func<int, bool> startedProcessVerifier,
-        Func<int?> runningProcessFinder)
+        Func<HandleScopeConnection, bool> connectionVerifier)
         : IHandleScopeProcessVerifier
     {
         private readonly Func<HandleScopeConnection, bool> _connectionVerifier =
             connectionVerifier;
-        private readonly Func<int, bool> _startedProcessVerifier =
-            startedProcessVerifier;
-        private readonly Func<int?> _runningProcessFinder = runningProcessFinder;
-
         public bool IsExpected(HandleScopeConnection connection) =>
             _connectionVerifier(connection);
-
-        public bool IsExpectedStartedProcess(int processId) =>
-            _startedProcessVerifier(processId);
-
-        public int? FindExpectedRunningProcessId() => _runningProcessFinder();
-    }
-
-    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        private DateTimeOffset _utcNow = utcNow;
-        private long _timestamp;
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
-
-        public override long GetTimestamp() => _timestamp;
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-
-        internal void Advance(TimeSpan duration)
-        {
-            _utcNow += duration;
-            _timestamp += duration.Ticks;
-        }
     }
 
     private sealed class RecordingHandler(
@@ -1138,12 +804,4 @@ public sealed class HandleScopeIntegrationServiceTests
         bool HasAuthorization,
         string HeaderText);
 
-    private sealed record ProcessStartSnapshot(
-        string FileName,
-        string WorkingDirectory,
-        string Arguments,
-        int ArgumentCount,
-        bool UseShellExecute,
-        string Verb,
-        bool ErrorDialog);
 }

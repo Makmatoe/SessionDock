@@ -72,9 +72,6 @@
           CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="Resources\update-public-key.pem"
                       LogicalName="SessionDock.Embedded.ReleasePublicKey.pem" />
-    <EmbeddedResource Include="Resources\handlescope-release-public-keys.json"
-                      Condition="Exists('Resources\handlescope-release-public-keys.json')"
-                      LogicalName="SessionDock.Embedded.HandleScopeReleasePublicKeys.json" />
     <EmbeddedResource Include="ReleaseNotes\*.md"
                       WithCulture="false"
                       LogicalName="SessionDock.Embedded.ReleaseNotes.%(Filename)%(Extension)" />

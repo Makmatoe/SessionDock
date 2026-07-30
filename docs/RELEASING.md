@@ -52,29 +52,28 @@ cryptographic package authorization without requiring a commercial Windows
 code-signing certificate. Never use this key to sign executables or HandleScope
 releases.
 
-## HandleScope release verification
+## HandleScope compatibility pin
 
-The one-click integration supports the assets currently published by
-`Makmatoe/HandleScope`: a stable immutable GitHub release containing the exact
-`HandleScope-X.Y.Z-win-x64.zip` and `SHA256SUMS.txt` files. SessionDock requires
-GitHub's SHA-256 digest and exact size for both assets, requires the checksum to
-agree with the package digest, safely extracts a bounded archive, and verifies
-every file against `CONTENTS.sha256` before running the per-user installer.
+SessionDock does not bundle, download, install, update, uninstall, elevate, or
+start HandleScope. It never invokes HandleScope PowerShell lifecycle scripts or
+uses `-ExecutionPolicy Bypass`. The panel opens only the official installation
+guide pinned to immutable tag `v0.1.3`; users perform installation, startup, and
+optional autostart separately.
 
-After installation it stores the verified manifest and a local release receipt,
-then rehashes `HandleScope.Api.exe` before starting or trusting it. HandleScope
-is not Authenticode-signed, and this receipt is not an independent signature:
-the trust boundary is the canonical immutable GitHub repository and same-release
-hashes. A process running as the same Windows user could replace both the local
-program and receipt, so do not describe this as certificate-backed publisher
-verification.
+The supported runtime is HandleScope v0.1.3 from commit
+`952c16ee800a936d6d6fb48d78f8fbfe2483cee0`. Its published
+`HandleScope.Api.exe` is exactly 50,275,056 bytes with SHA-256
+`ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
+SessionDock embeds that identity and rejects any other executable before its
+path or process can be trusted. Existing path, reparse-point, standard-user,
+current-session, PID, discovery-time, strict loopback, rotating-token, and
+health-policy checks remain mandatory.
 
-The stronger descriptor path remains available. If a future HandleScope release
-contains `handlescope-release.json`, SessionDock requires its signature to match
-a distinct key in `SessionDock/Resources/handlescope-release-public-keys.json`;
-it never reuses the SessionDock update key. Do not add the descriptor asset until
-the matching production public key is embedded, because descriptor presence
-intentionally makes signature verification mandatory.
+Do not change the pinned setup URL, version, size, or digest until a newer
+immutable HandleScope release and its integration contract have been reviewed
+together. A future change must retain the manual lifecycle boundary, update the
+five localized resources and current release notes, and extend the focused
+boundary/runtime tests.
 
 ## Prepare and validate
 
