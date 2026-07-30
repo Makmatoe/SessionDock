@@ -50,7 +50,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void IntegrationPanel_OpensOnlyPinnedOfficialSetupInstructions()
+    public void IntegrationPanel_OffersPinnedInstallAndOfficialGuide()
     {
         var startInfo = HandleScopeIntegrationDialog.CreateOfficialSetupStartInfo();
 
@@ -62,6 +62,8 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.True(string.IsNullOrEmpty(startInfo.Arguments));
 
         var xaml = ReadProductionFile("HandleScopeIntegrationDialog.xaml");
+        Assert.Contains("InstallHandleScopeButton", xaml, StringComparison.Ordinal);
+        Assert.Contains("{DynamicResource Handle.Install}", xaml, StringComparison.Ordinal);
         Assert.Contains("OpenHandleScopeSetupButton", xaml, StringComparison.Ordinal);
         Assert.Contains("{DynamicResource Handle.SetupGuide}", xaml, StringComparison.Ordinal);
         Assert.Contains("RefreshButton", xaml, StringComparison.Ordinal);
@@ -74,6 +76,9 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
 
         var codeBehind = ReadProductionFile(
             "HandleScopeIntegrationDialog.xaml.cs");
+        Assert.Contains("InstallPinnedAsync", codeBehind, StringComparison.Ordinal);
+        Assert.DoesNotContain("StartAsync(", codeBehind, StringComparison.Ordinal);
+
         var testAvailabilityStart = codeBehind.IndexOf(
             "TestConnectionButton.IsEnabled",
             StringComparison.Ordinal);
@@ -95,7 +100,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void ProductionBoundary_HasNoManagedHandleScopeLifecyclePath()
+    public void ProductionBoundary_HasPinnedManagedInstallWithoutElevationOrOptIn()
     {
         var repositoryRoot = FindRepositoryRoot();
         var systemProcessesRoot = Path.Combine(
@@ -109,17 +114,19 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             .ToArray();
         var source = string.Join('\n', productionSources);
 
-        Assert.DoesNotContain("HandleScopeReleaseInstaller", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("HandleScopeReleasePolicy", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("Install-HandleScopeApi.ps1", source, StringComparison.Ordinal);
+        Assert.Contains("HandleScopeReleaseInstaller", source, StringComparison.Ordinal);
+        Assert.Contains("HandleScopeReleasePolicy", source, StringComparison.Ordinal);
+        Assert.Contains("Install-HandleScopeApi.ps1", source, StringComparison.Ordinal);
+        Assert.Contains("-StartNow", source, StringComparison.Ordinal);
+        Assert.Contains("-EnableAutostart", source, StringComparison.Ordinal);
         Assert.DoesNotContain("-ExecutionPolicy", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("-StartNow", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("-EnableAutostart", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("-EnableSessionDock", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("-AllowDowngrade", source, StringComparison.Ordinal);
         Assert.DoesNotContain("StartAsync(", source, StringComparison.Ordinal);
-        Assert.False(File.Exists(Path.Combine(
+        Assert.True(File.Exists(Path.Combine(
             systemProcessesRoot,
             "HandleScopeReleaseInstaller.cs")));
-        Assert.False(File.Exists(Path.Combine(
+        Assert.True(File.Exists(Path.Combine(
             systemProcessesRoot,
             "HandleScopeReleasePolicy.cs")));
         Assert.False(File.Exists(Path.Combine(
@@ -128,7 +135,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void AllLocales_RemoveManagedLifecycleActionsAndKeepGuideParity()
+    public void AllLocales_ExposePinnedInstallAndKeepKeyParity()
     {
         var localizationRoot = Path.Combine(
             FindRepositoryRoot(),
@@ -157,8 +164,12 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             Assert.Contains("Handle.SetupGuideTooltip", keys);
             Assert.Contains("Handle.SetupGuideOpened", keys);
             Assert.Contains("Handle.SetupGuideFailed", keys);
-            Assert.DoesNotContain("Handle.Install", keys);
-            Assert.DoesNotContain("Handle.InstallConfirm", keys);
+            Assert.Contains("Handle.Install", keys);
+            Assert.Contains("Handle.InstallName", keys);
+            Assert.Contains("Handle.InstallTooltip", keys);
+            Assert.Contains("Handle.InstallConfirm", keys);
+            Assert.Contains("Handle.InstallSucceeded", keys);
+            Assert.Contains("Handle.ProgressDownloading", keys);
             Assert.DoesNotContain("Handle.Start", keys);
             Assert.DoesNotContain("Handle.ActionStartChecked", keys);
             Assert.DoesNotContain("Handle.StateStartingTitle", keys);
@@ -170,6 +181,14 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
                     element => (string)element.Attribute(x + "Key")!,
                     element => element.Value,
                     StringComparer.Ordinal);
+            Assert.Contains(
+                HandleScopeReleaseInstaller.PinnedVersion,
+                strings["Handle.Install"],
+                StringComparison.Ordinal);
+            Assert.Contains(
+                HandleScopeReleaseInstaller.PinnedVersion,
+                strings["Handle.InstallConfirm"],
+                StringComparison.Ordinal);
             var disabledPresentation = string.Concat(
                 strings["Handle.StateDisabledTitle"],
                 " ",
@@ -197,7 +216,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void CurrentDocumentation_StatesManualLifecycleBoundary()
+    public void CurrentDocumentation_StatesPinnedManagedInstallBoundary()
     {
         var repositoryRoot = FindRepositoryRoot();
         var paths = new[]
@@ -225,14 +244,20 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             HandleScopeIntegrationDialog.OfficialSetupUrl,
             documentation,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "Install Latest HandleScope release",
+        Assert.Contains(
+            "Install HandleScope v0.1.3",
+            documentation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            HandleScopeReleaseInstaller.PinnedPackageSha256,
             documentation,
             StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain(
-            "HandleScope installation starts",
+        Assert.Contains(
+            HandleScopeReleaseInstaller.PinnedChecksumsSha256,
             documentation,
             StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("100,839,933", documentation, StringComparison.Ordinal);
+        Assert.Contains("standard-user", documentation, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "API running - integration disabled",
             documentation,
@@ -250,9 +275,13 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             repositoryRoot,
             "SessionDock",
             "ReleaseNotes");
+        var currentVersion = typeof(MainWindow).Assembly
+            .GetName()
+            .Version!
+            .ToString(3);
         var currentNotes = Directory.GetFiles(
             releaseNotesRoot,
-            "2.7.1.*.md");
+            $"{currentVersion}.*.md");
         Assert.Equal(5, currentNotes.Length);
         Assert.All(currentNotes, path =>
         {

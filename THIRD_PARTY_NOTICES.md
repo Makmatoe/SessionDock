@@ -50,10 +50,10 @@ is shipped as `licenses/Microsoft.WindowsDesktop-LICENSE.txt`. See
 Roblox Player, the Microsoft Edge WebView2 Runtime, and
 [HandleScope](https://github.com/Makmatoe/HandleScope) are not licensed as part
 of SessionDock. HandleScope is optional and not bundled in SessionDock releases.
-SessionDock does not download, install, update, uninstall, or start it. Users
-obtain and operate HandleScope separately under its own license and publisher
-terms; SessionDock can open the pinned official v0.1.3 setup instructions in
-the user's browser.
+After explicit confirmation, SessionDock can download and run the separate
+product's pinned v0.1.3 per-user installer from its canonical immutable GitHub
+release. HandleScope remains governed by its own license and publisher terms;
+the pinned official setup instructions remain available in the user's browser.
 
 These notices travel inside both the installed application and portable ZIP.
 The versioned SBOM published with each release identifies the application,

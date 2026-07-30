@@ -50,16 +50,18 @@ SessionDock is designed around these boundaries:
   hooks are rejected.
 - HandleScope uses a separate verified loopback process, discovery-file, and
   rotating-token boundary. Its API is optional, explicitly enabled, and never
-  bundled, downloaded, installed, updated, uninstalled, elevated, or started by
-  SessionDock. SessionDock never invokes the HandleScope installer or lifecycle
-  scripts and never supplies an execution-policy override. The panel opens a
-  pinned official v0.1.3 setup guide in the user's browser; installation,
-  startup, and optional per-user autostart remain separate explicit HandleScope
-  actions. Before inspecting or trusting the local API, SessionDock requires
-  the exact published v0.1.3 executable size and SHA-256 hash at the expected
-  non-reparse per-user path, then retains the process-path, session, owner,
-  non-elevated token, PID, discovery-time, strict loopback, rotating-token, and
-  health-policy checks. The integration opt-in is a separate explicit action.
+  bundled or elevated by SessionDock. The explicit install action is pinned to
+  the immutable HandleScope v0.1.3 Windows x64 release. It requires the exact
+  package and checksum sizes and SHA-256 hashes, a matching same-release
+  checksum, safe bounded ZIP layout, and complete internal manifest before
+  running the standard-user installer. SessionDock supplies no execution-policy
+  override, downgrade switch, elevation request, or automatic integration
+  opt-in. The installer starts the API and enables HandleScope's limited
+  per-user autostart only after the user confirms the action. Before inspecting
+  or trusting the local API, SessionDock also requires the exact published
+  v0.1.3 executable size and SHA-256 hash at the expected non-reparse per-user
+  path, then retains the process-path, session, owner, non-elevated token, PID,
+  discovery-time, strict loopback, rotating-token, and health-policy checks.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content.
 - Safe metadata transfer uses a small versioned allowlist and bounded strict

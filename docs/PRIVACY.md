@@ -137,23 +137,29 @@ destinations, private-server codes, and server job IDs.
 The optional HandleScope integration inspects only the expected local install
 and SessionDock opt-in files when its panel opens or the user selects Refresh.
 It hashes the expected executable locally and accepts only the exact published
-HandleScope v0.1.3 size and SHA-256 digest. SessionDock does not contact GitHub
-to resolve or download HandleScope releases. Selecting **Open official v0.1.3
-setup guide** asks the user's default browser to open the pinned official GitHub
-documentation; that browser request has the browser's ordinary network and
-privacy behavior. SessionDock sends no HandleScope token, configuration, local
-path, or Roblox account data with that link.
+HandleScope v0.1.3 size and SHA-256 digest. SessionDock contacts GitHub for
+HandleScope only after the user selects **Install HandleScope v0.1.3** and
+confirms the warning. It downloads the pinned package and checksum from the
+canonical immutable release; ordinary network metadata such as the source IP
+address and SessionDock user agent is visible to GitHub and its release-asset
+hosts. The request includes no HandleScope token, configuration, local path, or
+Roblox account data. The files are staged in a random temporary directory and
+removed after completion or a pre-install failure when cleanup succeeds.
+Selecting **Open official v0.1.3 setup guide** asks the user's default browser
+to open the pinned official GitHub documentation with that browser's ordinary
+network and privacy behavior.
 
 After enablement, SessionDock contacts the checked loopback health endpoint only
 when the user selects **Test connection** or when the integration runs after a
 successful Roblox launch, and only after local connection-file and same-session
 process checks. While the integration is disabled, opening the panel and
 selecting Refresh or Test performs no process, discovery-file, or API probe.
-SessionDock never bundles, downloads, installs, updates, uninstalls,
-elevates, or starts HandleScope and never changes its optional autostart task.
-Users perform those lifecycle actions separately under HandleScope's official
-instructions. When testing or using the
-enabled integration, it reads the rotating bearer token from HandleScope's
+The explicit confirmed install action runs HandleScope's verified standard-user
+installer without elevation or a PowerShell execution-policy bypass. The
+installer starts the API and enables its limited per-user autostart task; it
+does not enable the SessionDock integration. No lifecycle action occurs merely
+because SessionDock or the integration panel opens. When testing or using the
+enabled integration, SessionDock reads the rotating bearer token from HandleScope's
 checked local connection file and sends it only to the validated loopback API;
 it does not send the token off-machine, log it, or copy it into SessionDock's
 persistent configuration. The connection test does not enumerate or close
@@ -163,7 +169,7 @@ and, if configured, in a separately planned all-process sweep. Each execution
 uses only its matching one-time plan ID. SessionDock's minimal enabled/disabled
 opt-in remains separate from HandleScope installation, startup, and autostart.
 
-SessionDock v2.7.1 does not use or delete the public verification metadata that
+SessionDock v2.7.1 and later do not use or delete the public verification metadata that
 v2.7.0 may have stored under
 `%LOCALAPPDATA%\SessionDock\HandleScopeAuthorization`. An upgrade leaves that
 legacy directory unchanged and ignored. It contains release hashes and public
