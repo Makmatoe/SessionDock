@@ -154,25 +154,35 @@ releases.
 ## HandleScope compatibility pin
 
 SessionDock does not bundle or elevate HandleScope. Its confirmed install action
-downloads and invokes only the immutable HandleScope v0.1.3 standard-user
-installer. It never uses `-ExecutionPolicy Bypass`, requests elevation, permits
-a downgrade, or automatically enables the SessionDock integration. The pinned
-official installation guide remains available for manual setup.
+downloads and invokes only the immutable HandleScope v0.1.4 standard-user
+installer. It uses `-ExecutionPolicy RemoteSigned` only for the verified child
+process so Windows' default `Restricted` policy does not reject the script. It
+never uses `Bypass` or `Unrestricted`, changes saved policy, overrides Group
+Policy, requests elevation, permits a downgrade, or automatically enables the
+SessionDock integration. The pinned official installation guide remains
+available for manual setup.
 
-The supported runtime is HandleScope v0.1.3 from commit
-`952c16ee800a936d6d6fb48d78f8fbfe2483cee0`. Its published
-`HandleScope.Api.exe` is exactly 50,275,056 bytes with SHA-256
-`ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
+The supported runtime is HandleScope v0.1.4 from commit
+`624dfc3abb6991b4f8eab8c8895ea11936f24919`. Its published
+`HandleScope.Api.exe` is exactly 50,275,061 bytes with SHA-256
+`9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95`.
 SessionDock embeds that identity and rejects any other executable before its
 path or process can be trusted. Existing path, reparse-point, standard-user,
 current-session, PID, discovery-time, strict loopback, rotating-token, and
 health-policy checks remain mandatory.
 
-The managed installer additionally pins `HandleScope-0.1.3-win-x64.zip` to
-100,839,933 bytes and SHA-256
-`64934117a3dc7b9aa52a0d3ef34df9627e898e045895a3bd3817f46da0531aee`,
+The managed installer additionally pins `HandleScope-0.1.4-win-x64.zip` to
+100,841,616 bytes and SHA-256
+`b06bfe850b8334b6be86d9037ea43e7210845420e7473cf7c17d030277c06622`,
 and `SHA256SUMS.txt` to 198 bytes and SHA-256
-`f6dec9303d3520d69f4b19123818aee8e502b2379c5e225035eb4d65d5549631`.
+`860bcd77e7cd83693a87b15a1f464908e6dbe43195b0ed0572684e009b1e6ccf`.
+The release was independently confirmed public, non-draft, non-prerelease,
+immutable, and latest. Its attested `HandleScope-0.1.4-win-x64.spdx.json` is
+16,689 bytes with SHA-256
+`bff70ad4909d28f247453be84b7a024b230dab79d97dc49773bafe2f4bb12711`.
+The versioned upstream integration contract explicitly authorizes the confirmed
+managed path and requires disclosure that an older supported per-user install
+may be replaced.
 
 Do not change the pinned setup URL, version, asset sizes, or digests until a
 newer immutable HandleScope release and its integration contract have been

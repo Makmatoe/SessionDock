@@ -1,9 +1,13 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace SessionDock.SystemProcesses;
 
@@ -11,13 +15,13 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
 {
     internal const string PinnedVersion =
         HandleScopeInstalledRuntimeVerifier.SupportedVersion;
-    internal const string PinnedTag = "v0.1.3";
-    internal const long PinnedPackageSize = 100_839_933;
+    internal const string PinnedTag = "v0.1.4";
+    internal const long PinnedPackageSize = 100_841_616;
     internal const long PinnedChecksumsSize = 198;
     internal const string PinnedPackageSha256 =
-        "64934117a3dc7b9aa52a0d3ef34df9627e898e045895a3bd3817f46da0531aee";
+        "b06bfe850b8334b6be86d9037ea43e7210845420e7473cf7c17d030277c06622";
     internal const string PinnedChecksumsSha256 =
-        "f6dec9303d3520d69f4b19123818aee8e502b2379c5e225035eb4d65d5549631";
+        "860bcd77e7cd83693a87b15a1f464908e6dbe43195b0ed0572684e009b1e6ccf";
 
     internal static HandleScopeReleaseIdentity CreatePinnedRelease() => new(
         PinnedVersion,
@@ -38,7 +42,10 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
     private const int MaximumAssetRedirects = 3;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(15);
     private readonly string _temporaryRoot;
-    private readonly Func<ProcessStartInfo, CancellationToken, Task<int>>
+    private readonly Func<
+        ProcessStartInfo,
+        CancellationToken,
+        Task<HandleScopeInstallerProcessResult>>
         _runProcess;
     private readonly HandleScopeReleaseIdentity _release;
     private readonly HttpClient _client;
@@ -56,7 +63,10 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
     internal HandleScopeReleaseInstaller(
         HttpMessageHandler handler,
         string temporaryRoot,
-        Func<ProcessStartInfo, CancellationToken, Task<int>> runProcess,
+        Func<
+            ProcessStartInfo,
+            CancellationToken,
+            Task<HandleScopeInstallerProcessResult>> runProcess,
         HandleScopeReleaseIdentity? release = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -133,13 +143,16 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             var verificationStartInfo = CreateInstallerStartInfo(
                 installerPath,
                 verifyOnly: true);
-            var verificationExitCode = await _runProcess(
+            var verificationResult = await _runProcess(
                 verificationStartInfo,
                 cancellationToken);
-            if (verificationExitCode != 0)
+            if (verificationResult.ExitCode != 0)
             {
                 throw new HandleScopeInstallException(
-                    "HandleScope rejected its downloaded release inventory. Nothing was installed.");
+                    HandleScopeInstallFailureKind.Installer,
+                    AppendInstallerReason(
+                        "HandleScope rejected its downloaded release inventory. Nothing was installed.",
+                        verificationResult.FailureReason));
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -153,13 +166,16 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
 
             // Once the reviewed installer starts, let its atomic replacement
             // finish instead of interrupting it during a file swap.
-            var installExitCode = await _runProcess(
+            var installResult = await _runProcess(
                 installStartInfo,
                 CancellationToken.None);
-            if (installExitCode != 0)
+            if (installResult.ExitCode != 0)
             {
                 throw new HandleScopeInstallException(
-                    "HandleScope's per-user installer did not complete. Its atomic file step preserves the prior install on replacement failure, but a later start or autostart step may have failed after the new files were installed. Refresh the status before retrying.");
+                    HandleScopeInstallFailureKind.Installer,
+                    AppendInstallerReason(
+                        "HandleScope's per-user installer did not complete. Its atomic file step preserves the prior install on replacement failure, but a later start or autostart step may have failed after the new files were installed. Refresh the status before retrying.",
+                        installResult.FailureReason));
             }
 
             return new HandleScopeReleaseInstallResult(release.Version);
@@ -168,9 +184,17 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         {
             throw;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.ReleaseDownload,
+                "The HandleScope download timed out before it could be verified.",
+                exception);
         }
         catch (Exception exception) when (
             exception is HttpRequestException or IOException or
@@ -180,6 +204,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
                 Win32Exception)
         {
             throw new HandleScopeInstallException(
+                ClassifyUnexpectedFailure(exception),
                 $"HandleScope {PinnedVersion} could not be installed safely. No unverified package was run.",
                 exception);
         }
@@ -233,11 +258,15 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true,
             ErrorDialog = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
             WindowStyle = ProcessWindowStyle.Hidden
         };
         startInfo.ArgumentList.Add("-NoLogo");
         startInfo.ArgumentList.Add("-NoProfile");
         startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-ExecutionPolicy");
+        startInfo.ArgumentList.Add("RemoteSigned");
         startInfo.ArgumentList.Add("-File");
         startInfo.ArgumentList.Add(fullInstallerPath);
         if (verifyOnly)
@@ -262,11 +291,13 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             asset.DownloadUri,
             cancellationToken);
         if (response.StatusCode != HttpStatusCode.OK ||
-            response.Content.Headers.ContentLength is <= 0 ||
-            response.Content.Headers.ContentLength > maximumBytes ||
-            response.Content.Headers.ContentLength != asset.Size)
+            HasInvalidDeclaredLength(
+                response.Content.Headers.ContentLength,
+                asset.Size,
+                maximumBytes))
         {
             throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.ReleaseDownload,
                 "The HandleScope checksum file could not be downloaded from GitHub.");
         }
 
@@ -292,12 +323,13 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             release.Package.DownloadUri,
             cancellationToken);
         if (response.StatusCode != HttpStatusCode.OK ||
-            response.Content.Headers.ContentLength is <= 0 ||
-            response.Content.Headers.ContentLength != release.Package.Size ||
-            response.Content.Headers.ContentLength >
-                HandleScopeReleasePolicy.MaximumPackageBytes)
+            HasInvalidDeclaredLength(
+                response.Content.Headers.ContentLength,
+                release.Package.Size,
+                HandleScopeReleasePolicy.MaximumPackageBytes))
         {
             throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.ReleaseDownload,
                 "The HandleScope package could not be downloaded from GitHub.");
         }
 
@@ -349,6 +381,36 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
                 "The HandleScope package failed its published SHA-256 check.");
         }
     }
+
+    private static bool HasInvalidDeclaredLength(
+        long? declaredLength,
+        long expectedLength,
+        long maximumLength) =>
+        expectedLength <= 0 ||
+        maximumLength <= 0 ||
+        expectedLength > maximumLength ||
+        declaredLength is { } length &&
+        (length <= 0 || length != expectedLength || length > maximumLength);
+
+    private static string AppendInstallerReason(
+        string message,
+        string? reason) =>
+        string.IsNullOrWhiteSpace(reason)
+            ? message
+            : $"{message} Installer detail: {reason}";
+
+    private static HandleScopeInstallFailureKind ClassifyUnexpectedFailure(
+        Exception exception) => exception switch
+        {
+            HttpRequestException => HandleScopeInstallFailureKind.ReleaseDownload,
+            InvalidDataException or CryptographicException =>
+                HandleScopeInstallFailureKind.ReleaseIntegrity,
+            Win32Exception or IOException or UnauthorizedAccessException or
+                ArgumentException or InvalidOperationException or
+                NotSupportedException =>
+                HandleScopeInstallFailureKind.LocalEnvironment,
+            _ => HandleScopeInstallFailureKind.LocalEnvironment
+        };
 
     private async Task<HttpResponseMessage> SendAssetRequestAsync(
         Uri initialUri,
@@ -451,6 +513,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
             {
                 throw new HandleScopeInstallException(
+                    HandleScopeInstallFailureKind.LocalEnvironment,
                     "The temporary HandleScope download path is linked and cannot be used safely.");
             }
         }
@@ -508,7 +571,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             throw new HandleScopeInstallException(errorMessage);
     }
 
-    private static async Task<int> RunProcessAsync(
+    internal static async Task<HandleScopeInstallerProcessResult> RunProcessAsync(
         ProcessStartInfo startInfo,
         CancellationToken cancellationToken)
     {
@@ -516,10 +579,164 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         if (!process.Start())
         {
             throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.LocalEnvironment,
                 "Windows PowerShell could not start the HandleScope installer.");
         }
-        await process.WaitForExitAsync(cancellationToken);
-        return process.ExitCode;
+        var standardErrorTask = ReadBoundedProcessOutputAsync(
+            process.StandardError,
+            cancellationToken);
+        var standardOutputTask = ReadBoundedProcessOutputAsync(
+            process.StandardOutput,
+            cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryTerminateProcess(process);
+            await ObserveCanceledOutputAsync(
+                standardErrorTask,
+                standardOutputTask);
+            throw;
+        }
+        var standardError = await standardErrorTask;
+        var standardOutput = await standardOutputTask;
+        var reason = ExtractProcessFailureReason(standardError) ??
+            ExtractProcessFailureReason(standardOutput);
+        return new(process.ExitCode, reason);
+    }
+
+    private static void TryTerminateProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or Win32Exception or
+                NotSupportedException)
+        {
+            Trace.WriteLine(
+                $"Canceled HandleScope installer cleanup failed: {exception.GetType().Name}.");
+        }
+    }
+
+    private static async Task ObserveCanceledOutputAsync(
+        Task<string> standardErrorTask,
+        Task<string> standardOutputTask)
+    {
+        try
+        {
+            await Task.WhenAll(standardErrorTask, standardOutputTask);
+        }
+        catch (OperationCanceledException)
+        {
+            // Both redirected readers use the same canceled operation token.
+        }
+    }
+
+    private static async Task<string> ReadBoundedProcessOutputAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
+    {
+        const int maximumRetainedCharacters = 16 * 1024;
+        var retained = new StringBuilder(maximumRetainedCharacters);
+        var buffer = new char[1024];
+        while (true)
+        {
+            var read = await reader.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+                return retained.ToString();
+            var remaining = maximumRetainedCharacters - retained.Length;
+            if (remaining > 0)
+                retained.Append(buffer, 0, Math.Min(read, remaining));
+        }
+    }
+
+    internal static string? ExtractProcessFailureReason(string output)
+    {
+        var trimmed = output.TrimStart();
+        if (!trimmed.StartsWith("#< CLIXML", StringComparison.Ordinal))
+            return FirstUsefulOutputLine(output);
+
+        var xmlStart = trimmed.IndexOf('<', "#< CLIXML".Length);
+        if (xmlStart < 0)
+            return null;
+        try
+        {
+            using var textReader = new StringReader(trimmed[xmlStart..]);
+            using var xmlReader = XmlReader.Create(
+                textReader,
+                new XmlReaderSettings
+                {
+                    DtdProcessing = DtdProcessing.Prohibit,
+                    MaxCharactersInDocument = 16 * 1024,
+                    XmlResolver = null
+                });
+            var document = XDocument.Load(xmlReader, LoadOptions.None);
+            var error = document
+                .Descendants()
+                .FirstOrDefault(element =>
+                    element.Name.LocalName == "S" &&
+                    string.Equals(
+                        (string?)element.Attribute("S"),
+                        "Error",
+                        StringComparison.Ordinal));
+            return error is null
+                ? null
+                : FirstUsefulOutputLine(
+                    DecodePowerShellCliXmlEscapes(error.Value));
+        }
+        catch (Exception exception) when (
+            exception is XmlException or InvalidOperationException or
+                ArgumentException)
+        {
+            Trace.WriteLine(
+                $"HandleScope installer CLIXML could not be parsed: {exception.GetType().Name}.");
+            return null;
+        }
+    }
+
+    private static string DecodePowerShellCliXmlEscapes(string value)
+    {
+        var decoded = new StringBuilder(value.Length);
+        for (var index = 0; index < value.Length; index++)
+        {
+            if (index + 6 < value.Length &&
+                value[index] == '_' &&
+                value[index + 1] == 'x' &&
+                value[index + 6] == '_' &&
+                int.TryParse(
+                    value.AsSpan(index + 2, 4),
+                    NumberStyles.AllowHexSpecifier,
+                    CultureInfo.InvariantCulture,
+                    out var codePoint))
+            {
+                decoded.Append((char)codePoint);
+                index += 6;
+                continue;
+            }
+            decoded.Append(value[index]);
+        }
+        return decoded.ToString();
+    }
+
+    private static string? FirstUsefulOutputLine(string output)
+    {
+        foreach (var line in output.ReplaceLineEndings("\n").Split('\n'))
+        {
+            var value = line.Trim();
+            if (value.Length == 0 ||
+                value.StartsWith("At ", StringComparison.OrdinalIgnoreCase) ||
+                value.StartsWith('+'))
+            {
+                continue;
+            }
+            return value.Length <= 512 ? value : value[..512];
+        }
+        return null;
     }
 }
 
@@ -535,5 +752,9 @@ internal sealed record HandleScopeReleaseInstallProgress(
     HandleScopeReleaseInstallStage Stage,
     string? Version,
     int? Percentage);
+
+internal sealed record HandleScopeInstallerProcessResult(
+    int ExitCode,
+    string? FailureReason);
 
 internal sealed record HandleScopeReleaseInstallResult(string Version);

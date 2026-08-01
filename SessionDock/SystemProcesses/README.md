@@ -70,26 +70,29 @@ continues to use the exact HTTP loopback endpoint described below.
 
 HandleScope support is disabled by default. SessionDock does not include,
 bundle, or elevate HandleScope. Its explicit install action is pinned to the
-immutable HandleScope v0.1.3 Windows x64 release and never uses an
-execution-policy override.
+immutable HandleScope v0.1.4 Windows x64 release. It uses `RemoteSigned` only
+for the verified child process so Windows' default `Restricted` policy does not
+reject the installer; saved policy and Group Policy remain unchanged.
 
 1. Select **Integrations** in the SessionDock sidebar to open the HandleScope
    panel. Opening the panel and selecting **Refresh** inspect local files only.
-2. Select **Install HandleScope v0.1.3** and review the confirmation. SessionDock
+2. Select **Install HandleScope v0.1.4** and review the confirmation. SessionDock
    downloads only the canonical package and checksum assets. It requires the
    exact published sizes and SHA-256 hashes, matching same-release checksum,
    safe bounded ZIP layout, and complete internal manifest before it invokes
-   HandleScope's own `-VerifyOnly` check and standard-user installer. It never
-   supplies `-ExecutionPolicy Bypass`, `-AllowDowngrade`, `-EnableSessionDock`,
-   or any elevation option.
+   HandleScope's own `-VerifyOnly` check and standard-user installer. It supplies
+   only the process-scoped `-ExecutionPolicy RemoteSigned`; it never supplies
+   `Bypass`, `Unrestricted`, `-AllowDowngrade`, `-EnableSessionDock`, or any
+   elevation option. The confirmation discloses that this may replace an older
+   supported per-user installation.
 3. The installer starts the API and enables HandleScope's limited per-user
    interactive-logon autostart. This does not enable SessionDock's integration.
-   The panel's **Open official v0.1.3 setup guide** action remains available for
+   The panel's **Open official v0.1.4 setup guide** action remains available for
    release review or manual installation.
 4. Refreshing the panel accepts only
-   `%LOCALAPPDATA%\Programs\HandleScope\Api\HandleScope.Api.exe` from v0.1.3:
-   exactly 50,275,056 bytes with SHA-256
-   `ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
+   `%LOCALAPPDATA%\Programs\HandleScope\Api\HandleScope.Api.exe` from v0.1.4:
+   exactly 50,275,061 bytes with SHA-256
+   `9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95`.
 5. Select **Enable** to write the fixed, minimal per-user SessionDock opt-in.
    This does not install or start HandleScope and does not change its autostart.
 6. Select **Test connection** to check only an already-running API's loopback
@@ -98,10 +101,10 @@ execution-policy override.
 
 The pinned download identities are:
 
-- `HandleScope-0.1.3-win-x64.zip`: 100,839,933 bytes, SHA-256
-  `64934117a3dc7b9aa52a0d3ef34df9627e898e045895a3bd3817f46da0531aee`.
+- `HandleScope-0.1.4-win-x64.zip`: 100,841,616 bytes, SHA-256
+  `b06bfe850b8334b6be86d9037ea43e7210845420e7473cf7c17d030277c06622`.
 - `SHA256SUMS.txt`: 198 bytes, SHA-256
-  `f6dec9303d3520d69f4b19123818aee8e502b2379c5e225035eb4d65d5549631`.
+  `860bcd77e7cd83693a87b15a1f464908e6dbe43195b0ed0572684e009b1e6ccf`.
 
 HandleScope is not Authenticode-signed, so this trust comes from the reviewed
 immutable canonical release and pinned hashes rather than a certificate-backed
@@ -133,7 +136,7 @@ Opening or refreshing the integration panel never changes the HandleScope
 installation, process, autostart task, or SessionDock opt-in. Only the explicit
 confirmed install action invokes HandleScope's installer. Any legacy public
 verification metadata under `%LOCALAPPDATA%\SessionDock\HandleScopeAuthorization`
-is left unchanged and ignored; it is not required for the pinned v0.1.3 API.
+is left unchanged and ignored; it is not required for the pinned v0.1.4 API.
 
 Developers working from a SessionDock source checkout may instead run
 `./scripts/Enable-HandleScope.ps1` from the repository root. HandleScope's

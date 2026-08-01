@@ -12,7 +12,7 @@ namespace SessionDock;
 public partial class HandleScopeIntegrationDialog : Window
 {
     internal const string OfficialSetupUrl =
-        "https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md";
+        "https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/INSTALL.md";
 
     private readonly HandleScopeIntegrationService _integrationService = new();
     private readonly HandleScopeReleaseInstaller _releaseInstaller = new();
@@ -152,9 +152,12 @@ public partial class HandleScopeIntegrationDialog : Window
         catch (HandleScopeInstallException exception)
         {
             Trace.WriteLine(
-                $"HandleScope installation failed safely: {exception.GetType().Name}.");
+                $"HandleScope installation failed safely: {exception.Message}");
             SetActionStatus(
-                Localize("Handle.InstallFailed", OfficialSetupUrl),
+                Localize(
+                    "Handle.InstallFailed",
+                    LocalizeInstallFailureReason(exception.FailureKind),
+                    OfficialSetupUrl),
                 isError: true);
         }
         finally
@@ -469,6 +472,22 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private string Localize(string key, params object?[] arguments) =>
         Localization.Format(key, arguments);
+
+    private string LocalizeInstallFailureReason(
+        HandleScopeInstallFailureKind failureKind) => Localize(
+        failureKind switch
+        {
+            HandleScopeInstallFailureKind.ReleaseDownload =>
+                "Handle.InstallFailureDownload",
+            HandleScopeInstallFailureKind.ReleaseIntegrity =>
+                "Handle.InstallFailureIntegrity",
+            HandleScopeInstallFailureKind.LocalEnvironment =>
+                "Handle.InstallFailureEnvironment",
+            HandleScopeInstallFailureKind.Installer =>
+                "Handle.InstallFailureInstaller",
+            _ => throw new InvalidOperationException(
+                "Unexpected HandleScope install failure kind.")
+        });
 
     private sealed class ImmediateProgress<T> : IProgress<T>
     {
