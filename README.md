@@ -2,279 +2,296 @@
 
 [![CI](https://github.com/Makmatoe/SessionDock/actions/workflows/ci.yml/badge.svg)](https://github.com/Makmatoe/SessionDock/actions/workflows/ci.yml)
 
-SessionDock is a Windows launcher that keeps Roblox website sessions separate,
-so you can choose the account and destination before opening Roblox Player.
-
-## Install SessionDock
-
-[![Install Latest SessionDock release](docs/assets/install-latest-sessiondock.svg)](https://github.com/Makmatoe/SessionDock/releases/latest/download/SessionDock-win-x64-Setup.exe)
-
-Select the button on a Windows x64 PC, then open the downloaded
-`SessionDock-win-x64-Setup.exe`. The fixed link always selects the Setup asset
-from the latest stable release in the canonical `Makmatoe/SessionDock`
-repository, so there is no release page or asset list to navigate.
-
-[View release details, checksums, and the portable ZIP](https://github.com/Makmatoe/SessionDock/releases/latest)
-
-Release installers are published only on the canonical GitHub Releases page.
-If that page has no release yet, a production installer is not currently
-available. SessionDock does not currently have a paid Authenticode certificate,
-so Windows identifies the installer as an unknown publisher. The protected
-workflow instead binds every release to a signed update descriptor, exact
-SHA-256 checksums, GitHub attestations, and a separately approved immutable
-draft. These controls do not make Windows display a verified publisher.
+SessionDock is a Windows x64 launcher for Roblox. It keeps each website sign-in
+in a separate local browser profile, then lets you choose the account and
+destination before Roblox Player opens.
 
 > SessionDock is an independent project. It is not affiliated with, endorsed by,
 > or sponsored by Roblox Corporation. Roblox and the Roblox logo are trademarks
 > of Roblox Corporation.
 
-## Quick start
+## Install and launch
 
-1. Install Roblox Player. WebView2 is already included with Windows 11 and
-   nearly all Windows 10 installations. If it is missing or damaged,
-   SessionDock stays open and offers the
-   [official Microsoft WebView2 repair and download page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/).
-2. Select **Install Latest SessionDock release** above and open the downloaded
-   Setup. You do not need to choose a release asset manually.
+[![Install Latest SessionDock release](docs/assets/install-latest-sessiondock.svg)](https://github.com/Makmatoe/SessionDock/releases/latest/download/SessionDock-win-x64-Setup.exe)
+
+1. Install Roblox Player on a Windows x64 PC.
+2. Select **Install Latest SessionDock release** above. The link downloads
+   `SessionDock-win-x64-Setup.exe` from the latest stable release in the
+   canonical `Makmatoe/SessionDock` repository.
 3. Confirm the browser download came from `github.com/Makmatoe/SessionDock`.
-   Windows may show **Unknown publisher** because the project does not currently
-   buy an Authenticode certificate. Before continuing through that warning,
-   verify the checksum or GitHub attestation using the
-   [regular-user verification steps](docs/UPDATES.md#verify-a-manual-installer-download).
-4. Add an account, then sign in on the official Roblox page shown in its
-   isolated browser session.
-5. Choose a destination and select **Launch Roblox**.
+   SessionDock is not currently Authenticode-signed, so Windows may show
+   **Unknown publisher** or a SmartScreen warning. Before continuing, follow
+   the [checksum verification steps](docs/UPDATES.md#verify-a-manual-installer-download).
+4. Open Setup as your normal Windows user. Do not run SessionDock as
+   administrator; the app accepts only a non-elevated interactive user session.
+5. Open SessionDock, select **Add account**, and sign in only on the official
+   Roblox page shown in that account's isolated browser.
+6. Select the account, choose a place, private server, saved destination, or
+   supported user destination, then select **Launch Roblox**.
 
-The installer is the recommended edition and supports in-app updates. A
-portable ZIP is also published for temporary use, but it does not update
-itself.
+[View the latest release, checksums, attestations, and portable ZIP](https://github.com/Makmatoe/SessionDock/releases/latest).
+If the canonical release page has no release, there is no production installer
+available.
 
-If Roblox One or SessionDock 2.3.0 or earlier is already installed, do not use
-an older Setup as an upgrade or repair. Follow the
+WebView2 is included with Windows 11 and nearly all Windows 10 installations.
+If it is missing or damaged, SessionDock stays open and links to the
+[official Microsoft WebView2 repair page](https://developer.microsoft.com/en-us/microsoft-edge/webview2/consumer/).
+
+### If Roblox One or SessionDock 2.3.0 or earlier is installed
+
+Do not uninstall the old app and do not run an old Setup as an upgrade. Those
+versions can share the historic `%LOCALAPPDATA%\RobloxOne` data and installer
+identity. Follow the
 [side-by-side corrective upgrade](docs/UPDATES.md#moving-from-roblox-one-or-sessiondock-230-and-earlier)
-so the historic `%LOCALAPPDATA%\RobloxOne` account data is preserved.
+before changing either data directory.
 
-## Interface tour
+## Choose the right edition
+
+| Edition | Use it for | Updates |
+| --- | --- | --- |
+| `SessionDock-win-x64-Setup.exe` | Normal installation | Recommended; supports the verified in-app updater |
+| `SessionDock-win-x64-Portable.zip` | Temporary or portable use | Does not update itself |
+| Source or raw `dotnet publish` build | Development and review | Cannot use the production self-update path |
+
+Only assets on the canonical
+[GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases) are
+official production builds.
+
+## Everyday workflow
+
+1. Add one account for each Roblox sign-in you want to isolate.
+2. Give accounts labels, colors, and optional groups, then drag them into your
+   preferred order.
+3. Choose a destination for the selected account. Recent launches and
+   favorites are shared without losing their account and public/private
+   context.
+4. Select **Launch Roblox** for one account, or use **Batch launch** for a
+   group or preset.
+5. Open **About and diagnostics** when troubleshooting. **Copy** and **Export**
+   use the exact previewed, bounded text and never create or upload a support
+   archive.
+
+Useful controls:
+
+- Press **Ctrl+F** to search the current workspace and **Escape** to clear it.
+- Search accounts by label, group, username, user ID, or destination. Search
+  Recent and Favorites by name, place, account, destination, or tracked server.
+- Use **Close Roblox** to close verified foreground and background Roblox
+  Player processes.
+- Change the display language live from the sidebar. Supported choices are
+  **System default**, **English (United States)**,
+  **Nederlands (Nederland)**, **Deutsch (Deutschland)**,
+  **Français (France)**, and **Español (España)**. System default follows a
+  supported Dutch, German, French, or Spanish Windows culture and otherwise
+  uses the complete English fallback. Stored dates keep their stable
+  machine-readable form; display dates follow the selected culture. Very early
+  startup and security-context errors use the supported Windows display
+  language before the saved app preference can load.
+
+## Main features
+
+- **Isolated accounts:** any number of separate WebView2 profiles, custom
+  labels, colors, groups, account ordering, and a remembered destination per
+  account.
+- **Supported destinations:** public places, official private-server links or
+  codes, supported server IDs from recent launches, and an online Roblox user
+  identified by exact username, user ID, or official profile URL. Roblox still
+  performs the final access and privacy check when Player starts.
+- **Watch and auto-join:** an explicit, cancelable, session-only user watch with
+  bounded backoff, one-shot launch protection, and four-hour expiry. It is never
+  saved or resumed automatically, and user destinations do not use batch mode.
+- **Batch launch:** best-effort pipelining with a remembered delay, account-group
+  selection, presets containing only account keys and delay, cancellation, and
+  retry of failed accounts. SessionDock verifies sign-ins before closing running
+  clients, requests each ticket only when needed, and restores the previously
+  selected account. Starting or retrying a batch closes currently running
+  verified Roblox Player clients; Roblox decides whether multiple Players may
+  remain open.
+- **Safe metadata transfer:** an exact-preview JSON export/import for account
+  appearance, order, groups, and pinned public favorites. It never transfers
+  sign-ins, local account keys, usernames, destinations, private-server data,
+  JobIds, browser data, or local paths. Import matches user IDs only to accounts
+  already present on the destination PC and requires confirmation.
+- **Open with SessionDock:** an optional per-user Windows link handler. It never
+  replaces Roblox's default handler. Every accepted link is parsed, previewed,
+  assigned to an account, and separately confirmed; authentication-bearing or
+  ambiguous links are rejected. Incoming private-server links are not saved.
+- **Diagnostics and accessibility:** a bounded support summary, translated
+  runtime/validation/accessibility text, culture-aware display dates, interface
+  sounds, and an optional user-selected startup sound.
+
+The [interface tour](docs/images/sessiondock-v2.7.0/README.md) contains
+sanitized SessionDock 2.7.0 captures. Personal values were replaced with a
+deterministic opaque mosaic; the interface itself was not recreated or
+generatively edited.
 
 ![SessionDock 2.7.0 main window with personal values pixelated](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-readme-overview.png)
 
-These images come from the installed SessionDock 2.7.0 application. Personal
-account and destination values are replaced with a deterministic opaque mosaic;
-the interface itself is not recreated or generatively edited.
+## Update SessionDock
 
-- [Account management](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-accounts-focused.png)
-- [Destination selection](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-destinations-focused.png)
-- [Batch launch](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-batch-focused.png)
-- [About and diagnostics](docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-diagnostics-focused.png)
+The Setup edition updates only when you ask it to:
 
-Reusable README and social/store sizes, sanitized source captures, dimensions,
-hashes, and redaction coordinates are documented in the
-[visual asset inventory](docs/images/sessiondock-v2.7.0/README.md).
+1. Select the update button at the top right of SessionDock.
+2. If a newer stable release exists, review the version and cryptographically
+   signed release notes. An older untranslated note is visibly marked as an
+   English fallback.
+3. Confirm the update. Canceling leaves the current version unchanged.
+4. SessionDock downloads the authorized full package and verifies its signed
+   filename, size, SHA-256, version, package identity, and exact content
+   allowlist.
+5. SessionDock exits only after verification; Velopack replaces the application
+   and reopens it. A previously verified pending package can be installed by
+   restarting when prompted.
 
-## What it does
+Application updates do not replace account data under
+`%LOCALAPPDATA%\SessionDock`. If the updater fails, keep both the current and
+historic local-data directories unchanged and run the current verified Setup
+from the canonical release. See [Updates for regular users](docs/UPDATES.md).
 
-- Keeps any number of Roblox sign-ins in separate local WebView2 profiles and
-  lets you drag saved accounts into the order used by the account strip and
-  batch launch.
-- Gives accounts custom labels, colors, and optional groups, and remembers a
-  destination per account. Groups provide one-click selection in Batch launch.
-- Searches saved accounts by label, group, username, user ID, or destination,
-  and searches Recent and Favorites by name, place, account, destination, or
-  tracked server. Press
-  **Ctrl+F** to focus the search for the current workspace and **Escape** to
-  clear it, or use the dedicated clear button beside an active search.
-- Opens public places, official private-server links or codes, and supported
-  server IDs recovered from recent launches.
-- Joins an online Roblox user by exact username, user ID, or official profile
-  URL when that user's privacy settings and current experience allow the
-  selected account to follow them. Roblox rechecks the user when Player starts;
-  user destinations currently use single launch rather than batch launch.
-- An explicit **Watch and auto-join** option checks that user with the selected
-  account immediately and then at a bounded, backoff-aware rate. When Roblox
-  reports a usable current server it starts Player at most once; Player makes
-  the final access check. The watch remains cancelable, expires after four
-  hours, and is never saved or resumed automatically.
-- Shares Recent and Favorites across accounts while preserving the account and
-  public/private context of each launch.
-- Launches one account at a time or runs a best-effort pipelined batch with a
-  remembered configurable delay. Named presets save only the selected account
-  keys and delay, and failed accounts can be reviewed and retried without
-  reselecting successful ones. Batch mode verifies selected sign-ins before
-  closing any running clients, prepares the next isolated session while the
-  current client settles, requests each launch ticket only when it is ready to
-  be used, can be cancelled, and restores the previously selected account.
-  Starting a batch or retry closes currently running verified Roblox Player
-  clients; Roblox still decides whether multiple Players may run.
-- Closes all visible and background Roblox Player processes on request.
-- Provides optional interface sounds and a user-selected startup sound.
-- Provides live **System default**, **English (United States)**,
-  **Nederlands (Nederland)**, **Deutsch (Deutschland)**,
-  **Français (France)**, and **Español (España)** display-language choices
-  from the sidebar. System default follows supported Dutch, German, French,
-  and Spanish Windows cultures and otherwise uses the complete English
-  fallback. The choice is remembered locally and does not require a restart.
-  Static labels, runtime messages, confirmations, validation, diagnostics, and
-  accessibility text use the selected language. Display dates and times follow
-  the selected culture, while stored data keeps its stable machine-readable
-  format. Older release notes without a translation are clearly labeled when
-  shown in English. Before SessionDock can safely open local settings, very
-  early command-line, security-context, and single-instance errors use the
-  supported Windows display language; the saved app preference takes effect
-  as soon as normal startup begins.
-- Provides an **About and diagnostics** panel with an exact, reviewable support
-  summary that can be copied or exported as text. The summary contains bounded
-  counts and system/component states, never settings files, logs, paths,
-  account details, destinations, browser data, cookies, or tokens.
-- Exports and imports a separate, exact-preview **safe metadata** JSON file for
-  account appearance/order and pinned public favorites. Import requires a
-  validated preview and confirmation, matches Roblox user IDs only to accounts
-  that already exist locally, and never moves sign-ins, account-slot keys,
-  usernames, destinations, private-server details, JobIds, or local paths.
-- Provides an optional **Open with SessionDock** Windows link handler. Enabling
-  it is an explicit per-user action under **Integrations** and does not replace
-  Roblox's default handler. Every accepted link opens a parsed preview and
-  account chooser followed by a separate confirmation; it never launches an
-  account merely because a link arrived. Authentication-bearing or ambiguous
-  launch URLs are rejected, and private-server links received this way are not
-  saved to account defaults, Recent, or Favorites.
+## Uninstall safely
 
-## Local by design
+1. If **Open with SessionDock** is enabled, open **Integrations** and disable it
+   so SessionDock removes its owned per-user link-handler entries.
+2. If HandleScope integration is enabled, disable it in the same panel. This
+   stops future SessionDock post-launch operations; it does not stop or
+   uninstall the separate HandleScope application.
+3. If you want an account's local WebView2 profile removed, delete that account
+   in SessionDock before uninstalling.
+4. Close SessionDock. In Windows, open **Settings > Apps > Installed apps**, find
+   **SessionDock**, and select **Uninstall**.
+5. Decide what to do with `%LOCALAPPDATA%\SessionDock`. Uninstalling application
+   files does not imply deletion of account profiles, settings, favorites,
+   recent history, sounds, or integration preferences. Keep the directory for a
+   reinstall, or remove it only when you intentionally want to erase all
+   SessionDock data for that Windows user.
+
+HandleScope has its own installer, process, autostart, and uninstall workflow.
+Removing SessionDock does not remove HandleScope.
+
+## Optional HandleScope integration
+
+HandleScope is never bundled, elevated, or silently enabled. SessionDock 2.9.0
+uses a signed compatibility catalog so users can keep an approved installed
+runtime or choose a compatible reviewed version without coupling both projects
+to one release number.
+
+Set it up from **Integrations > HandleScope integration**:
+
+1. Select **Check versions**. This is the only remote catalog refresh; opening
+   the panel and selecting **Refresh** inspect local files only.
+2. Choose **Automatic**, **Keep installed**, or an exact reviewed HandleScope
+   release. Then choose **Automatic**, `v1`, or `v2` for the API contract.
+   Saving these preferences installs, starts, replaces, and downgrades nothing.
+3. Select **Install selected HandleScope release** and review the confirmation
+   for that exact version. Automatic selection never installs on its own, and
+   every downgrade is refused.
+4. After installation finishes, select **Enable**. Installation may start
+   HandleScope and enable its limited per-user autostart, but enabling
+   SessionDock remains a separate action.
+5. Select **Test connection**. The test checks only the authenticated loopback
+   health endpoint; it never enumerates or closes a handle.
+
+The signed, rollback-resistant catalog binds compatible SessionDock ranges,
+immutable package and executable identities, capabilities, and the `v1`/`v2`
+adapters already compiled into SessionDock. Remote metadata cannot provide
+code, commands, paths, setup arguments, or endpoint templates. SessionDock
+verifies the selected archive, checksum, any release manifest, executable
+identities, safe ZIP layout, and complete inventory before starting a locally
+compiled setup adapter.
+
+- Every installable release other than the reviewed 0.1.4 and 0.2.2 identities
+  must declare exactly `handlescope.setup.native.v1`. The catalog-pinned
+  release-manifest schema v2 must bind the exact
+  `api/HandleScope.Setup.exe` size and SHA-256. SessionDock invokes that fixed
+  executable directly for only `verify` and
+  `install --start-now --enable-autostart`.
+- Reviewed HandleScope 0.1.4 and 0.2.2 retain their fixed process-scoped Windows
+  PowerShell `RemoteSigned` adapters for backwards compatibility.
+- Neither adapter uses `Bypass` or `Unrestricted`, changes saved execution
+  policy, overrides Group Policy, elevates, passes a downgrade option, or
+  automatically enables SessionDock's integration.
+
+Existing `%LOCALAPPDATA%\SessionDock\handlescope.json` opt-ins and HandleScope's
+exact five-field `%LOCALAPPDATA%\HandleScope\connection.json` discovery format
+remain compatible. The version/API selection is stored separately in
+`handlescope-preferences.json`. The full setup, maintenance, protocol, and
+troubleshooting guide is in
+[SystemProcesses](SessionDock/SystemProcesses/README.md).
+
+## Privacy and security boundaries
 
 SessionDock has no cloud backend, advertising, or telemetry. It does not ask
-for, read, or store Roblox passwords. Account browser profiles, settings,
-favorites, and recent-launch metadata remain under `%LOCALAPPDATA%\SessionDock`.
-The optional safe metadata export is written only to the file the user chooses;
-SessionDock never sends it. It contains Roblox user IDs so account appearance
-can be matched, and should be reviewed before it is stored or shared.
+for, read, or store Roblox passwords. Account profiles, settings, favorites,
+and recent-launch metadata stay under `%LOCALAPPDATA%\SessionDock`; a safe
+metadata export is written only to the file you choose and is never sent by the
+app.
 
-SessionDock's direct Roblox API requests and top-level sign-in navigation are
-limited to official Roblox HTTPS endpoints. Embedded Roblox pages may still
-load subresources chosen by Roblox. The Player executable is location-checked
-and Windows-signature-checked before launch.
-Optional post-launch integrations accept loopback addresses only and are off
-until the user configures them. HandleScope is optional, off by default, and
-never bundled or elevated by SessionDock. Its integration panel loads an
-embedded compatibility catalog without a network request. **Check versions** is
-the only version-discovery action: it explicitly retrieves the latest catalog
-from the canonical SessionDock GitHub release, verifies its P-256 signature,
-validity window, monotonic sequence, SessionDock range, API capabilities, and
-immutable asset identities, and retains the last trusted local catalog if the
-request or verification fails. Remote metadata can choose only code paths and
-`v1`/`v2` endpoint adapters already compiled into SessionDock; it cannot supply
-code, commands, paths, or endpoint templates.
+Direct Roblox API requests and top-level sign-in navigation are limited to
+official Roblox HTTPS endpoints. Embedded Roblox pages can load subresources
+chosen by Roblox. Before launch, SessionDock checks the Roblox Player location
+and Windows signature. The sign-in view does not load browser extensions or
+password-manager integrations, but it supports normal clipboard paste and the
+WebView2 context menu.
 
-The user can choose **Automatic**, **Keep installed**, or an exact reviewed
-HandleScope release, plus automatic, `v1`, or `v2` API negotiation. Checking or
-selecting versions never installs, replaces, starts, stops, upgrades, or
-downgrades software. **Install** requires a separate confirmation for the exact
-selected release. SessionDock then verifies the catalog-authorized package,
-checksum, any cataloged immutable release manifest, executable identities, safe
-ZIP layout, and internal inventory before running one of its locally compiled
-standard-user setup adapters. A release declaring the signed
-`handlescope.setup.native.v1` capability must provide a catalog-pinned v2
-release manifest whose exact `api/HandleScope.Setup.exe` size and SHA-256 match
-the locked extracted inventory. SessionDock invokes that fixed executable
-directly for only `verify` and `install --start-now --enable-autostart`.
-Reviewed 0.1.4 and 0.2.2 releases retain their fixed Windows PowerShell
-`RemoteSigned` adapter for backwards compatibility. Downgrades are refused.
-Neither adapter uses `Bypass` or `Unrestricted`, changes saved policy, overrides
-Group Policy, elevates, or automatically enables the integration. Setup may
-start HandleScope and enable its limited per-user autostart only after
-confirmation; SessionDock opt-in remains a separate explicit choice.
+The optional generic post-launch hook accepts only authenticated HTTPS numeric
+loopback endpoints and is off until configured. The optional HandleScope
+connector has its own verified local discovery, process-identity, catalog, and
+rotating-token checks. The optional link handler uses bounded same-user,
+same-session IPC and only owned `HKCU\Software\Classes` entries: a SessionDock
+URL ProgID, the private `sessiondock-roblox:` forwarding protocol, and an Open
+With hint for safe `roblox:` links. It does not claim HTTPS or replace Roblox's
+default handler. Windows exposes an invoked link in that process's command line
+for the process lifetime; SessionDock clears its own startup references
+promptly, keeps the value only as needed to validate/preview/confirm it, hides
+private codes from the preview, and does not persist them. These are not
+boundaries against another process already running as the same Windows user.
 
-To use the optional connector, select **Integrations** in the SessionDock
-sidebar. That panel also manages the separate **Open with SessionDock** link
-handler. The link handler is off by default and writes only owned per-user
-entries under `HKCU\Software\Classes`: a SessionDock URL ProgID, the private
-`sessiondock-roblox:` forwarding protocol, and an Open With hint for safe
-`roblox:` links. It does not claim all HTTPS links, change the default Roblox
-handler, or elevate. Received links are forwarded over bounded same-user,
-same-Windows-session IPC to the existing SessionDock process and are validated
-again before any UI is shown. Windows leaves the link in the invoked process's
-OS command line for that process's lifetime, including when it becomes the new
-primary instance. SessionDock clears its own startup references promptly and
-keeps the link in memory only as needed to forward, review, and confirm it;
-private codes are hidden from the preview and not persisted. This is not a
-boundary against another process already running as the same Windows user.
+Production Windows executables are currently unsigned. Official releases
+instead require a protected signed update descriptor, exact hashes, package
+allowlists, SBOM, GitHub attestations, an immutable staged draft, and separate
+publication approval. Those controls verify release integrity but do not make
+Windows display a verified publisher.
 
-The HandleScope panel can inspect the selected runtime locally, enable or
-disable the fixed per-user Roblox policy, and test the checked loopback API.
-Testing never enumerates or closes a handle. Existing
-`%LOCALAPPDATA%\SessionDock\handlescope.json` opt-ins and HandleScope's exact
-five-field `%LOCALAPPDATA%\HandleScope\connection.json` discovery document stay
-compatible; version/API preferences are stored separately. Newer supported
-runtimes expose authenticated metadata for strict `v1`/`v2` negotiation, while
-the catalog-authorized v0.1.4 runtime retains its documented metadata-404
-legacy `v1` path. Verification, compatibility, and manual setup details are
-documented under [SystemProcesses](SessionDock/SystemProcesses/README.md).
-
-The embedded sign-in view intentionally does not load extensions or password
-manager integrations. It supports normal clipboard paste and its context menu,
-while keeping each Roblox account in its own isolated local browser profile.
-
-Read [Privacy](docs/PRIVACY.md) for the complete data/network summary and
-[Security](SECURITY.md) before reporting a security issue. Maintainers and
-accessibility testers can use the manual
-[accessibility verification matrix](docs/ACCESSIBILITY.md).
-
-For troubleshooting, open **About and diagnostics** from the top of the main
-window. The preview is the exact text used by both Copy and Export. SessionDock
-does not send it automatically, and the export is a small text-only summary;
-it does not gather a support archive from local application data.
-
-## Updates
-
-The top-right update button checks this repository's stable GitHub Releases
-feed. SessionDock shows the version and cryptographically signed release notes
-before it downloads anything, and installs only after confirmation. Bundled
-notes use the selected language when available and visibly identify an English
-fallback for older releases.
-
-Production updates require a release descriptor authorized by the public key
-pinned in the app. The descriptor binds the version, notes, exact package name,
-size, and SHA-256; the app then enforces an exact package-content allowlist.
-The Windows executables are currently unsigned, but the protected release
-pipeline still requires the signed update descriptor, exact hashes, package
-allowlists, SBOM, GitHub attestations, and separate publication approval.
-Source, debug, raw publish, and portable builds cannot replace themselves. See
-[Updates](docs/UPDATES.md) for the regular-user flow.
+Read [Privacy](docs/PRIVACY.md), [Security](SECURITY.md), and the manual
+[accessibility verification matrix](docs/ACCESSIBILITY.md) for the complete
+boundaries.
 
 ## Build and verify
 
-The repository pins .NET SDK 10.0.302, self-contained runtime 10.0.10, and its
-packaging tool from
-`global.json` and the local tool manifest, so these commands stay the same when
-the pins change. From the repository root:
+Development requires Windows and the exact .NET SDK pinned in `global.json`
+(currently 10.0.302). The application is self-contained with the runtime pinned
+by the project (currently 10.0.10).
+
+From the repository root:
 
 ```powershell
-dotnet restore --locked-mode
-./scripts/Build.ps1 -Configuration Release -Runtime win-x64 -CI
+dotnet --info
+dotnet restore .\SessionDock.slnx --locked-mode
+.\scripts\Build.ps1 -Configuration Release -Runtime win-x64 -CI
 ```
 
-To run the desktop project during development:
+`Build.ps1` validates repository policy, builds the app and release signer,
+runs every test project, produces a self-contained publish, and verifies that
+publish. To run the desktop app while developing:
 
 ```powershell
-dotnet run --project ./SessionDock/SessionDock.csproj
+dotnet run --project .\SessionDock\SessionDock.csproj
 ```
 
-Local builds are development artifacts, not official SessionDock releases.
-Release packages include the MIT license, pinned upstream licenses and notices,
-an SPDX SBOM, checksums, and GitHub artifact attestations.
-Maintainer setup and the tag-driven release checklist are in
-[Releasing](docs/RELEASING.md). Optional local hook configuration is documented
-under [SystemProcesses](SessionDock/SystemProcesses/README.md).
+Development output is not an official release. Local production packaging is
+intentionally disabled; only the protected tag-triggered GitHub workflow can
+sign release metadata, package, attest, approve, and publish production assets.
+Maintainers must follow [Releasing](docs/RELEASING.md). Read
+[Contributing](CONTRIBUTING.md) before proposing changes.
 
-Official Discord release announcements are generated from the canonical
-versioned notes. A read-only gate validates Bota, the target channel, the role,
-effective permissions, and release history before any draft is staged; Bota
-posts automatically only after guarded GitHub publication succeeds. The
-optional interactive `/release` community tool is noncanonical and must not
-publish official releases; it is not a preview or confirmation step for the
-guarded workflow. See
-[`discord-release-bot`](discord-release-bot/README.md) for its separate
-automation and community-tool boundaries.
+Official Discord announcements are generated from the versioned release notes
+and sent only after the guarded GitHub publication succeeds. The separate
+interactive `/release` community tool is noncanonical and cannot publish an
+official release. Its deployment and recovery boundaries are documented under
+[`discord-release-bot`](discord-release-bot/README.md).
 
-## License and contributions
+## License
 
-SessionDock is open source under the [MIT License](LICENSE.md). Read
-[CONTRIBUTING.md](CONTRIBUTING.md) before proposing code changes.
+SessionDock is open source under the [MIT License](LICENSE.md). Release packages
+also include pinned upstream licenses, notices, an SPDX SBOM, checksums, and
+GitHub artifact attestations.
