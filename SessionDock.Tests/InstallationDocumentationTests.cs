@@ -92,6 +92,8 @@ public sealed class InstallationDocumentationTests
             [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
             StringSplitOptions.RemoveEmptyEntries);
         return segments.Any(segment => segment.Equals(
+            ".codex-temp",
+            StringComparison.OrdinalIgnoreCase) || segment.Equals(
             ".git",
             StringComparison.OrdinalIgnoreCase) || segment.Equals(
             "artifacts",

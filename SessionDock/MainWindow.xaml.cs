@@ -32,9 +32,9 @@ public partial class MainWindow : Window
     private readonly RobloxServerTracker _serverTracker = new();
     private readonly RobloxWebSessionService _webSession = new();
     private readonly UiSoundService _soundService;
-    private readonly CompositeLaunchHook _launchHook = new(
-        new HandleScopeLaunchHook(),
-        new LocalApiLaunchHook());
+    private readonly HandleScopeRuntimeCoordinator
+        _handleScopeRuntimeCoordinator;
+    private readonly CompositeLaunchHook _launchHook;
     private readonly WindowOperationLifetime _operationLifetime = new();
     private readonly SemaphoreSlim _accountCheckLock = new(1, 1);
     private readonly HashSet<string> _sessionImportedSoundFileNames = new(
@@ -253,13 +253,18 @@ public partial class MainWindow : Window
 
     public MainWindow()
     {
+        var app = (App)Application.Current;
+        _handleScopeRuntimeCoordinator =
+            app.HandleScopeRuntimeCoordinator;
+        _launchHook = new CompositeLaunchHook(
+            new HandleScopeLaunchHook(_handleScopeRuntimeCoordinator),
+            new LocalApiLaunchHook());
         InitializeComponent();
         AttachSemanticSelectorHandlers();
         _statusLiveRegion = new AccessibilityLiveRegion(StatusTitle);
         _destinationValidationLiveRegion =
             new AccessibilityLiveRegion(DestinationValidationText);
         CaptionControls.AttachToWindow(this);
-        var app = (App)Application.Current;
         _soundService = app.SoundService;
         _settings = _settingsService.Load();
         if (!WindowLayoutService.RestoreMainWindowPlacement(
@@ -392,6 +397,8 @@ public partial class MainWindow : Window
         SetOperationBusy(true);
         try
         {
+            var handleScopeStartup =
+                _handleScopeRuntimeCoordinator.InspectAsync(cancellationToken);
             await RetryPendingProfileDeletionsAsync(cancellationToken);
             var orphanCleanup = await new BoundedOrphanProfileCleanup().RunAsync(
                 cleanupCancellationToken =>
@@ -440,6 +447,8 @@ public partial class MainWindow : Window
                     showLogin: false,
                     cancellationToken);
             }
+
+            _ = await handleScopeStartup;
 
             _startupCompletion.TrySetResult(null);
         }
@@ -3413,9 +3422,41 @@ public partial class MainWindow : Window
             _batchCancellation,
             batchCancellation);
         DisposeDuringShutdown(_launchHook, shutdownFailures);
+        await ShutdownHandleScopeAsync(shutdownBudget, shutdownFailures);
         DisposeDuringShutdown(_updateService, shutdownFailures);
         DisposeDuringShutdown(_destinationPersistence, shutdownFailures);
         DisposeDuringShutdown(_operationLifetime, shutdownFailures);
+    }
+
+    private async Task ShutdownHandleScopeAsync(
+        ShutdownTimeBudget shutdownBudget,
+        ICollection<Exception> shutdownFailures)
+    {
+        if (!shutdownBudget.TryGetRemaining(out var timeout))
+        {
+            shutdownFailures.Add(new TimeoutException(
+                "The bundled HandleScope worker did not receive a shutdown window."));
+            return;
+        }
+
+        using var cancellation = new CancellationTokenSource(timeout);
+        try
+        {
+            await _handleScopeRuntimeCoordinator.ShutdownAsync(
+                cancellation.Token);
+        }
+        catch (OperationCanceledException) when (
+            cancellation.IsCancellationRequested)
+        {
+            shutdownFailures.Add(new TimeoutException(
+                "The bundled HandleScope worker did not stop before the shutdown deadline."));
+        }
+        catch (Exception exception)
+        {
+            shutdownFailures.Add(exception);
+            System.Diagnostics.Trace.WriteLine(
+                $"Bundled HandleScope shutdown failed safely: {exception.GetType().Name}.");
+        }
     }
 
     private static void ObserveShutdownSettingsCompletion(Task completion)

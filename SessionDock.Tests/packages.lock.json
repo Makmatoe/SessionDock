@@ -171,9 +171,13 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Web.WebView2": "[1.0.4078.44, )",
+          "SessionDock.HandleScope": "[0.3.0, )",
           "SessionDock.ReleaseTrust": "[1.0.0, )",
           "Velopack": "[1.2.0, )"
         }
+      },
+      "sessiondock.handlescope": {
+        "type": "Project"
       },
       "sessiondock.releasetrust": {
         "type": "Project"

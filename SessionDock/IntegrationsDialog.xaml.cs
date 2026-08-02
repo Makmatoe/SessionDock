@@ -1,12 +1,18 @@
 using System.Windows;
 using SessionDock.Services;
+using SessionDock.SystemProcesses;
 
 namespace SessionDock;
 
 public partial class IntegrationsDialog : Window
 {
-    public IntegrationsDialog()
+    private readonly HandleScopeRuntimeCoordinator _handleScopeRuntimeCoordinator;
+
+    internal IntegrationsDialog(
+        HandleScopeRuntimeCoordinator handleScopeRuntimeCoordinator)
     {
+        _handleScopeRuntimeCoordinator = handleScopeRuntimeCoordinator ??
+            throw new ArgumentNullException(nameof(handleScopeRuntimeCoordinator));
         InitializeComponent();
         WindowLayoutService.FitToWorkArea(this);
     }
@@ -23,7 +29,11 @@ public partial class IntegrationsDialog : Window
         object sender,
         RoutedEventArgs e)
     {
-        var dialog = new HandleScopeIntegrationDialog { Owner = this };
+        var dialog = new HandleScopeIntegrationDialog(
+            _handleScopeRuntimeCoordinator)
+        {
+            Owner = this
+        };
         dialog.ShowDialog();
     }
 

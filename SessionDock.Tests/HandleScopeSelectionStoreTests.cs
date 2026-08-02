@@ -130,6 +130,55 @@ public sealed class HandleScopeSelectionStoreTests : IDisposable
             Assert.Throws<ArgumentException>(() => store.Write(selection));
     }
 
+    [Fact]
+    public void RuntimeVersionPreference_RecoversLegacyExactPinAndPreservesApiChoice()
+    {
+        var path = Path.Combine(_root, "selection.json");
+        var store = new HandleScopeSelectionStore(path);
+        store.Write(new HandleScopeSelection(
+            HandleScopeVersionSelectionMode.Exact,
+            new Version(0, 2, 2),
+            "v1"));
+
+        store.WriteRuntimeVersionPreference(
+            HandleScopeVersionSelectionMode.Automatic,
+            exactVersion: null,
+            reviewedVersions: [new Version(0, 3, 0)]);
+
+        var recovered = store.Read();
+        Assert.True(recovered.IsValid);
+        Assert.Equal(HandleScopeVersionSelectionMode.Automatic,
+            recovered.Selection.VersionMode);
+        Assert.Null(recovered.Selection.ExactVersion);
+        Assert.Equal("v1", recovered.Selection.ExactApiContract);
+
+        store.WriteRuntimeVersionPreference(
+            HandleScopeVersionSelectionMode.Exact,
+            new Version(0, 3, 0),
+            [new Version(0, 3, 0), new Version(0, 2, 2)]);
+        var exact = store.Read();
+        Assert.Equal(HandleScopeVersionSelectionMode.Exact,
+            exact.Selection.VersionMode);
+        Assert.Equal(new Version(0, 3, 0), exact.Selection.ExactVersion);
+        Assert.Equal("v1", exact.Selection.ExactApiContract);
+    }
+
+    [Fact]
+    public void RuntimeVersionPreference_RejectsUnreviewedExactVersion()
+    {
+        var store = new HandleScopeSelectionStore(
+            Path.Combine(_root, "selection.json"));
+        store.Write(HandleScopeSelection.Default);
+
+        Assert.Throws<ArgumentException>(() =>
+            store.WriteRuntimeVersionPreference(
+                HandleScopeVersionSelectionMode.Exact,
+                new Version(9, 9, 9),
+                [new Version(0, 3, 0)]));
+
+        Assert.Equal(HandleScopeSelection.Default, store.Read().Selection);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_root))

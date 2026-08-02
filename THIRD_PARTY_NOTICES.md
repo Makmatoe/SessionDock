@@ -53,15 +53,25 @@ third-party notice are shipped as `licenses/DotNet-LICENSE.txt` and
 is shipped as `licenses/Microsoft.WindowsDesktop-LICENSE.txt`. See
 <https://dotnet.microsoft.com/> for upstream project information.
 
+## Included HandleScope engine
+
+SessionDock 3.0 includes reviewed source from
+[HandleScope](https://github.com/Makmatoe/HandleScope) 0.3.0 under the MIT
+License. The synchronized upstream version, tag, commit, file allowlist, and
+hashes are recorded in `SessionDock.HandleScope/handlescope-upstream.json`; the code is
+compiled into `SessionDock.exe` and is not shipped as a separate executable,
+installer, script, or license sidecar. HandleScope uses the same MIT terms in
+the repository's root `LICENSE.md`; this notice and the release SBOM identify
+the bundled component and upstream provenance.
+
 ## External optional software
 
-Roblox Player, the Microsoft Edge WebView2 Runtime, and
-[HandleScope](https://github.com/Makmatoe/HandleScope) are not licensed as part
-of SessionDock. HandleScope is optional and not bundled in SessionDock releases.
-After explicit confirmation, SessionDock can download and run the separate
-product's pinned v0.1.4 per-user installer from its canonical immutable GitHub
-release. HandleScope remains governed by its own license and publisher terms;
-the pinned official setup instructions remain available in the user's browser.
+Roblox Player and the Microsoft Edge WebView2 Runtime are installed and
+licensed separately. The independently released standalone HandleScope
+application is also optional. Selecting **Standalone HandleScope (advanced)**
+does not make it part of SessionDock: SessionDock never installs, modifies,
+updates, starts, stops, or uninstalls that external copy, which remains governed
+by its own package, license, and publisher terms.
 
 These notices travel inside both the installed application and portable ZIP.
 The versioned SBOM published with each release identifies the application,

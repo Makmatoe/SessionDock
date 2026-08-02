@@ -36,8 +36,11 @@ SessionDock stores application settings and isolated browser profiles under
 - small recovery markers that keep automatic browser-profile cleanup paused
   when settings are uncertain or record an account profile whose requested
   deletion has not completed yet; and
-- optional local integration configuration or connection metadata created by
-  those separately installed integrations.
+- optional local integration configuration, including the selected HandleScope
+  source, standalone runtime-version requirement, and API contract. Included
+  mode stores no HandleScope token or endpoint;
+  advanced standalone mode reads its external discovery document only when
+  needed.
 
 SessionDock does not intentionally store Roblox passwords, launch tickets, raw
 Roblox Player logs, server IP addresses, HandleScope bearer tokens, or raw
@@ -134,76 +137,65 @@ ID, place and experience, public/private classification, and selected account
 ID, username, and label. It excludes passwords, cookies, launch tickets, raw
 destinations, private-server codes, and server job IDs.
 
-The optional HandleScope panel opens from its embedded compatibility bootstrap
-and inspects only local files. Opening it, selecting **Refresh**, or changing a
-version/API preference makes no network request and does not install, replace,
-start, stop, upgrade, or downgrade software. **Check versions** is an explicit
-network action. It asks the canonical SessionDock GitHub release for the bounded
-signed compatibility catalog; GitHub and its release-asset hosts can observe
-ordinary connection metadata such as the source IP address and SessionDock user
-agent. The request contains no HandleScope token, configuration, local path, or
-Roblox account data. A verified copy may be cached at
-`%LOCALAPPDATA%\SessionDock\HandleScopeCompatibility\sessiondock-handlescope-compatibility.json`;
-it contains only public release versions, compatibility ranges, capabilities,
-URLs, sizes, hashes, validity data, and a signature. If retrieval or
-verification fails, the last trusted local catalog remains active.
+The optional HandleScope panel and the included HandleScope 0.3.0 engine require
+no HandleScope network download. Opening the panel, choosing the included or
+standalone source, choosing a standalone version requirement or
+Automatic/`v2`/`v1` API, enabling, disabling, or
+retrying does not contact GitHub or any other internet service. The included
+engine is part of the verified SessionDock update package and changes only when
+the user installs a verified SessionDock update.
 
-The optional version preference is stored separately at
-`%LOCALAPPDATA%\SessionDock\handlescope-preferences.json`. It contains only the
-Automatic, Keep installed, or Exact selection, an optional exact release, and
-the automatic, `v1`, or `v2` API preference. It contains no token, account data,
-or HandleScope configuration. Checking versions or saving a preference never
-installs anything. Selecting the official guide asks the default browser to
-open the selected release's canonical GitHub documentation with that browser's
-ordinary network and privacy behavior.
+The standalone-only **Refresh reviewed versions** button is the exception: when
+you explicitly select it, SessionDock requests the latest compatibility-catalog
+JSON from the canonical SessionDock release URL on GitHub. It verifies the
+catalog's signature, identity, validity window, compatibility, and rollback
+floor before saving it. The request downloads no HandleScope executable or
+installer, preserves the selected source/version/API preferences, and does not
+start, stop, install, update, or downgrade either runtime.
 
-Only a separately confirmed **Install** action contacts the canonical
-Makmatoe/HandleScope release assets. It downloads the exact selected package,
-checksum, and any immutable release manifest authorized by the signed catalog.
-Those requests expose ordinary connection metadata to GitHub and its
-asset hosts, but send no HandleScope token or Roblox account data. Files are
-staged in a random temporary directory and removed after completion or a
-pre-install failure when cleanup succeeds. The standard-user installer may
-replace an older supported per-user installation as disclosed, but SessionDock
-refuses downgrades. A signed native-setup capability selects only the fixed
-locked `api/HandleScope.Setup.exe`, run directly with locally compiled verify
-and install arguments after its v2 release-manifest identity matches the
-extracted inventory. Reviewed 0.1.4 and 0.2.2 releases retain their fixed
-Windows PowerShell `RemoteSigned` adapter. Neither path uses `Bypass` or
-`Unrestricted`; saved policy is unchanged and Group Policy remains
-authoritative. Setup may start the API and enable its limited per-user autostart
-task, but it does not enable SessionDock's integration.
+The source selection is stored at
+`%LOCALAPPDATA%\SessionDock\handlescope-runtime.json`; standalone version and
+API preferences remain separate from the backwards-compatible
+`%LOCALAPPDATA%\SessionDock\handlescope.json` opt-in. These files contain no
+bearer token, endpoint, process ID, Roblox account data, or executable path.
+Legacy 2.x Automatic, Keep installed, and exact-version data remains available
+as a compatibility requirement. A stale exact pin can be changed in the panel,
+but no choice can cause SessionDock 3.0 to download, install, start, replace,
+update, downgrade, or uninstall a standalone HandleScope copy.
 
-Backwards compatibility does not expand the old local file formats.
-`%LOCALAPPDATA%\SessionDock\handlescope.json` remains the existing minimal
-`{"enabled":true}` or disabled opt-in/full fixed-policy configuration; release
-and API preferences are never added to it. HandleScope's
-`%LOCALAPPDATA%\HandleScope\connection.json` remains an exact five-field object:
-`apiVersion`, `baseUrl`, `token`, `processId`, and `startedAtUtc`. Its discovery
-`apiVersion` remains `"v1"` even when the separately negotiated operation
-adapter is `v2`.
+In **Included with SessionDock (recommended)** mode, SessionDock creates a
+non-elevated, parent-owned child and delivers its bootstrap data through an
+inherited anonymous pipe. The rotating bearer token and ephemeral numeric IPv4
+loopback endpoint remain in parent/child memory. They are not written to a
+connection file, command line, environment variable, setting, log,
+diagnostics/export, or UI. Loopback requests do not leave the computer, and the
+child exits when disabled or when SessionDock exits.
 
-After enablement, **Test connection** and post-launch use first validate the
-local connection file and same-session process. SessionDock then sends the
-rotating bearer token only to the validated numeric-loopback API to request
-authenticated `/v1/metadata` and the health endpoint; it never sends the token
-off-machine, logs it, displays it, or copies it into SessionDock settings.
-Metadata must exactly agree with the signed-catalog runtime identity and can
-select only SessionDock's compiled `v1` or `v2` adapter. The catalog-authorized
-v0.1.4 runtime remains compatible when `/v1/metadata` returns 404, using only
-the legacy compiled `v1` adapter. The connection test does not enumerate or
-close handles. An enabled post-launch operation may ask HandleScope to dry-run
-and close only matching Roblox singleton handles: first for the newly launched
-PID and, if configured, in a separately planned all-process sweep. Each
-execution uses only its matching one-time plan ID. SessionDock's opt-in remains
-separate from HandleScope installation, startup, and autostart.
+In **Standalone HandleScope (advanced)** mode, SessionDock reads the external
+application's existing protected
+`%LOCALAPPDATA%\HandleScope\connection.json`. That file remains the standalone
+product's exact five-field object: `apiVersion`, `baseUrl`, `token`,
+`processId`, and `startedAtUtc`. SessionDock validates the same-user,
+same-session process and sends the token only to its numeric-loopback endpoint
+for authenticated metadata, health, and an explicitly enabled post-launch
+operation. It never sends the token off-machine, persists it, or changes the
+standalone application, files, process, version, configuration, autostart, or
+uninstall state.
 
-SessionDock v2.7.1 and later do not use or delete the public verification
-metadata that v2.7.0 may have stored under
-`%LOCALAPPDATA%\SessionDock\HandleScopeAuthorization`. An upgrade leaves that
-legacy directory unchanged and ignored. It contains release hashes and public
-package metadata, not the HandleScope bearer token, Roblox credentials, or
-account data.
+Both modes negotiate only SessionDock's compiled `v1` or `v2` adapter. Automatic
+readiness and **Retry** checks do not enumerate or close handles. A post-launch
+operation may ask the selected engine to dry-run and close only matching Roblox
+singleton handles: first for the newly launched PID and, if configured, in one
+separately planned all-process sweep. Each execution uses only its matching
+short-lived, single-use plan ID.
+
+The signed HandleScope compatibility catalog remains a public release artifact
+for older SessionDock clients and reviewed advanced-standalone identities; the
+3.0 included flow does not download or execute anything from it. Existing
+public compatibility caches and legacy verification metadata contain release
+hashes and public package facts, not HandleScope tokens, Roblox credentials, or
+account data. SessionDock preserves them during upgrade rather than treating
+them as current configuration.
 
 The optional **Open with SessionDock** feature is off by default. Enabling it
 writes only SessionDock-owned per-user URL-handler keys under

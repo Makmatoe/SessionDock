@@ -27,6 +27,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Anchor bundled HandleScope bytes to the immutable upstream commit
+        shell: pwsh
+        run: |
+          $upstream = Join-Path $env:RUNNER_TEMP 'handlescope-upstream-ef3b9268'
+          if (Test-Path -LiteralPath $upstream) {
+            throw 'The HandleScope upstream verification directory already exists.'
+          }
+          New-Item -ItemType Directory -Path $upstream | Out-Null
+          & git -C $upstream init --quiet
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to initialize the upstream verification repository.' }
+          & git -C $upstream remote add origin https://github.com/Makmatoe/HandleScope.git
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to pin the upstream HandleScope origin.' }
+          & git -C $upstream fetch --no-tags --depth=1 origin `
+            refs/tags/v0.3.0:refs/tags/v0.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch the reviewed HandleScope tag.' }
+          & ./scripts/Sync-BundledHandleScope.ps1 -UpstreamPath $upstream
+
       - name: Install the pinned .NET SDK
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:

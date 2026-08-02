@@ -17,6 +17,11 @@ does not currently have a paid Authenticode certificate, so Windows may show
 continuing through that warning, follow
 [Verify a manual installer download](#verify-a-manual-installer-download).
 
+SessionDock 3.0 already contains HandleScope engine 0.3.0 inside
+`SessionDock.exe`. Do not download a HandleScope ZIP, run a PowerShell installer,
+approve UAC, or configure a scheduled task/autostart entry for normal
+SessionDock use.
+
 ## Normal update flow
 
 1. Select the top-right update button in SessionDock.
@@ -35,6 +40,36 @@ button asks whether to restart and install that pending version.
 The installer-based production build is the recommended updateable edition.
 Source, debug, and raw `dotnet publish` builds do not become trusted production
 installations and cannot use the production self-update path.
+
+## Upgrading to SessionDock 3.0
+
+Use the same SessionDock update button or the same direct
+`SessionDock-win-x64-Setup.exe` filename. The portable filename remains
+`SessionDock-win-x64-Portable.zip`, and the full Velopack package remains
+`SessionDockApp-<version>-win-x64-sessiondock-full.nupkg`. There is no companion
+HandleScope download.
+
+The verified SessionDock package atomically replaces `SessionDock.exe`, including
+the reviewed HandleScope 0.3.0 engine embedded in it. Existing
+`%LOCALAPPDATA%\SessionDock\handlescope.json` opt-ins remain compatible. A fresh
+setup selects **Included with SessionDock (recommended)**. On upgrade, an old
+Keep installed/Exact preference or an enabled Automatic configuration with a
+currently verified standalone API is migrated to **Standalone HandleScope
+(advanced)**; otherwise included is selected. This migration records a source
+choice only and never changes the external installation. Users can still choose
+Automatic, Keep installed, or an exact signed-catalog-reviewed compatible
+standalone version independently from Automatic, `v2`, or `v1` API negotiation.
+A stale exact pin remains visible and can be changed in the panel; doing so never
+downloads, installs, updates, or downgrades the standalone application.
+The standalone-only **Refresh reviewed versions** action explicitly fetches and
+verifies the latest signed compatibility catalog while preserving the current
+selection. It retrieves no package; opening the panel performs no network check.
+
+An independently installed standalone HandleScope is left exactly as it is.
+SessionDock does not remove, update, downgrade, start, stop, reconfigure, or
+uninstall its files, process, scheduled task, or preferences. Choose
+**Standalone HandleScope (advanced)** only when you intentionally continue to
+operate that external application.
 
 ## Moving from Roblox One or SessionDock 2.3.0 and earlier
 
@@ -143,6 +178,12 @@ structurally a Windows PE file and requires the embedded project executable's
 exact hash to match the verified release input. This preserves signed-package
 integrity but does not add certificate-backed Windows publisher identity.
 
+HandleScope is part of the approved `SessionDock.exe` bytes. Release validation
+also checks its pinned upstream version/tag/commit and source hashes, bundled
+MIT license, notices, and SBOM identity. A separate HandleScope executable,
+installer, PowerShell script, or component directory in the SessionDock package
+is rejected.
+
 Release notes are displayed as bounded, inert text. Web content from a release
 is not executed in the application.
 
@@ -163,6 +204,8 @@ preferences normally remain in place.
 Updates never contain another user's account profiles or settings. Removing
 SessionDock does not imply that Roblox or WebView2 data was removed; use the
 application's account removal controls first when profile deletion is desired.
+Removing or updating SessionDock removes/replaces only its included HandleScope
+engine. It does not delete or alter an independently installed standalone copy.
 
 ## If an update fails
 

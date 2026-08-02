@@ -5,6 +5,7 @@
 /.github/workflows/ @Makmatoe
 /scripts/ @Makmatoe
 /SessionDock.ReleaseTrust/ @Makmatoe
+/SessionDock.HandleScope/ @Makmatoe
 /SessionDock/Resources/ @Makmatoe
 /SessionDock/SessionDock.csproj @Makmatoe
 /SessionDock/Services/ @Makmatoe

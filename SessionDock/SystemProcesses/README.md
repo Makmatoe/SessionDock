@@ -4,8 +4,9 @@ This directory contains SessionDock's two optional post-launch integrations:
 
 - `LocalApiLaunchHook` sends a bounded event to a user-managed HTTPS loopback
   listener.
-- `HandleScopeLaunchHook` uses the separately installed HandleScope API through
-  a stricter discovery, runtime, catalog, token, and policy boundary.
+- `HandleScopeLaunchHook` uses the HandleScope 0.3.0 engine included in
+  SessionDock 3.0, or an independently managed standalone API when the user
+  explicitly selects the advanced source.
 
 Both hooks run only after Roblox Player starts successfully. They use short,
 bounded timeouts and cannot turn a successful Roblox launch into a failed
@@ -110,175 +111,166 @@ foreach ($variableName in $variableNames) {
 
 ## HandleScope connector
 
-HandleScope integration is disabled by default. SessionDock does not bundle,
-elevate, or silently run HandleScope. It uses a built-in compatibility
-bootstrap offline and retrieves the signed public catalog only when the user
-selects **Check versions**.
+HandleScope integration is disabled by default. SessionDock 3.0 includes the
+reviewed HandleScope 0.3.0 engine inside `SessionDock.exe`; normal users install
+only SessionDock. The included engine is not a second application and has no
+separate download, installer, PowerShell command, UAC prompt, scheduled task,
+service, sign-in autostart, updater, or uninstall entry.
 
 ### Set up through SessionDock
 
-Follow these actions in order:
+1. Install or update SessionDock with `SessionDock-win-x64-Setup.exe`.
+2. Open **Integrations > HandleScope integration**.
+3. Keep **Included with SessionDock (recommended)** selected.
+4. Choose **Automatic**, `v2`, or `v1` under **API version**.
+5. Select **Enable**.
+6. Wait for **Ready**. Enabling automatically verifies the parent/child identity,
+   authenticated metadata, negotiated API, policy, and health endpoint. The
+   readiness check does not enumerate or close a handle. Use **Retry** only when
+   the bounded check reports a problem.
 
-1. Open **Integrations > HandleScope integration**. Opening the panel and
-   selecting **Refresh** inspect local files only.
-2. Select **Check versions**. SessionDock retrieves only
-   `https://github.com/Makmatoe/SessionDock/releases/latest/download/sessiondock-handlescope-compatibility.json`
-   through bounded canonical GitHub release-asset redirects.
-3. Choose a release mode and an API contract, then save the preference. This
-   changes only local selection data; it does not install, replace, start,
-   stop, upgrade, or downgrade anything.
-4. Select **Install selected HandleScope release**. Review the exact selected
-   version and trust disclosure, then confirm.
-5. Keep the window open until installation finishes. The installer can start
-   HandleScope and enable its limited per-user interactive-logon autostart, but
-   it does not enable SessionDock's integration.
-6. Select **Refresh**. SessionDock accepts an installed API only when the
-   standard per-user non-reparse path, size, and SHA-256 match the selected
-   trusted catalog entry.
-7. Select **Enable** to write the fixed SessionDock opt-in.
-8. Select **Test connection**. The test checks only the verified running API's
-   authenticated loopback health endpoint. It never enumerates or closes a
-   handle.
+That is the complete normal setup. Do not download HandleScope, run an
+`Install-HandleScopeApi.ps1` file, change PowerShell execution policy, approve
+elevation, or create an autostart task for this mode. A device that previously
+reported **running scripts is disabled** or **Virus scan failed** can use the
+included engine because SessionDock does not invoke or download those standalone
+installation files.
 
-If configuration is invalid or nonminimal, SessionDock preserves it and offers
-an explicit **Repair and enable** or **Repair and disable** action. Repair
-replaces only the SessionDock opt-in with the fixed minimal policy; it never
-installs, starts, stops, or changes HandleScope autostart.
+### Choose the source, standalone version, and API
 
-### Understand the selectors
+The three selectors are independent:
 
-| Release choice | Exact behavior |
+| Runtime source | Exact behavior |
 | --- | --- |
-| **Automatic** | Selects the compatible catalog recommendation. It never installs automatically. |
-| **Keep installed** | Selects the locally verified installed release only when that exact release remains compatible. |
-| **Exact version** | Pins one reviewed, compatible three-part release from the trusted catalog. |
+| **Included with SessionDock (recommended)** | Uses the reviewed HandleScope 0.3.0 engine compiled into this SessionDock release. Its version changes only with a verified SessionDock update. |
+| **Standalone HandleScope (advanced)** | Connects to a compatible API that the user installed and started independently. SessionDock never downloads, installs, starts, stops, updates, downgrades, reconfigures, or uninstalls it. |
+
+| Standalone runtime version | Exact behavior |
+| --- | --- |
+| **Automatic** | Accepts any currently installed runtime authorized by the signed catalog and compatible with this SessionDock version. |
+| **Keep the installed version** | Keeps the 2.x preference explicit while accepting the installed reviewed compatible runtime; it performs no lifecycle or file action. |
+| Exact reviewed version | Requires the already running standalone runtime to match that catalog-authorized version exactly. It does not fetch or install that version. |
+
+**Refresh reviewed versions** is visible only for the standalone source. It
+best-effort fetches the latest catalog from the canonical GitHub release URL,
+then accepts it only after the existing signature, identity, expiry, compatibility,
+and rollback checks pass. It preserves the current version/API selections and
+never downloads or changes an executable. Opening the panel does not perform
+this network request.
 
 | API choice | Exact behavior |
 | --- | --- |
 | **Automatic** | Uses the runtime's compatible preferred contract, otherwise the highest compatible compiled contract. |
-| `v1` | Requires the selected and verified runtime to support the compiled legacy operation contract. |
-| `v2` | Requires the selected and verified runtime to support the compiled v2 operation contract. |
+| `v2` | Requires the selected runtime to support SessionDock's compiled v2 operation contract. |
+| `v1` | Requires the selected runtime to support the compiled legacy operation contract. |
 
-An unavailable exact release or API contract fails closed. Every downgrade is
-refused. A supported older installation can be replaced only after the separate
-install confirmation discloses that replacement.
+The included component-version display remains fixed to the code shipped in the
+current `SessionDock.exe`. An unavailable source, standalone version, or API
+contract fails
+closed and never falls back to a different source without changing the user's
+saved selection.
 
-### What **Check versions** verifies
+### Included-engine lifecycle and token boundary
 
-The catalog is authorization data, not executable policy. SessionDock verifies:
+Enabling, retrying, or restarting included mode starts a non-elevated HandleScope child owned
+by the current SessionDock process. SessionDock passes the bootstrap material
+through an inherited anonymous pipe. The rotating 256-bit bearer token remains
+only in SessionDock and child-process memory; it is never written to a
+connection file, command line, environment variable, preference, log, or UI.
 
-- the P-256 signature and exact product, repository, and key identity;
-- schema, bounded size, generation time, expiry, and monotonic
-  sequence/generation floor;
-- the exact SessionDock version binding and each release's compatible
-  SessionDock range;
-- stable version/tag, supported or revoked state, and recommendation;
-- only API contracts and required capabilities already compiled into
-  SessionDock; and
-- immutable package, checksum, optional release-manifest, API executable, and
-  versioned integration-guide identities.
+The child:
 
-A failed network request, invalid signature, expired catalog, rollback, or
-incompatible catalog leaves the last trusted local catalog active. Remote
-metadata cannot add executable code, a command, a path, an argument, a setup
-field, an endpoint, or an endpoint template.
+- accepts only the exact current-user, current-session parent that created it;
+- binds Kestrel only to an ephemeral numeric IPv4 loopback address;
+- rejects elevation, service accounts, session 0, browser-originated requests,
+  unauthenticated requests, and every policy other than
+  `roblox-singleton-event-v1`;
+- exposes only the compiled metadata, health, dry-run/execute, and authenticated
+  shutdown routes; and
+- exits when SessionDock disables it or closes, including when the parent
+  lifetime ends unexpectedly.
 
-### What installation verifies
+SessionDock owns only this child. It never adopts, terminates, or changes a
+standalone HandleScope process. An application update replaces the embedded
+engine atomically as part of `SessionDock.exe`; there is no independent
+HandleScope update race or file lock.
 
-Before any installer runs, SessionDock verifies the canonical release redirect,
-catalog-authorized filenames, exact byte sizes and SHA-256 hashes, checksum
-contents, any immutable release manifest, safe bounded ZIP layout, executable
-identities, and every file in the internal inventory. Downloads are staged in a
-random non-reparse temporary directory and removed after completion or a
-pre-install failure.
+### Standalone compatibility
 
-There are exactly two locally compiled setup routes:
+Use **Standalone HandleScope (advanced)** only when you intentionally operate
+the separately released product. Install, verify, start, update, and remove it
+with the instructions in the canonical
+[HandleScope repository](https://github.com/Makmatoe/HandleScope). Start its API
+before enabling/retrying the advanced source or launching through SessionDock.
 
-| Authorized release | Setup route |
-| --- | --- |
-| HandleScope 0.1.4 or 0.2.2 | Fixed `api/Install-HandleScopeApi.ps1` through Windows PowerShell with process-scoped `RemoteSigned` |
-| Any other installable release | Must declare exactly `handlescope.setup.native.v1`; uses fixed `api/HandleScope.Setup.exe` |
+In this mode SessionDock reads the existing protected
+`%LOCALAPPDATA%\HandleScope\connection.json`, validates its strict schema and
+same-user/same-session process identity, authenticates `/v1/metadata`, and
+negotiates only an API adapter already compiled into SessionDock. The discovery
+token is used for that validated numeric-loopback process only and is never
+copied into SessionDock settings, logs, diagnostics, exports, or UI.
 
-The native route also requires a catalog-pinned external release-manifest
-schema v2. Its one exact `setupExecutable` identity must be
-`api/HandleScope.Setup.exe`, and its size and SHA-256 must match both the signed
-catalog chain and the locked extracted `CONTENTS.sha256` inventory. SessionDock
-directly invokes that fixed executable for only these two phases:
-
-```text
-verify
-install --start-now --enable-autostart
-```
-
-The catalog cannot supply either path or arguments. An unknown, missing, or
-contradictory `handlescope.setup.*` capability fails before an asset is
-downloaded or a process is launched. The native Setup, legacy script, archive,
-inventory files, and catalog lease remain locked and are revalidated before and
-after both child-process phases.
-
-Neither route uses `Bypass` or `Unrestricted`, changes saved PowerShell policy,
-overrides Group Policy, elevates, passes `-AllowDowngrade`, passes
-`-EnableSessionDock`, silently installs, silently updates, silently downgrades,
-or enables the SessionDock opt-in. HandleScope is not Authenticode-signed; trust
-comes from reviewed immutable canonical releases and catalog-authorized hashes,
-not a certificate-backed publisher identity.
+Existing standalone HandleScope files, its scheduled-task preference, its
+compatibility preference, and its lifecycle remain owned by HandleScope. Merely
+selecting or deselecting the advanced source changes none of them.
 
 ## HandleScope status and troubleshooting
 
 | Status | Meaning and next action |
 | --- | --- |
-| **Not installed** | No selected catalog-compatible API executable was verified. Check versions, choose a release, then install it. |
-| **Installed - connection not tested** | The selected runtime is present, but no API connection test has run. Enable the integration, start HandleScope if needed, then test. |
-| **Integration disabled** | A supported install is present and the opt-in is off. SessionDock does not inspect the process, discovery file, or API until the user enables the integration and selects **Test connection**. |
-| **Ready** | The enabled opt-in, installed runtime, discovery file, process identity, metadata, API negotiation, and health test passed. |
-| **Update required** | The installed runtime is not compatible with the trusted catalog selection. Update SessionDock or choose/install a compatible non-downgrade release. |
-| Configuration warning | The existing opt-in was preserved because it is invalid or differs from the fixed policy. Review it, then use an explicit Repair action if intended. |
+| **Off** | Integration is disabled. Select a source, standalone version preference when relevant, and API version, then enable it if wanted. |
+| **Starting** | SessionDock is starting and authenticating its included child. Wait for the bounded check to finish. |
+| **Ready** | Source identity, token bootstrap/discovery, metadata, API negotiation, fixed policy, and health checks passed. |
+| **Standalone runtime unavailable** | The advanced source is selected but no compatible running standalone API matched the saved choices. Select **Automatic**, **Keep the installed version**, or a matching reviewed exact version; otherwise repair that application independently or switch to included. |
+| **HandleScope needs attention** | The chosen API is unavailable or the runtime failed a security or health check. Return to **Automatic**, select **Retry**, and verify the current SessionDock package. |
+| **Settings need repair** | An existing opt-in or source preference is malformed or nonminimal. Review it, then use **Repair settings**. |
 
-Opening the panel, selecting **Refresh**, or saving a selector never changes the
-HandleScope installation, process, autostart, or opt-in. **Disable** prevents
-future SessionDock post-launch operations but does not stop HandleScope.
+If included mode fails, close SessionDock, verify the current
+`SessionDock-win-x64-Setup.exe` against the matching `SHA256SUMS.txt`, and run
+that verified Setup as the same standard user. Do not fetch a HandleScope ZIP as
+a repair and do not weaken PowerShell policy, Group Policy, SmartScreen,
+antivirus, or application control. A managed device may still block the
+unsigned SessionDock executable; ask the device administrator to review the
+canonical checksum and GitHub attestation.
 
-If an install reports that the verified installer was refused or could not
-finish, refresh the panel before retrying because the atomic replacement may
-already have committed files. Then use the selected tag-pinned official setup
-guide or ask the device administrator whether local security policy blocks the
-verified standard-user program. Do not weaken execution policy, Group Policy,
-SmartScreen, or antivirus to force installation.
+Opening the panel or changing a selector does not close a handle. **Disable**
+stops future post-launch work and the included child. In standalone mode it
+disconnects SessionDock only and leaves the external application running.
 
 ## Maintained files and schemas
 
 | File or resource | Owner and purpose |
 | --- | --- |
-| `SessionDock/Resources/handlescope-compatibility-bootstrap.json` | Repository-owned unsigned offline bootstrap; its bytes are covered by the trusted SessionDock package. |
-| `%LOCALAPPDATA%\SessionDock\HandleScopeCompatibility\sessiondock-handlescope-compatibility.json` | Last verified signed public compatibility catalog cache. |
-| `%LOCALAPPDATA%\SessionDock\handlescope-preferences.json` | Separate release/API selection; never enables integration. |
-| `%LOCALAPPDATA%\SessionDock\handlescope.json` | Backwards-compatible SessionDock opt-in and optional fixed policy. |
-| `%LOCALAPPDATA%\HandleScope\connection.json` | HandleScope-owned rotating connection discovery document; reloaded for every operation. |
+| `SessionDock.HandleScope/Upstream/` | Allowlisted HandleScope 0.3.0 source snapshot compiled into `SessionDock.exe`. |
+| `SessionDock.HandleScope/handlescope-upstream.json` | Reviewed upstream repository, version, tag, commit, and synchronized-file hashes. |
+| `scripts/Sync-BundledHandleScope.ps1` | Maintainer-only deterministic synchronization and provenance verifier; never runs on an end user's computer. |
+| `%LOCALAPPDATA%\SessionDock\handlescope-runtime.json` | Strict source selection: included or standalone. It never contains a token or executable path. |
+| `%LOCALAPPDATA%\SessionDock\handlescope-preferences.json` | Backwards-compatible standalone runtime-version and API preferences. It never installs software or contains a token. |
+| `%LOCALAPPDATA%\SessionDock\handlescope.json` | Backwards-compatible integration opt-in and optional fixed policy. |
+| `%LOCALAPPDATA%\HandleScope\connection.json` | Standalone HandleScope-owned discovery document. Included mode does not create or read it. |
 
-Legacy public verification metadata under
-`%LOCALAPPDATA%\SessionDock\HandleScopeAuthorization` is preserved but ignored.
-
-### Release and API preference
-
-`handlescope-preferences.json` is strict UTF-8, at most 4 KiB, and contains
-exactly these four case-sensitive fields:
+`handlescope-runtime.json` is strict UTF-8, at most 1 KiB, and contains exactly:
 
 ```json
 {
   "schemaVersion": 1,
-  "versionMode": "automatic",
-  "exactVersion": null,
-  "apiContract": "automatic"
+  "runtimeSource": "bundled"
 }
 ```
 
-- `versionMode` is `automatic`, `keep-installed`, or `exact`.
-- Exact mode requires one stable three-part `exactVersion`; the other modes
-  require `null`.
-- `apiContract` is `automatic`, `v1`, or `v2`.
-
-An invalid preference is ignored. It cannot alter `handlescope.json` or select
-an unapproved runtime.
+`runtimeSource` is `bundled` for **Included with SessionDock (recommended)** or
+`standalone` for **Standalone HandleScope (advanced)**. On a fresh setup, a
+missing file selects included. During a 2.x upgrade, Keep installed/Exact maps to
+standalone; an enabled Automatic setup also stays standalone when its existing
+API passes the migration probe. Otherwise the missing choice becomes included.
+The result is then saved explicitly without changing any external process or
+file. An invalid source file fails closed and is never used to construct a path
+or command. SessionDock 3.0 keeps the standalone version and API choices from
+`handlescope-preferences.json`. Automatic, Keep installed, and exact reviewed
+version are compatibility requirements only; they cannot download, install,
+start, replace, update, or downgrade software. A stale exact pin remains visible
+in the panel and can be changed to Automatic, Keep installed, or another
+catalog-reviewed version without touching the external application.
 
 ### Backwards-compatible SessionDock opt-in
 
@@ -310,25 +302,19 @@ Existing full configurations remain supported without migration:
 
 SessionDock accepts only this fixed Roblox policy. Any supplied selector that
 differs from it disables the integration instead of broadening it. Timeout is
-clamped to 1-30 seconds; retry interval is clamped to 100-2,000 milliseconds
-and cannot exceed the timeout.
+clamped to 1–30 seconds; retry interval is clamped to 100–2,000 milliseconds
+and cannot exceed the timeout. Existing 2.x opt-ins continue to work, subject to
+the one-time source migration above.
 
-To create the minimal enabled opt-in from a source checkout, run from the
-repository root:
+Use the SessionDock **Enable**, **Disable**, and repair controls to write this
+opt-in. For advanced standalone use, HandleScope's own installed opt-in helper
+may write the same file, but it does not install or start either application and
+is not needed for included mode.
 
-```powershell
-.\scripts\Enable-HandleScope.ps1
-```
+### Standalone discovery document
 
-The helper refuses to overwrite an existing configuration. After reviewing the
-existing file, `-Force` explicitly replaces it with the minimal enabled form.
-HandleScope's installed `Enable-SessionDockIntegration.ps1` helper writes the
-same opt-in. Neither helper installs or starts HandleScope.
-
-### HandleScope discovery document
-
-`connection.json` remains one object with exactly five unique,
-case-sensitive fields:
+The advanced source continues to accept the standalone API's exact five-field
+object:
 
 ```json
 {
@@ -346,31 +332,27 @@ HTTP loopback at `127.0.0.1`, with a nondefault explicit port, `/` path, and no
 user information, query, or fragment. `apiVersion` remains exactly `"v1"`; it
 identifies the discovery schema, not the negotiated operation endpoint.
 
-SessionDock requires the file to be a bounded regular non-reparse file at the
-safe local path. Its process ID and bounded UTC start time must identify a live,
-non-elevated, same-user, same-Windows-session `HandleScope.Api` process at the
-catalog-authorized executable path:
-`%LOCALAPPDATA%\Programs\HandleScope\Api\HandleScope.Api.exe`. A stale file or
-reused PID is rejected. The token is used directly and is never copied into
-SessionDock settings, logs, or UI.
+SessionDock requires the file to be a bounded regular non-reparse file at its
+known safe local path. Its process ID and bounded UTC start time must identify a
+live, non-elevated, same-user, same-Windows-session `HandleScope.Api` process at
+the standard standalone path. A stale file or reused PID is rejected. Included
+mode does not use this document; its token and endpoint arrive through the
+inherited pipe and remain in memory.
 
 ## Runtime negotiation and launch sequence
 
-After local discovery and process checks, SessionDock sends authenticated `GET
-/v1/metadata`. A nonlegacy response must be exactly the strict seven-field
-schema `schemaVersion`, `productVersion`, `discoveryApiVersion`,
-`supportedApiVersions`, `preferredApiVersion`, `policies`, and `capabilities`.
-The product version, discovery version, API/capability sets, and sole fixed
-Roblox policy must match the selected signed-catalog runtime identity.
+Both sources send authenticated `GET /v1/metadata`. The response must match the
+strict seven-field schema `schemaVersion`, `productVersion`,
+`discoveryApiVersion`, `supportedApiVersions`, `preferredApiVersion`,
+`policies`, and `capabilities`. Its version, API/capability sets, and sole fixed
+Roblox policy must match the selected source and SessionDock's compiled
+contract.
 
 SessionDock intersects the authenticated metadata with its compiled adapters
 and the user's API preference. The only possible operation endpoints are the
 compiled `/v1/handles/close` and `/v2/handles/close` routes.
 
-HandleScope 0.1.4 predates metadata. Only when the selected executable is the
-exact catalog-authorized 0.1.4 identity and authenticated `/v1/metadata`
-returns HTTP 404 may SessionDock use the legacy compiled `v1` adapter. A 404
-from any other runtime, malformed metadata, identity/capability disagreement,
+A missing or malformed metadata response, identity/capability disagreement,
 unknown API version, or unavailable explicit API preference fails closed.
 
 For each successful Roblox launch:
@@ -384,50 +366,45 @@ For each successful Roblox launch:
 5. If `allProcesses` is enabled, SessionDock requests a separate plan ID for one
    independently dry-run-checked sweep after the launched PID succeeds.
 
-A missing or malformed plan ID stops the operation. If any file, API, token,
-policy, selector, metadata, process identity, runtime identity, or protocol
-check fails, the optional hook is skipped and the Roblox launch remains
-successful.
+A missing or malformed plan ID stops the operation. Any parent, pipe,
+discovery, token, policy, selector, metadata, process, runtime, or protocol
+failure skips the optional hook while leaving the Roblox launch successful.
 
-## Maintainer compatibility-catalog checklist
+## Maintainer synchronization policy
 
-Before adding, replacing, recommending, or revoking a HandleScope release:
+The canonical `Makmatoe/HandleScope` repository remains the upstream source and
+standalone release channel. SessionDock carries a reviewed source snapshot so
+users receive one application without making the two repositories drift:
 
-1. Review the immutable HandleScope tag and commit, canonical public assets,
-   checksums, optional release manifest, standard-user installer, versioned
-   SessionDock contract, discovery schema, authenticated metadata, operation
-   behavior, and capabilities together.
-2. Edit
-   `SessionDock/Resources/handlescope-compatibility-bootstrap.json`. Keep entries
-   sorted, use stable three-part versions/tags, and bind exact asset names, byte
-   sizes, SHA-256 values, SessionDock ranges, API contracts, capabilities, and
-   tag-pinned contract URLs.
-3. Advance the monotonic `sequence`; never reuse a sequence for different
-   content. Set `sessionDockVersion` to the project version, set one compatible
-   recommendation, refresh generation/expiry within the 400-day limit, and
-   leave the bootstrap `signature` empty.
-4. Preserve every still-required backwards-compatibility entry. Mark a known
-   unsafe identity `revoked` instead of treating a higher version as trusted by
-   default.
-5. For 0.1.4 and 0.2.2, preserve the exact historical no-setup-capability
-   identities and fixed `RemoteSigned` adapter. Every other installable release
-   must declare exactly `handlescope.setup.native.v1` and bind the native Setup
-   through external release-manifest schema v2; never add a path, command,
-   argument, or setup executable to catalog schema v1.
-6. Update all five localization dictionaries, the current five localized
-   release notes, this guide, privacy/security documentation when affected, and
-   focused catalog, installer, runtime, negotiation, and backwards-
-   compatibility tests.
-7. Run the complete repository gate from the root:
+1. Start from an immutable upstream HandleScope tag and its exact commit.
+2. Review that tag's Core/API policy, security documents, license, and tests.
+3. Verify the current snapshot with
+   `.\scripts\Sync-BundledHandleScope.ps1`. To replace it from the pinned tag and
+   commit in a local HandleScope checkout, run
+   `.\scripts\Sync-BundledHandleScope.ps1 -UpstreamPath C:\path\to\HandleScope -Sync`.
+   The script performs no network operation. Never hand-copy a partial source
+   tree.
+4. Review every change under `SessionDock.HandleScope/Upstream/` and the complete
+   regenerated `SessionDock.HandleScope/handlescope-upstream.json`.
+5. Confirm the provenance version, tag, commit, allowlisted paths, and hashes
+   agree with the immutable upstream source. Do not edit synchronized files
+   directly; land a fix upstream and synchronize it back.
+6. Update the displayed included-engine version, both repositories' current
+   integration/security/privacy documentation, the root MIT license reference,
+   third-party notices, and SPDX SBOM inputs in the same SessionDock change.
+7. Run the complete gate:
 
    ```powershell
    .\scripts\Build.ps1 -Configuration Release -Runtime win-x64 -CI
    ```
 
-8. Follow [docs/RELEASING.md](../../docs/RELEASING.md). Only the protected
-   release workflow may convert the unsigned embedded bootstrap into the signed
-   public catalog, sign it with the protected P-256 key, verify the final asset,
-   and publish it after approval.
+8. Verify that the release package still contains only the approved SessionDock
+   inventory: HandleScope code must be inside `SessionDock.exe`, never an
+   untracked executable or install script. Publish the standalone HandleScope
+   release independently when its users need the same upstream change.
 
-Never introduce catalog-defined executable behavior, policy bypass, elevation,
-silent installation, silent update, or downgrade behavior.
+The sync script and CI must fail on an unknown/missing file, hash difference,
+provenance mismatch, uncommitted generated output, version mismatch, or missing
+license attribution. Never add remote-defined commands, arbitrary policy, elevation,
+PowerShell-policy bypass, silent standalone installation, or standalone
+lifecycle mutation to this boundary.

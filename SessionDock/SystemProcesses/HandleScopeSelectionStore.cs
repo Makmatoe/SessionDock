@@ -6,7 +6,7 @@ using SessionDock.Services;
 
 namespace SessionDock.SystemProcesses;
 
-internal enum HandleScopeVersionSelectionMode
+public enum HandleScopeVersionSelectionMode
 {
     Automatic,
     KeepInstalled,
@@ -27,7 +27,12 @@ internal sealed record HandleScopeSelectionReadResult(
     bool Exists,
     bool IsValid);
 
-internal sealed class HandleScopeSelectionStore
+internal interface IHandleScopeSelectionSource
+{
+    HandleScopeSelectionReadResult Read();
+}
+
+internal sealed class HandleScopeSelectionStore : IHandleScopeSelectionSource
 {
     internal const int SchemaVersion = 1;
     internal const int MaximumBytes = 4096;
@@ -128,6 +133,8 @@ internal sealed class HandleScopeSelectionStore
         }
     }
 
+    HandleScopeSelectionReadResult IHandleScopeSelectionSource.Read() => Read();
+
     internal void Write(HandleScopeSelection selection)
     {
         ArgumentNullException.ThrowIfNull(selection);
@@ -203,6 +210,36 @@ internal sealed class HandleScopeSelectionStore
             try { File.Delete(temporaryPath); }
             catch { /* Preference-only temporary data. */ }
         }
+    }
+
+    internal void WriteRuntimeVersionPreference(
+        HandleScopeVersionSelectionMode versionMode,
+        Version? exactVersion,
+        IReadOnlyCollection<Version> reviewedVersions)
+    {
+        ArgumentNullException.ThrowIfNull(reviewedVersions);
+        var current = Read();
+        if (!current.IsValid)
+        {
+            throw new InvalidDataException(
+                "The existing HandleScope preference must be repaired first.");
+        }
+        if (!Enum.IsDefined(versionMode) ||
+            versionMode == HandleScopeVersionSelectionMode.Exact !=
+                (exactVersion is not null) ||
+            exactVersion is not null &&
+            (!IsStableVersion(exactVersion) ||
+             !reviewedVersions.Contains(exactVersion)))
+        {
+            throw new ArgumentException(
+                "The standalone HandleScope version preference is not reviewed and compatible.",
+                nameof(exactVersion));
+        }
+
+        Write(new HandleScopeSelection(
+            versionMode,
+            exactVersion,
+            current.Selection.ExactApiContract));
     }
 
     private static HandleScopeSelectionReadResult Invalid() =>

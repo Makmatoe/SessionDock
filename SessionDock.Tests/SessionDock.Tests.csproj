@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\SessionDock.ReleaseTrust\SessionDock.ReleaseTrust.csproj" />
+    <ProjectReference Include="..\SessionDock.HandleScope\SessionDock.HandleScope.csproj" />
     <ProjectReference Include="..\SessionDock\SessionDock.csproj"
                       AdditionalProperties="EnableRuntimeSmokeHarness=true" />
   </ItemGroup>

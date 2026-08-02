@@ -1,0 +1,159 @@
+name: HandleScope upstream review
+
+on:
+  schedule:
+    - cron: "47 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: handlescope-upstream-review
+  cancel-in-progress: true
+
+jobs:
+  review-upstream:
+    name: Review the latest HandleScope release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Verify the pinned source snapshot and report a newer release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $upstream = Join-Path $env:RUNNER_TEMP 'handlescope-upstream-ef3b9268'
+          if (Test-Path -LiteralPath $upstream) {
+            throw 'The HandleScope upstream verification directory already exists.'
+          }
+          New-Item -ItemType Directory -Path $upstream | Out-Null
+          & git -C $upstream init --quiet
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to initialize the upstream verification repository.' }
+          & git -C $upstream remote add origin https://github.com/Makmatoe/HandleScope.git
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to pin the upstream HandleScope origin.' }
+          & git -C $upstream fetch --no-tags --depth=1 origin `
+            refs/tags/v0.3.0:refs/tags/v0.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch the reviewed HandleScope tag.' }
+          & ./scripts/Sync-BundledHandleScope.ps1 -UpstreamPath $upstream
+
+          $manifest = Get-Content `
+            -LiteralPath ./SessionDock.HandleScope/handlescope-upstream.json `
+            -Raw | ConvertFrom-Json
+          $pinnedTag = [string] $manifest.upstream.tag
+          $pinnedCommit = [string] $manifest.upstream.commit
+          if ($pinnedTag -cnotmatch '^v(\d+\.\d+\.\d+)$') {
+            throw 'The local HandleScope provenance identity is not canonical.'
+          }
+          $pinnedVersionText = $Matches[1]
+          if ($pinnedCommit -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'The local HandleScope provenance identity is not canonical.'
+          }
+          $pinnedVersion = [version] $pinnedVersionText
+
+          $releaseJson = gh api `
+            -H 'Accept: application/vnd.github+json' `
+            -H 'X-GitHub-Api-Version: 2022-11-28' `
+            /repos/Makmatoe/HandleScope/releases/latest
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to read the latest public HandleScope release.'
+          }
+          $release = $releaseJson | ConvertFrom-Json
+          $latestTag = [string] $release.tag_name
+          if ($release.draft -or $release.prerelease -or
+              $latestTag -cnotmatch '^v(\d+\.\d+\.\d+)$') {
+            throw 'The latest HandleScope release is not a canonical stable release.'
+          }
+          $latestVersion = [version] $Matches[1]
+
+          $referenceJson = gh api `
+            -H 'Accept: application/vnd.github+json' `
+            -H 'X-GitHub-Api-Version: 2022-11-28' `
+            "/repos/Makmatoe/HandleScope/git/ref/tags/$latestTag"
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to resolve the latest HandleScope tag.'
+          }
+          $tagObject = ($referenceJson | ConvertFrom-Json).object
+          $latestCommit = $null
+          for ($depth = 0; $depth -lt 4; $depth++) {
+            if ($tagObject.type -ceq 'commit') {
+              $latestCommit = [string] $tagObject.sha
+              break
+            }
+            if ($tagObject.type -cne 'tag' -or
+                [string] $tagObject.sha -cnotmatch '^[0-9a-f]{40}$') {
+              throw 'The latest HandleScope tag has an unsupported object chain.'
+            }
+            $tagJson = gh api `
+              -H 'Accept: application/vnd.github+json' `
+              -H 'X-GitHub-Api-Version: 2022-11-28' `
+              "/repos/Makmatoe/HandleScope/git/tags/$($tagObject.sha)"
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to resolve an annotated HandleScope tag.'
+            }
+            $tagObject = ($tagJson | ConvertFrom-Json).object
+          }
+          if ($latestCommit -cnotmatch '^[0-9a-f]{40}$') {
+            throw 'The latest HandleScope release did not resolve to one commit.'
+          }
+
+          if ($latestVersion -eq $pinnedVersion) {
+            if ($latestTag -cne $pinnedTag -or
+                $latestCommit -cne $pinnedCommit) {
+              throw 'The pinned HandleScope tag moved or no longer matches its reviewed commit.'
+            }
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY `
+              -Value "Bundled HandleScope is current at $pinnedTag ($pinnedCommit)."
+            exit 0
+          }
+          if ($latestVersion -lt $pinnedVersion) {
+            throw 'The upstream latest release is older than the reviewed bundled version.'
+          }
+
+          $title = "Review bundled HandleScope $latestTag"
+          $openIssuesJson = gh issue list `
+            --repo Makmatoe/SessionDock `
+            --state open `
+            --limit 100 `
+            --json number,title,url
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to inspect existing HandleScope review issues.'
+          }
+          $existing = @($openIssuesJson | ConvertFrom-Json | Where-Object {
+              $_.title -ceq $title
+            })
+          if ($existing.Count -gt 1) {
+            throw 'More than one open issue tracks the same HandleScope release.'
+          }
+          if ($existing.Count -eq 1) {
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY `
+              -Value "A manual sync review is already open: $($existing[0].url)"
+            exit 0
+          }
+
+          $body = @(
+            "A newer stable HandleScope release is available for manual review."
+            ""
+            "Current bundled source: $pinnedTag ($pinnedCommit)"
+            "Candidate upstream source: $latestTag ($latestCommit)"
+            ""
+            "Review the upstream diff and security boundary, update the exact source allowlist and hashes with scripts/Sync-BundledHandleScope.ps1, run the full SessionDock test and release-verification suite, and merge through the normal protected pull-request process."
+            ""
+            "This check does not modify source, open a pull request, merge, tag, or release."
+          ) -join "`n"
+          $issueUrl = gh issue create `
+            --repo Makmatoe/SessionDock `
+            --title $title `
+            --body $body
+          if ($LASTEXITCODE -ne 0 -or
+              [string]::IsNullOrWhiteSpace([string] $issueUrl)) {
+            throw 'Unable to create the manual HandleScope sync review issue.'
+          }
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY `
+            -Value "Opened a manual sync review: $issueUrl"

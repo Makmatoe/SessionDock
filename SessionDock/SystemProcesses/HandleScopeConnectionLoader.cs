@@ -6,7 +6,12 @@ using System.Text.RegularExpressions;
 
 namespace SessionDock.SystemProcesses;
 
-internal sealed class HandleScopeConnectionLoader
+internal interface IHandleScopeConnectionSource
+{
+    HandleScopeConnection? Load();
+}
+
+internal sealed class HandleScopeConnectionLoader : IHandleScopeConnectionSource
 {
     private const int MaximumConnectionBytes = 16 * 1024;
     private static readonly JsonSerializerOptions JsonOptions = new()

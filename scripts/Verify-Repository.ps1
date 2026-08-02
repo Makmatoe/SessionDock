@@ -354,6 +354,7 @@ try {
         '.config/dotnet-tools.json',
         '.github/workflows/ci.yml',
         '.github/workflows/dotnet-security-maintenance.yml',
+        '.github/workflows/handlescope-upstream-review.yml',
         '.github/workflows/release.yml',
         'Directory.Build.props',
         'discord-release-bot/package.json',
@@ -373,6 +374,8 @@ try {
         'THIRD_PARTY_NOTICES.md',
         'docs/RELEASING.md',
         'SessionDock/SessionDock.csproj',
+        'SessionDock.HandleScope/SessionDock.HandleScope.csproj',
+        'SessionDock.HandleScope/handlescope-upstream.json',
         'SessionDock/Assets/SessionDock.Icon.png',
         'SessionDock/Assets/SessionDock.ico',
         'SessionDock/Resources/handlescope-compatibility-bootstrap.json',
@@ -391,7 +394,7 @@ try {
         'scripts/Sign-ReleaseDescriptorDigest.ps1',
         'scripts/Test-RuntimeSmoke.ps1',
         'scripts/Test-DotNetSecurityPatch.ps1',
-        'scripts/Enable-HandleScope.ps1',
+        'scripts/Sync-BundledHandleScope.ps1',
         'scripts/Verify-Assets.ps1',
         'scripts/Verify-Publish.ps1',
         'scripts/Verify-ReleaseLicense.ps1'
@@ -401,6 +404,17 @@ try {
             throw "Required repository file is missing: $relativePath"
         }
     }
+    $handleScopeSyncContents = Get-Content -LiteralPath `
+        (Join-Path $root 'scripts/Sync-BundledHandleScope.ps1') -Raw
+    if ($handleScopeSyncContents -notmatch "Common\.ps1" -or
+        $handleScopeSyncContents -notmatch 'Test-PathEntryIsLink' -or
+        $handleScopeSyncContents -notmatch 'foreach \(\$component in \$components\)' -or
+        $handleScopeSyncContents -notmatch 'manifestPath = Assert-PathInsideRoot' -or
+        $handleScopeSyncContents -notmatch 'Get-FileHash' -or
+        $handleScopeSyncContents -notmatch 'Get-GitBlobSha256') {
+        throw 'Bundled HandleScope verification must reject path-link traversal while allowing regular cloud-backed files and retaining byte provenance checks.'
+    }
+    & (Join-Path $PSScriptRoot 'Sync-BundledHandleScope.ps1')
     $velopackLicenseHash = (Get-FileHash `
         -LiteralPath (Join-Path $root 'licenses/Velopack-LICENSE.txt') `
         -Algorithm SHA256).Hash
@@ -439,9 +453,35 @@ try {
     $version = Get-ProjectVersion
     Assert-LegacyReadableReleaseNotes `
         -Path (Join-Path $root "SessionDock/ReleaseNotes/$version.en-US.md")
+    foreach ($culture in @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'nl-NL')) {
+        $localizedNotes = Join-Path $root "SessionDock/ReleaseNotes/$version.$culture.md"
+        if (-not (Test-Path -LiteralPath $localizedNotes -PathType Leaf)) {
+            throw "Release notes are missing for ${culture}: $localizedNotes"
+        }
+    }
 
     [xml] $applicationProject = Get-Content -LiteralPath `
         (Join-Path $root 'SessionDock/SessionDock.csproj') -Raw
+    $handleScopeReferences = @($applicationProject.SelectNodes(
+            "/Project/ItemGroup/ProjectReference[@Include='..\SessionDock.HandleScope\SessionDock.HandleScope.csproj']"))
+    if ($handleScopeReferences.Count -ne 1) {
+        throw 'SessionDock must compile the reviewed HandleScope component into its single executable.'
+    }
+    [xml] $handleScopeProject = Get-Content -LiteralPath `
+        (Join-Path $root 'SessionDock.HandleScope/SessionDock.HandleScope.csproj') -Raw
+    $handleScopeVersions = @($handleScopeProject.SelectNodes('/Project/PropertyGroup/Version') |
+        ForEach-Object { $_.InnerText } | Where-Object { $_ })
+    if ($handleScopeVersions.Count -ne 1 -or $handleScopeVersions[0] -cne '0.3.0') {
+        throw 'The bundled HandleScope project must remain pinned to reviewed version 0.3.0.'
+    }
+    $compatibilityBootstrap = Get-Content -LiteralPath `
+        (Join-Path $root 'SessionDock/Resources/handlescope-compatibility-bootstrap.json') `
+        -Raw | ConvertFrom-Json
+    if ([long] $compatibilityBootstrap.sequence -ne 3 -or
+        $compatibilityBootstrap.sessionDockVersion -cne '3.0.0' -or
+        $compatibilityBootstrap.recommendedVersion -cne '0.3.0') {
+        throw 'The 3.0.0 compatibility bootstrap must retain sequence 3 and the external HandleScope 0.3.0 recommendation.'
+    }
     $applicationIcons = @($applicationProject.SelectNodes(
             '/Project/PropertyGroup/ApplicationIcon') |
         ForEach-Object { $_.InnerText } |
@@ -521,6 +561,17 @@ try {
             -Contents $criticalJob.Contents `
             -Name $criticalJob.Name
     }
+    foreach ($sourceAnchorJob in @(
+            @{ Name = 'build-and-test'; Contents = $ciBuildJob },
+            @{ Name = 'validate-and-build'; Contents = $releaseValidateJob }
+        )) {
+        if ($sourceAnchorJob.Contents -notmatch 'https://github\.com/Makmatoe/HandleScope\.git' -or
+            $sourceAnchorJob.Contents -notmatch 'refs/tags/v0\.3\.0:refs/tags/v0\.3\.0' -or
+            $sourceAnchorJob.Contents -notmatch 'Sync-BundledHandleScope\.ps1 -UpstreamPath \$upstream' -or
+            $sourceAnchorJob.Contents -notmatch 'git -C \$upstream fetch --no-tags --depth=1') {
+            throw "Workflow job '$($sourceAnchorJob.Name)' must compare bundled HandleScope bytes with the immutable upstream tag."
+        }
+    }
 
     if ($dependencyReviewJob -notmatch "(?m)^    if:\s*github\.event_name == 'pull_request'\s*$" -or
         $dependencyReviewJob -match '(?i)vars\.|DEPENDENCY_REVIEW_ENABLED' -or
@@ -586,6 +637,7 @@ try {
         $releaseValidateJob -notmatch '(?m)^          package-manager-cache:\s*false\s*$' -or
         $releaseValidateJob -notmatch 'SOURCE_COMMIT:\s*\$\{\{\s*github\.sha\s*\}\}' -or
         $releaseValidateJob -notmatch 'Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap\.json artifacts/release-input/handlescope-compatibility-bootstrap\.json' -or
+        $releaseValidateJob -notmatch 'Copy-Item SessionDock\.HandleScope/handlescope-upstream\.json artifacts/release-input/handlescope-upstream\.json' -or
         $releaseValidateJob -notmatch 'Copy-Item discord-release-bot/src/release-automation\.js artifacts/release-input/release-automation\.mjs' -or
         $releaseValidateJob -notmatch "'generate'" -or
         $releaseValidateJob -notmatch '''--source-commit'', \$env:SOURCE_COMMIT' -or
@@ -1147,6 +1199,8 @@ try {
         (Join-Path $root 'SessionDock/tools/ReleaseSigner/Program.cs') -Raw
     $verifyAssetsContents = Get-Content -LiteralPath `
         (Join-Path $root 'scripts/Verify-Assets.ps1') -Raw
+    $sbomContents = Get-Content -LiteralPath `
+        (Join-Path $root 'scripts/New-ReleaseSbom.ps1') -Raw
     foreach ($catalogCommand in @(
             'prepare-catalog',
             'complete-catalog',
@@ -1176,6 +1230,13 @@ try {
         $verifyAssetsContents -notmatch '& \$releaseSignerPath verify-catalog' -or
         $verifyAssetsContents -notmatch '\$catalog\.sessionDockVersion -cne \[string\] \$descriptor\.version') {
         throw 'Release signing and asset verification must enforce the signed, version-bound HandleScope catalog contract.'
+    }
+    if ($sbomContents -notmatch 'Microsoft\.AspNetCore\.App\.Runtime\.win-x64' -or
+        $sbomContents -notmatch 'SPDXRef-Package-HandleScope' -or
+        $sbomContents -notmatch "relationshipType = 'CONTAINS'" -or
+        $sbomContents -notmatch 'ef3b926848353115296faaa9f48f1a5be8c8bae2' -or
+        $releaseWorkflowContents -notmatch '-BundledHandleScopeManifest ./release-input/handlescope-upstream\.json') {
+        throw 'Release SBOM generation must identify the pinned bundled HandleScope source and ASP.NET Core runtime.'
     }
     $secretReferences = @(Get-WorkflowSecretReferences -Contents $releaseWorkflowContents)
     $uniqueSecretReferences = @($secretReferences | Sort-Object -Unique)
@@ -1530,6 +1591,16 @@ try {
         $publishVerifierContents -notmatch 'Production SessionDock\.exe contains') {
         throw 'Production publish verification must prove the privileged smoke switch is absent.'
     }
+    $buildContents = Get-Content -LiteralPath `
+        (Join-Path $root 'scripts/Build.ps1') -Raw
+    if ($buildContents -notmatch 'Sync-BundledHandleScope\.ps1' -or
+        $buildContents -notmatch 'Write-CombinedDotNetThirdPartyNotices' -or
+        $buildContents -notmatch 'microsoft\.aspnetcore\.app\.runtime\.win-x64/10\.0\.10/THIRD-PARTY-NOTICES\.TXT' -or
+        $publishVerifierContents -notmatch 'SessionDock\.HandleScope\.dll' -or
+        $publishVerifierContents -notmatch 'microsoft\.aspnetcore\.app\.runtime\.win-x64/10\.0\.10/THIRD-PARTY-NOTICES\.TXT' -or
+        $publishVerifierContents -notmatch 'component sidecar') {
+        throw 'Production builds must verify bundled HandleScope identity, reject sidecars, and combine pinned ASP.NET Core notices.'
+    }
 
     $workflowDirectory = Join-Path $root '.github/workflows'
     if (Test-Path -LiteralPath $workflowDirectory -PathType Container) {
@@ -1608,6 +1679,20 @@ try {
         $maintenanceWorkflow -notmatch 'Test-DotNetSecurityPatch\.ps1 -CheckOnline' -or
         $maintenanceWorkflow -notmatch '(?m)^permissions:\s*\r?\n\s+contents:\s*read\s*$') {
         throw 'A scheduled fail-closed official .NET patch check is required.'
+    }
+
+    $handleScopeReviewWorkflow = Get-Content -LiteralPath `
+        (Join-Path $root '.github/workflows/handlescope-upstream-review.yml') -Raw
+    if ($handleScopeReviewWorkflow -notmatch '(?m)^\s*schedule:\s*$' -or
+        $handleScopeReviewWorkflow -notmatch '(?m)^\s*workflow_dispatch:\s*$' -or
+        $handleScopeReviewWorkflow -notmatch '(?m)^\s+contents:\s*read\s*$' -or
+        $handleScopeReviewWorkflow -notmatch '(?m)^\s+issues:\s*write\s*$' -or
+        $handleScopeReviewWorkflow -notmatch 'Sync-BundledHandleScope\.ps1 -UpstreamPath \$upstream' -or
+        $handleScopeReviewWorkflow -notmatch 'refs/tags/v0\.3\.0:refs/tags/v0\.3\.0' -or
+        $handleScopeReviewWorkflow -notmatch '/repos/Makmatoe/HandleScope/releases/latest' -or
+        $handleScopeReviewWorkflow -notmatch 'gh issue create' -or
+        $handleScopeReviewWorkflow -match '(?i)gh\s+(?:release|pr\s+merge)|git\s+push|contents:\s*write|pull_request_target') {
+        throw 'The scheduled HandleScope review must verify locally, report through an issue, and remain unable to merge or release.'
     }
 
     if ($CI) {

@@ -14,6 +14,14 @@ language, scale, theme, assistive technology, result, and issue link.
   Batch and Retry failed, Running clients, release notes, About/diagnostics,
   metadata export/import, integrations, HandleScope, Windows link handling,
   updates, sounds, and Auto-Join.
+- In HandleScope, verify **Included with SessionDock (recommended)**,
+  **Standalone HandleScope (advanced)**, standalone Automatic/Keep installed/
+  exact reviewed/unavailable saved version choices, the standalone-only Refresh
+  reviewed versions action and its success/failure states, Automatic/`v2`/`v1` API, the included
+  0.3.0 version, parent-owned lifecycle explanation, and Off/Starting/Ready/
+  HandleScope needs attention/Standalone runtime unavailable/Settings need
+  repair statuses. No
+  translation may suggest that normal use downloads or installs HandleScope.
 - Exercise every confirmation and file picker. Verify titles, filters, status
   text, singular/plural counts, and safe error guidance use the selected
   language.
@@ -37,7 +45,8 @@ language, scale, theme, assistive technology, result, and issue link.
 Product and vendor names, usernames, display names, user and place IDs, PIDs,
 server JobIds, URLs, filenames, paths shown for a recovery action, SHA-256
 values, JSON property names and payloads, protocol values, keyboard shortcuts,
-and Roblox-provided experience or release-feed content remain unchanged. Their
+HandleScope version/tag/commit provenance, and Roblox-provided experience or
+release-feed content remain unchanged. Their
 surrounding labels and explanations are localized. Internal trace messages and
 exception text that never reaches the interface are developer diagnostics and
 are not translated.

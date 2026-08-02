@@ -1,6 +1,6 @@
 # SessionDock desktop project
 
-This directory contains the Windows WPF application for SessionDock 2.9.0.
+This directory contains the Windows WPF application for SessionDock 3.0.
 Start with the [root README](../README.md) for the user-facing feature,
 security, privacy, and release overview.
 
@@ -14,7 +14,9 @@ security, privacy, and release overview.
 3. Verify the Setup checksum using the
    [regular-user instructions](../docs/UPDATES.md#verify-a-manual-installer-download).
 4. Open Setup as a standard Windows user, not as administrator.
-5. Start SessionDock and add each Roblox account through its own official
+5. Do not install HandleScope separately for normal use. SessionDock 3.0 already
+   contains the reviewed HandleScope 0.3.0 engine.
+6. Start SessionDock and add each Roblox account through its own official
    Roblox sign-in page.
 
 The Setup edition is the recommended, updateable production build. Windows may
@@ -39,8 +41,9 @@ To uninstall:
 
 1. Disable **Open with SessionDock** first if you want its owned per-user link
    registration removed.
-2. Disable HandleScope integration if you do not want SessionDock to request
-   future post-launch operations. This does not stop or uninstall HandleScope.
+2. Disable HandleScope integration if you do not want future post-launch
+   operations. The included child stops with SessionDock. An independently
+   installed standalone HandleScope is never removed or changed.
 3. Remove any account inside SessionDock first if you want that account's local
    WebView2 profile deleted.
 4. Close SessionDock, then use **Windows Settings > Apps > Installed apps >
@@ -89,8 +92,10 @@ That command:
 4. builds the desktop app, tests, and release signer with warnings treated as
    errors;
 5. runs every test project;
-6. creates a self-contained Windows x64 publish; and
-7. verifies the publish inventory.
+6. verifies the synchronized HandleScope 0.3.0 source and provenance;
+7. creates a self-contained Windows x64 publish with that engine embedded in
+   `SessionDock.exe`; and
+8. verifies the publish inventory.
 
 The default output is `artifacts/publish`. Use `-SkipPublish` only when a
 publish check is intentionally unnecessary, or use `-OutputDirectory` with a
@@ -149,6 +154,9 @@ Windows culture and otherwise uses English.
   creates the exact preview, and applies the allowed merge.
 - `Services/SessionDockUpdateService.cs` coordinates the manual Velopack updater
   and requires a release descriptor authorized by the embedded public key.
+- `../SessionDock.HandleScope/` contains the reviewed HandleScope engine source
+  compiled into `SessionDock.exe`; `handlescope-upstream.json` pins its upstream
+  version, tag, commit, and synchronized inventory.
 - `SystemProcesses/` contains the optional, bounded post-launch integrations.
 - `MainWindow.*.cs` separates UI coordination by launcher feature.
 
@@ -164,43 +172,45 @@ bounded launch event only after Roblox Player starts. See the
 
 ### HandleScope
 
-SessionDock never bundles or elevates HandleScope. Use the UI in this order:
+SessionDock 3.0 includes HandleScope engine 0.3.0. Use the UI in this order:
 
 1. Open **Integrations**.
-2. Select **Check versions** to retrieve and verify the signed compatibility
-   catalog. **Refresh** is local-only.
-3. Select **Automatic**, **Keep installed**, or an exact reviewed HandleScope
-   release, plus automatic, `v1`, or `v2` API negotiation. Saving a preference
-   performs no install or lifecycle action.
-4. Select **Install selected HandleScope release** and confirm the exact
-   catalog-authorized version.
-5. Select **Enable**, then **Test connection**.
+2. Select **Included with SessionDock (recommended)** or, only when you already
+   operate it, **Standalone HandleScope (advanced)**.
+3. For standalone mode, choose **Automatic**, **Keep the installed version**, or
+   an exact reviewed version. This only constrains compatibility and never
+   changes the external installation.
+4. Choose **Automatic**, `v2`, or `v1` API negotiation.
+5. Select **Enable**. SessionDock starts/checks the runtime automatically; wait
+   for **Ready**, or use **Retry** if the bounded check fails.
 
-The signed catalog can authorize only immutable releases, compatible
-SessionDock ranges, exact assets, capabilities, and the `v1`/`v2` operation
-adapters already compiled into this project. Remote metadata cannot define
-code, commands, paths, arguments, or endpoints.
+The included engine runs only when enabled, as a non-elevated, parent-owned
+child with numeric IPv4 loopback as its sole network surface. SessionDock passes
+its rotating token through an inherited anonymous pipe; the token remains in
+memory and never enters a file, command line, environment variable, setting,
+log, or UI. Closing SessionDock closes the child. There is no HandleScope
+download, separate installation, PowerShell invocation, UAC prompt, scheduled
+task, service, autostart entry, or separate update path.
 
-SessionDock verifies the package, checksum, any immutable release manifest,
-executable identities, bounded ZIP layout, and complete internal inventory.
-Native releases must declare exactly `handlescope.setup.native.v1` and provide a
-catalog-pinned release-manifest schema v2 that binds the exact
-`api/HandleScope.Setup.exe`. The app invokes that locked executable directly
-for only `verify` and `install --start-now --enable-autostart`. Reviewed 0.1.4
-and 0.2.2 releases retain their fixed process-scoped PowerShell `RemoteSigned`
-adapter for backwards compatibility.
+The advanced standalone source preserves compatibility with an independently
+installed, already running HandleScope. SessionDock validates and connects to
+that runtime but never changes its files, version, configuration, process, or
+lifecycle. Both sources expose only the compiled `v1`/`v2` adapters and fixed
+Roblox singleton-event policy.
 
-Both adapters run as the standard user. Neither uses `Bypass` or
-`Unrestricted`, changes saved execution policy, overrides Group Policy,
-elevates, enables SessionDock automatically, or permits a downgrade.
-
-The existing minimal `%LOCALAPPDATA%\SessionDock\handlescope.json` opt-in and
-HandleScope's exact five-field `connection.json` discovery contract remain
-compatible. Release/API preferences are stored separately in
-`handlescope-preferences.json`. Protocol negotiation begins with authenticated
-`/v1/metadata`; supported newer runtimes can negotiate the compiled `v1` or
-`v2` operation adapter, while catalog-authorized 0.1.4 alone retains its
-documented metadata-404 legacy `v1` route.
+The existing minimal `%LOCALAPPDATA%\SessionDock\handlescope.json` opt-in remains
+compatible. Source, standalone runtime-version, and API preferences stay
+independent in
+`handlescope-preferences.json`. Included mode does not use HandleScope's
+disk-based `connection.json`; standalone mode retains that legacy discovery
+contract without modifying it. Protocol negotiation begins with authenticated
+`/v1/metadata` and can select only the compiled `v1` or `v2` adapter.
+An upgraded exact-version pin that no longer matches can be cleared from the
+same panel by selecting **Automatic** or **Keep the installed version**; no
+download, install, upgrade, or downgrade occurs.
+**Refresh reviewed versions** is an explicit, best-effort signed-catalog check
+for advanced standalone mode. It preserves the current preference and downloads
+no HandleScope package. Merely opening the panel remains local-only.
 
 For schemas, paths, status meanings, manual configuration, and trust checks,
 use [SystemProcesses/README.md](SystemProcesses/README.md).

@@ -42,6 +42,14 @@ processes, or third-party packages without an explicit security and maintenance
 case. Prefer .NET and Windows platform APIs. Roblox network calls must use
 official Roblox endpoints.
 
+HandleScope engine changes require a coordinated upstream sync. Do not edit
+files under `SessionDock.HandleScope/Upstream/` by hand. Land or identify the
+change in the canonical HandleScope repository, pin an immutable tag and commit,
+then run `scripts/Sync-BundledHandleScope.ps1`. Review the regenerated
+`SessionDock.HandleScope/handlescope-upstream.json`, root MIT license reference, notices, SBOM
+inputs, both repositories' current integration documents, and the focused
+parent/pipe/lifecycle tests in the same pull request.
+
 ## Pull requests
 
 An approved pull request should:
@@ -51,6 +59,8 @@ An approved pull request should:
   logic when those areas change;
 - keep account and browser-profile data out of fixtures and screenshots;
 - update user and maintainer documentation when behavior changes;
+- preserve the included HandleScope source/provenance allowlist and prove that
+  the release still embeds it only in `SessionDock.exe`;
 - pass formatting, build, test, dependency, and secret-scanning checks; and
 - avoid generated build output, local settings, or release secrets.
 

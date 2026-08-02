@@ -151,81 +151,76 @@ cryptographic package authorization without requiring a commercial Windows
 code-signing certificate. Never use this key to sign executables or HandleScope
 releases.
 
-## HandleScope signed compatibility catalog
+## Bundled HandleScope provenance and compatibility catalog
 
-SessionDock does not bundle or elevate HandleScope. Compatibility is defined by
-`SessionDock/Resources/handlescope-compatibility-bootstrap.json`, not by a
-hard-coded current-version URL. The unsigned bootstrap is covered by the
-SessionDock package trust boundary and supplies offline-safe defaults. Each
-published SessionDock release also carries the top-level
-`sessiondock-handlescope-compatibility.json` asset signed by the same protected
-P-256 release key as the update descriptor. The app retrieves that asset only
-after the user selects **Check versions** and rejects invalid, expired, or
-rolled-back catalogs without replacing its last trusted local copy.
+SessionDock 3.0 includes the reviewed HandleScope 0.3.0 engine in
+`SessionDock.exe`. The canonical `Makmatoe/HandleScope` repository remains the
+upstream source and standalone release channel. `SessionDock.HandleScope/`
+contains only the allowlisted Core/API source needed by SessionDock, plus
+`handlescope-upstream.json`, which binds the exact upstream repository, version, immutable
+tag, commit, synchronized paths, and SHA-256 hashes.
 
-The catalog has one exact product/repository/key identity, a monotonically
-increasing `sequence`, bounded generation/expiry window, exact SessionDock
-version binding, one recommended release, and a sorted set of at most 32
-HandleScope releases. Every release entry must include:
+Before changing the included engine:
 
-- a stable version/tag, `supported` or `revoked` state, and SessionDock version
-  range;
-- only API contracts and capabilities implemented and allowlisted in the
-  shipped SessionDock binary (`v1` and `v2` are the current compiled adapters);
-- exact names, byte sizes, and SHA-256 hashes for the Windows x64 package,
-  checksum file, optional immutable release manifest, and API executable; and
-- the canonical tag-pinned upstream SessionDock integration contract URL.
+1. Prepare and review the change in the HandleScope repository.
+2. Select an immutable upstream tag and confirm its exact commit.
+3. Run `.\scripts\Sync-BundledHandleScope.ps1` to verify the current snapshot.
+   To synchronize from a local checkout whose pinned tag resolves to the
+   required commit, run
+   `.\scripts\Sync-BundledHandleScope.ps1 -UpstreamPath C:\path\to\HandleScope -Sync`.
+   The script performs no network operation. Do not hand-copy or directly edit
+   synchronized files.
+4. Review every changed source file and the complete regenerated
+   `SessionDock.HandleScope/handlescope-upstream.json`.
+5. Verify the pinned version/tag/commit, allowlisted inventory, hashes, API
+   contracts, single Roblox policy, parent/pipe lifecycle, and MIT license.
+6. Update the SessionDock displayed component version, both repositories'
+   current integration/security/privacy documents, all five localization
+   dictionaries and current release notes, notices, and SBOM inputs together.
 
-The catalog is authorization data, never executable policy. It cannot add an
-endpoint, command, script, local path, or capability that SessionDock has not
-compiled. `connection.json` discovery remains `v1`; newer runtimes negotiate
-an authenticated metadata document against catalog identity before SessionDock
-chooses the compiled `/v1/handles/close` or `/v2/handles/close` adapter. The
-v0.1.4 catalog entry intentionally retains its metadata-404 legacy `v1`
-fallback and exact historical package/executable identities.
+The repository and release gates must reject an unknown/missing synchronized
+file, hash mismatch, provenance mismatch, version mismatch, direct snapshot
+edit, or missing license attribution. The final publish must contain HandleScope
+only inside `SessionDock.exe`; a `HandleScope*.exe`, installer, PowerShell
+script, component directory, or other publish sidecar is forbidden. The Setup,
+portable ZIP, and NUPKG must carry byte-identical approved `SessionDock.exe`
+content.
 
-Setup selection is also a closed compiled contract. The reviewed 0.1.4 and
-0.2.2 entries contain no `handlescope.setup.*` capability and use only the fixed
-`api/Install-HandleScopeApi.ps1` Windows PowerShell adapter with process-scoped
-`RemoteSigned`. A newer release can select the native adapter only with the
-exact signed `handlescope.setup.native.v1` capability. It must use external
-release-manifest schema v2 with one exact `setupExecutable` identity at
-`api/HandleScope.Setup.exe`; SessionDock compares its size and SHA-256 with the
-locked extracted `CONTENTS.sha256` inventory before directly invoking only
-`verify` and `install --start-now --enable-autostart`. The catalog does not and
-must not gain a path, command, argument, or setup-executable field: its pinned
-package and release-manifest hashes bind those reviewed bytes while preserving
-catalog schema v1 and historical signatures. Missing, unknown, or contradictory
-setup capabilities are not installable.
+SessionDock 3.0 does not download, install, start, stop, update, downgrade,
+reconfigure, or uninstall standalone HandleScope. The source selector exposes
+**Included with SessionDock (recommended)** and **Standalone HandleScope
+(advanced)**; the standalone version selector exposes Automatic, Keep installed,
+and exact signed-catalog-reviewed compatible versions; the API selector exposes
+Automatic/`v2`/`v1`. Version selection is authorization only and must perform no
+download, install, update, downgrade, or lifecycle action. Included mode must
+use an inherited anonymous pipe for bootstrap, keep the rotating token in
+memory, bind only to numeric IPv4 loopback, and tie the child lifetime to its
+SessionDock parent. Preserve backwards-compatible `handlescope.json` opt-ins
+and fail closed on invalid source/version/API preferences. A retained 2.x exact
+pin must remain visible and recoverable through Automatic or Keep installed.
+The standalone-only **Refresh reviewed versions** action may retrieve only the
+canonical signed compatibility catalog, must preserve the current selection,
+and must reuse signature, expiry, compatibility, and rollback enforcement. It
+must never retrieve a package or mutate either runtime's lifecycle. Opening the
+panel remains local-only.
 
-Before adding or recommending a HandleScope release, review the immutable
-public tag, commit, canonical assets, checksum contents, optional manifest,
-standard-user installer, versioned integration contract, discovery schema,
-authenticated metadata schema, API behavior, and required capabilities
-together. Add or update the sorted bootstrap entry, advance `sequence`, set
-`sessionDockVersion` to the project version, refresh the validity dates without
-exceeding the 400-day window, and leave the bootstrap `signature` empty. Never
-reuse a sequence for different content, remove a still-needed backwards-
-compatibility entry, or mark a release supported merely because its version is
-newer. Prefer `revoked` for an identity that clients must stop selecting.
+The signed `sessiondock-handlescope-compatibility.json` release asset remains
+for older SessionDock clients and reviewed advanced-standalone runtime
+identities. It is authorization data, not executable policy: retain its exact
+product/repository/key identity, monotonic sequence, bounded validity, immutable
+asset and executable hashes, API/capability allowlist, and rollback resistance.
+It must never define a command, script, local path, argument, endpoint, setup
+behavior, or capability not compiled into the relevant legacy client. The 3.0
+included flow must not fetch or execute anything from this catalog.
 
-The reviewer-gated release job performs `prepare-catalog`, signs the canonical
-catalog digest alongside the update-descriptor digest without writing the
-private key to disk, runs `complete-catalog` and `verify-catalog` with the
-pinned public key, verifies the final asset topology, and publishes the signed
-catalog. Release review must confirm that the embedded bootstrap and signed
-asset describe the intended compatibility set and recommendation.
-
-Checking the catalog or changing Automatic, Keep installed, Exact, `v1`, or
-`v2` preferences must never install or replace software. Installation stays a
-separate confirmation for the selected catalog release. Retain exact asset and
-executable verification, safe ZIP/inventory checks, the standard-user
-closed native/legacy setup adapters, the downgrade refusal, and the separate
-integration opt-in. Never introduce catalog-defined commands or paths,
-`Bypass`, `Unrestricted`, elevation, silent installation, silent updating, or
-silent downgrading. Any compatibility change must update all five localized
-resources and current release notes and extend the focused catalog, installer,
-runtime, negotiation, and backwards-compatibility tests.
+When a catalog update is required for older clients, review the immutable
+HandleScope release and its existing versioned integration contract, update the
+sorted bootstrap, advance `sequence`, leave the bootstrap signature empty, and
+preserve still-supported or explicitly revoked historical identities. The
+reviewer-gated release job signs and verifies the canonical catalog with the
+protected P-256 release key. Never restore SessionDock's removed in-app
+HandleScope downloader/installer or use the catalog to mutate a standalone
+installation.
 
 ## Prepare and validate
 
@@ -250,6 +245,21 @@ dotnet restore SessionDock.slnx --locked-mode
 ./scripts/Test-DotNetSecurityPatch.ps1 -CheckOnline
 ./scripts/Verify-Release.ps1 -Tag vX.Y.Z
 ```
+
+Confirm `SessionDock.HandleScope/handlescope-upstream.json` pins HandleScope 0.3.0 to the
+reviewed upstream tag and commit and that the synchronization check is clean.
+Inspect the publish, NUPKG, portable ZIP, notices, and SBOM: the engine must be
+inside `SessionDock.exe`, the root MIT license and HandleScope notice must be
+present, and no separate HandleScope binary/script/component directory may
+appear.
+
+The direct-upgrade asset names do not change for 3.0:
+`SessionDock-win-x64-Setup.exe`, `SessionDock-win-x64-Portable.zip`, and the
+existing `SessionDockApp-<version>-win-x64-sessiondock-full.nupkg` convention
+remain stable. Test an upgrade from the latest 2.x Setup edition and verify the
+included engine is available without a second install, while an existing
+standalone HandleScope installation and its autostart/lifecycle settings remain
+byte-for-byte untouched.
 
 Complete and record the manual keyboard, Narrator/UIA, high-contrast, text
 scaling, localization, DPI, and multi-monitor checks in
