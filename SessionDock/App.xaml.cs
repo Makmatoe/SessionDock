@@ -335,13 +335,20 @@ public partial class App : Application
                 throw new InvalidOperationException(
                     "The runtime smoke could not select bundled HandleScope.");
             }
+            var runtimeSecurityContextSupported =
+                RuntimeSecurityPolicy.IsCurrentProcessSupported(out _);
             var enabledHandleScope = await HandleScopeRuntimeCoordinator
                 .EnableAsync();
-            if (enabledHandleScope.State != HandleScopeRuntimeState.Ready ||
+            var expectedEnabledState = runtimeSecurityContextSupported
+                ? HandleScopeRuntimeState.Ready
+                : HandleScopeRuntimeState.NeedsAttention;
+            if (enabledHandleScope.State != expectedEnabledState ||
                 enabledHandleScope.Source != HandleScopeRuntimeSource.Bundled)
             {
                 throw new InvalidOperationException(
-                    "The bundled HandleScope worker did not become ready.");
+                    runtimeSecurityContextSupported
+                        ? "The bundled HandleScope worker did not become ready."
+                        : "The bundled HandleScope worker did not fail closed in an unsupported Windows security context.");
             }
             var disabledHandleScope = await HandleScopeRuntimeCoordinator
                 .DisableAsync();

@@ -136,6 +136,33 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
+    public void RuntimeSmoke_ExercisesReadyAndUnsupportedFailClosedStates()
+    {
+        var app = ReadProductionFile("App.xaml.cs");
+
+        Assert.Contains(
+            "RuntimeSecurityPolicy.IsCurrentProcessSupported",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "runtimeSecurityContextSupported",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "? HandleScopeRuntimeState.Ready",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ": HandleScopeRuntimeState.NeedsAttention",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The bundled HandleScope worker did not fail closed",
+            app,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AllLocales_ExposeBundledChoicesAndKeepKeyParity()
     {
         var localizationRoot = Path.Combine(
