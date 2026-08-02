@@ -1,145 +1,218 @@
 # SessionDock Discord tools
 
+This directory contains two separate Discord paths. Choose the path that matches
+your job; they are deliberately not interchangeable.
+
+| Path | Audience | What it does | Official release authority |
+| --- | --- | --- | --- |
+| Protected release announcement | SessionDock maintainers | Posts the canonical release notes automatically after the guarded GitHub release becomes public | Yes |
+| Optional `/release` community bot | Discord server administrators | Publishes an administrator-written community update through a Discord form | No |
+
+The optional community bot is **not used by the release workflow** and **must not be used to publish official
+SessionDock releases**. Submitting its form
+creates only a Discord message: it does not build, sign, attest, upload, or
+publish a GitHub release.
+
 ## Official release announcements
 
-Bota publishes official SessionDock release announcements automatically. The
-tag-only workflow first builds an immutable announcement and runs a GET-only
-`release-announcement` preflight that validates Bota's identity, the target
-channel and role, effective least-privilege access, and complete release-marker
-history. Only then can it stage, sign, attest, re-download, and publish the
-GitHub release. After publication, a second job repeats every check, pings the
-configured SessionDock role, and reads the exact resulting message back from
-Discord.
+The tag-triggered GitHub Actions workflow owns the official path. It generates
+the announcement from
+`SessionDock/ReleaseNotes/<version>.en-US.md`; there is no announcement form,
+preview confirmation, or assistant-operated posting step.
 
-There is no announcement form, preview confirmation button, or
-assistant-operated publish step in this path. The workflow also creates a
-deterministic JSON/Markdown audit artifact, but that artifact is additive: it
-never replaces automatic delivery.
+### Configure the protected path
 
-The delivery module uses a deterministic message marker and Discord's enforced
-nonce. A rerun scans and verifies Bota's existing message before it can post;
-conflicting or inconclusive history fails closed instead of risking a duplicate.
-All tests use mocked HTTP responses, and repository validation never sends a
-Discord message.
+1. Create or select the dedicated Bota application in the
+   [Discord Developer Portal](https://discord.com/developers/applications).
+2. Give Bota only **View Channel**, **Read Message History**, **Send Messages**,
+   and **Embed Links** in the dedicated release channel. Add **Attach Files**
+   only when that release can include reviewed images. Keep the notification
+   role mentionable.
+3. In GitHub, configure the `release-announcement` environment for protected
+   `v*` tags with no required reviewer. Put only these values on that
+   environment:
 
-Maintainers configure the protected environment described in
-[`docs/RELEASING.md`](../docs/RELEASING.md). The official job needs no Gateway
-connection or `discord.js` runtime.
+   | Kind | Name | Value |
+   | --- | --- | --- |
+   | Secret | `DISCORD_RELEASE_BOT_TOKEN` | Bota's token |
+   | Variable | `DISCORD_RELEASE_BOT_ID` | Pinned Bota user/Application ID |
+   | Variable | `DISCORD_RELEASE_CHANNEL_ID` | Dedicated release-channel ID |
+   | Variable | `DISCORD_RELEASE_ROLE_ID` | Mentionable SessionDock role ID |
 
-Before tagging, maintainers must run the repository-owner audit and treat every
-failure as a release blocker. It verifies that `release-announcement` is restricted
-to `v*` tags with no reviewer gate, has exactly the expected environment-scoped
-secret and variable names, has no broader-scope fallbacks, and leaves no legacy
-Discord values on the signing environment. It cannot inspect secret or variable
-values; the GET-only preflight validates the effective IDs and Bota identity.
-GitHub does not reveal or copy an existing token, so re-enter it from its approved
-secure source or rotate it.
+4. From the repository root, sign in to GitHub CLI as a repository
+   administrator and run the read/audit pass:
+
+   ```powershell
+   ./scripts/Configure-GitHubSecurity.ps1 -WhatIf
+   ```
+
+5. Treat every warning or error as a release blocker. The audit requires the
+   exact environment-scoped names above, rejects broader-scope fallbacks and
+   legacy Discord values on `release`, and confirms that `release-announcement`
+   has the reviewed tag policy and no reviewer gate.
+6. Prepare the canonical release notes and, when wanted, the current version's
+   reviewed `docs/images/sessiondock-vX.Y.Z/discord.json`. Never select artwork
+   from an older version. See [the maintainer release guide](../docs/RELEASING.md#optional-reviewed-discord-images)
+   for the exact schema and limits.
+7. Follow the validation and annotated-tag procedure in
+   [the maintainer release guide](../docs/RELEASING.md#prepare-and-validate).
+   Approve the separate `release` and `release-publication` environments only
+   after reviewing their evidence.
+8. Let the post-publication job deliver and read back the announcement. If it
+   reports ambiguous delivery, inspect the configured channel and use **Re-run
+   failed jobs** for that same workflow run; do not create a new tag or post a
+   manual replacement.
+
+### What this path verifies
+
+Before any draft release exists, the GET-only preflight verifies the immutable
+announcement bundle, pinned Bota identity, target channel and role, effective
+least-privilege permissions, and complete bounded release-marker history. After
+GitHub publication, the sender repeats those checks, uses a deterministic
+marker and Discord nonce, posts at most once, and reads the exact message and
+reviewed attachments back. Conflicting or inconclusive history fails closed.
+
+The generated JSON/Markdown audit artifact records evidence; it does not
+replace Discord delivery. The official job needs no Gateway connection and no
+`discord.js` runtime. Repository tests use mocked HTTP responses and do not
+send Discord messages.
+
+### Trust boundary
+
+- The repository-owner audit can verify secret and variable **names**, scopes,
+  environment rules, and visible access policy. GitHub does not reveal stored
+  secret values, so the audit cannot prove where a token originally came from
+  or print/copy it.
+- The workflow validates the effective IDs and Bota identity at runtime. An
+  organization owner must separately confirm any organization-level value
+  visibility that a repository administrator cannot inspect.
+- The Discord proof covers the announcement's identity, content, attachments,
+  permissions, and delivery. It is not Windows publisher identity and does not
+  replace the release assets' independent hashes, signed descriptor, or GitHub
+  attestations.
+- Never add Administrator, Manage Server, Manage Messages, or Mention Everyone
+  to Bota. The protected preflight rejects those effective permissions.
+
+The complete environment, release, and recovery contract is maintained in
+[`docs/RELEASING.md`](../docs/RELEASING.md).
 
 ## Optional community announcement bot
 
-The preserved admin-only `/release` command is an optional community tool. It
-is not used by the release workflow and must not be used to publish official
-SessionDock releases. It lets a server administrator:
+Use this path only when a Discord server administrator wants to publish a
+noncanonical community update. The `/release` command lets a member with
+**Manage Server**:
 
-- choose the role to ping;
-- choose a text or announcement channel;
-- write a title, multiline Markdown release notes, and an optional link in a form;
-- upload up to four JPG, PNG, WebP, or GIF images in that same form;
-- publish one clean Discord message with a controlled role mention.
+- choose one role to notify;
+- choose a text or announcement channel, or use the current channel;
+- enter a title, multiline Markdown notes, and an optional link; and
+- attach up to four JPG, PNG, WebP, or GIF images.
 
-The bot intentionally allows only the selected role to ping. Mentions typed inside the title or notes are displayed as text/links but cannot notify other users, roles, `@here`, or `@everyone`.
+Only the selected role can notify users. Mentions typed into the title or notes
+are rendered without notifying other users, roles, `@here`, or `@everyone`.
 
-## Set up Discord
+### Install and test in one server
 
-Install [Node.js 22.12 or newer](https://nodejs.org/) first. Node.js 24 LTS works well; alternatively, use the Docker instructions below.
+Prerequisites: [Node.js 22.12 or newer](https://nodejs.org/) and a Discord
+application. Node.js 24 LTS is the closest local match to the workflow's pinned
+Node.js 24 runtime.
 
-1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and create an application.
-2. On **General Information**, copy the **Application ID**.
-3. On **Bot**, create/reset the token and copy it. No privileged gateway intents are required.
-4. In this folder, create your private environment file:
+1. In the Discord Developer Portal, open **General Information** and copy the
+   **Application ID**.
+2. Open **Bot**, create or reset the token, and copy it to a secure temporary
+   location. No privileged Gateway intents are required.
+3. From the repository root, enter this directory, create the private local
+   configuration, and install the locked dependencies:
 
    ```powershell
+   Set-Location ./discord-release-bot
    Copy-Item .env.example .env
+   npm ci
    ```
 
-5. Put the Application ID in `DISCORD_CLIENT_ID` and the token in `DISCORD_TOKEN`. While testing, also put your server ID in `DISCORD_GUILD_ID`.
-6. Install dependencies and print the bot invitation link:
+4. Edit `.env`. Set `DISCORD_CLIENT_ID`, `DISCORD_TOKEN`, and the test server's
+   ID in `DISCORD_GUILD_ID`. Keep `RELEASE_EMBED_COLOR` quoted because its value
+   starts with `#`.
+5. Print the least-privilege invitation URL:
 
    ```powershell
-   npm ci
    npm run community:invite
    ```
 
-7. Make the intended notification role mentionable, then open the printed link and add the bot to your server. The invite requests only View Channel, Read Message History, Send Messages, Embed Links, and Attach Files. It deliberately does not request Administrator, Manage Server, Manage Messages, or Mention Everyone.
-8. Register the command and start the bot:
+6. Make the intended notification role mentionable, open the printed URL, and
+   add the bot to the test server. The invitation requests only View Channel,
+   Read Message History, Send Messages, Embed Links, and Attach Files; it does
+   not request Administrator or Mention Everyone.
+7. Register `/release` only in the configured test server:
 
    ```powershell
    npm run community:deploy
+   ```
+
+8. Start the bot and leave the terminal open:
+
+   ```powershell
    npm run community:start
    ```
 
-Keep the terminal open while using the bot. For permanent hosting, use the Docker option below.
+9. In Discord, enter `/release`, choose the role and optional channel, complete
+   the form, and submit it. Form submission publishes the community message.
 
-## Publish an optional community update
+### Promote `/release` globally
 
-In Discord, enter `/release` and fill in:
+After testing succeeds:
 
-- `role`: the role that should receive the notification;
-- `channel`: optional; if omitted, the current channel is used;
+1. Keep `DISCORD_GUILD_ID` in `.env` so the deployer can locate and remove the
+   test-server override.
+2. Run:
 
-Discord then opens one form for the release title, notes, optional release/download link, and up to four screenshots or artwork files. The release is published when you submit the form. Only members with **Manage Server** can use the command.
+   ```powershell
+   npm run community:deploy -- --global
+   ```
 
-This form is intentionally outside the canonical release pipeline. Official
-release content always comes from `SessionDock/ReleaseNotes/<version>.en-US.md`
-and is delivered only by the guarded post-publication job.
+3. Confirm that the command reports a global registration and stale guild
+   override cleanup.
+4. Remove `DISCORD_GUILD_ID` from `.env` unless another test-server deployment
+   is planned.
 
-## Test server versus global command
+The deployer updates only the individual `/release` command; it does not
+bulk-overwrite unrelated application commands. If `DISCORD_GUILD_ID` is absent,
+global registration still works, but the deployer cannot find an old guild
+override and prints a warning.
 
-With `DISCORD_GUILD_ID` set, `npm run community:deploy` updates only `/release`
-in that server and changes appear quickly. When you are happy with it:
+## Run the community bot with Docker
 
-1. leave `DISCORD_GUILD_ID` set so the deployer knows which test-server override to remove;
-2. run `npm run community:deploy -- --global`;
-3. after that command succeeds, remove `DISCORD_GUILD_ID` from `.env` unless you plan to test another revision.
-
-That registers `/release` globally for every server where the bot is installed,
-then removes the test-server copy so it cannot shadow the global command. The
-deployer updates and deletes `/release` through its individual command endpoint;
-it does not bulk-overwrite unrelated application commands. If you deploy
-globally without a test-server ID, the deployer cannot locate an older guild
-override and prints a warning instead.
-
-## Keep it running with Docker
-
-Starting the long-running container does not invite the bot or register its
-command. If you already completed the host-based setup above, start it with:
+Run these commands from `discord-release-bot`. If the host-based steps above
+already invited the bot and registered the command, build and start it with:
 
 ```powershell
 docker compose up -d --build
 ```
 
-On a Docker-only host, fill in `.env`, then perform the invite and registration
-steps inside one-off containers before starting the bot:
+For a Docker-only setup:
+
+1. Copy `.env.example` to `.env` and fill in the required values.
+2. Build the image and print the invitation:
+
+   ```powershell
+   docker compose build
+   docker compose run --rm release-bot npm run community:invite
+   ```
+
+3. Open the printed URL and add the bot to the server.
+4. Register the test-server command, then start the long-running service:
+
+   ```powershell
+   docker compose run --rm release-bot npm run community:deploy
+   docker compose up -d
+   ```
+
+For global promotion, keep the test `DISCORD_GUILD_ID` through cleanup and run:
 
 ```powershell
-docker compose build
-docker compose run --rm release-bot npm run community:invite
-# Open the printed URL and add the bot to the server.
-docker compose run --rm release-bot npm run community:deploy
-docker compose up -d
+docker compose run --rm release-bot npm run community:deploy -- --global
 ```
 
-For global promotion, keep the test `DISCORD_GUILD_ID` in `.env` for the cleanup
-step and use `docker compose run --rm release-bot npm run community:deploy -- --global`.
-
-Supply-chain note: the checked-in Dockerfile currently uses the mutable
-`node:24-alpine` tag because this repository does not record a reviewed and
-tested immutable digest for the required platforms. A rebuild can therefore
-select a newer base image. Production operators should resolve and test that
-tag for their target platforms, then pin the verified `sha256` digest in the
-`FROM` line.
-
-Useful commands:
+Operational commands:
 
 ```powershell
 docker compose logs -f
@@ -147,18 +220,31 @@ docker compose restart
 docker compose down
 ```
 
-## Configuration
+The checked-in Dockerfile uses the mutable `node:24-alpine` tag because the
+repository does not contain a reviewed, cross-platform image digest. A later
+build may therefore use different base-image bytes. Production operators
+should resolve, test, and pin the appropriate `sha256` digest for every target
+platform before treating a container build as reproducible.
+
+## Community-bot configuration
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DISCORD_CLIENT_ID` | Yes | Application ID from Discord |
-| `DISCORD_TOKEN` | Yes | Secret bot token |
-| `DISCORD_GUILD_ID` | No | Test server used for fast registration and `--global` stale-override cleanup |
-| `RELEASE_EMBED_COLOR` | No | Six-digit hex color; defaults to Discord blurple |
-| `RELEASE_FOOTER` | No | Text shown below every release |
+| `DISCORD_CLIENT_ID` | Yes | Application ID from the Developer Portal |
+| `DISCORD_TOKEN` | Yes, except when only printing the invitation | Private bot token |
+| `DISCORD_GUILD_ID` | No | Fast test-server registration and `--global` stale-override cleanup |
+| `RELEASE_EMBED_COLOR` | No | Quoted six-digit hex color; defaults to Discord blurple |
+| `RELEASE_FOOTER` | No | Footer shown below each community update |
 | `MAX_TOTAL_IMAGE_MB` | No | Combined image limit; defaults to 20 MiB and cannot exceed 20 MiB |
 
+Each image also has a hard 10 MiB limit. Discord's entire message request is
+limited to 25 MiB, so raising the configured aggregate limit above 20 MiB is
+intentionally rejected.
+
 ## Local checks
+
+Run these commands from `discord-release-bot` before changing or deploying the
+community bot:
 
 ```powershell
 npm ci
@@ -167,4 +253,10 @@ npm run check
 npm audit --omit=dev --audit-level=moderate
 ```
 
-Never commit `.env` or paste the token into Discord. If a token is exposed, reset it immediately in the Developer Portal.
+`npm test` uses mocks and does not contact Discord. `npm audit` contacts the npm
+registry and reports moderate-or-higher production dependency findings.
+
+Never commit `.env`, paste the token into Discord, or reuse the protected
+official-announcement credential for the optional community bot. If a token is
+exposed, reset it immediately in the Developer Portal and update only the
+intended secret store.
