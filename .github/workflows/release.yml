@@ -28,6 +28,23 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Anchor bundled HandleScope bytes to the immutable upstream commit
+        shell: pwsh
+        run: |
+          $upstream = Join-Path $env:RUNNER_TEMP 'handlescope-upstream-ef3b9268'
+          if (Test-Path -LiteralPath $upstream) {
+            throw 'The HandleScope upstream verification directory already exists.'
+          }
+          New-Item -ItemType Directory -Path $upstream | Out-Null
+          & git -C $upstream init --quiet
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to initialize the upstream verification repository.' }
+          & git -C $upstream remote add origin https://github.com/Makmatoe/HandleScope.git
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to pin the upstream HandleScope origin.' }
+          & git -C $upstream fetch --no-tags --depth=1 origin `
+            refs/tags/v0.3.0:refs/tags/v0.3.0
+          if ($LASTEXITCODE -ne 0) { throw 'Unable to fetch the reviewed HandleScope tag.' }
+          & ./scripts/Sync-BundledHandleScope.ps1 -UpstreamPath $upstream
+
       - name: Install the pinned Node.js runtime
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
@@ -100,6 +117,7 @@ jobs:
           Copy-Item "SessionDock/ReleaseNotes/$version.en-US.md" artifacts/release-input/notes.md
           Copy-Item SessionDock/Resources/update-public-key.pem artifacts/release-input/update-public-key.pem
           Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap.json artifacts/release-input/handlescope-compatibility-bootstrap.json
+          Copy-Item SessionDock.HandleScope/handlescope-upstream.json artifacts/release-input/handlescope-upstream.json
           Copy-Item SessionDock/SessionDock.csproj artifacts/release-input/application.csproj
           Copy-Item SessionDock/packages.lock.json artifacts/release-input/packages.lock.json
           Copy-Item global.json artifacts/release-input/global.json
@@ -457,6 +475,7 @@ jobs:
             -Project ./release-input/application.csproj `
             -LockFile ./release-input/packages.lock.json `
             -License ./release-input/app/LICENSE.md `
+            -BundledHandleScopeManifest ./release-input/handlescope-upstream.json `
             -Output "./release-output/SessionDock-$env:RELEASE_VERSION-sbom.spdx.json"
           & ./release-input/scripts/New-ReleaseChecksums.ps1 -Directory ./release-output
 

@@ -12,13 +12,13 @@ internal sealed class HandleScopeApiBootstrapper
     internal const string RequiredPolicy = "roblox-singleton-event-v1";
     private const int MaximumHealthResponseBytes = 64 * 1024;
     private const int MaximumMetadataResponseBytes = 64 * 1024;
-    private readonly HandleScopeConnectionLoader _connectionLoader;
+    private readonly IHandleScopeConnectionSource _connectionLoader;
     private readonly HttpClient _client;
     private readonly IHandleScopeProcessVerifier _processVerifier;
-    private readonly HandleScopeSelectionStore? _selectionStore;
+    private readonly IHandleScopeSelectionSource? _selectionStore;
 
     public HandleScopeApiBootstrapper(
-        HandleScopeConnectionLoader connectionLoader,
+        IHandleScopeConnectionSource connectionLoader,
         HttpClient client)
         : this(
             connectionLoader,
@@ -29,7 +29,7 @@ internal sealed class HandleScopeApiBootstrapper
     }
 
     internal HandleScopeApiBootstrapper(
-        HandleScopeConnectionLoader connectionLoader,
+        IHandleScopeConnectionSource connectionLoader,
         HttpClient client,
         IHandleScopeProcessVerifier processVerifier)
         : this(
@@ -43,10 +43,10 @@ internal sealed class HandleScopeApiBootstrapper
     }
 
     internal HandleScopeApiBootstrapper(
-        HandleScopeConnectionLoader connectionLoader,
+        IHandleScopeConnectionSource connectionLoader,
         HttpClient client,
         IHandleScopeProcessVerifier processVerifier,
-        HandleScopeSelectionStore? selectionStore)
+        IHandleScopeSelectionSource? selectionStore)
     {
         ArgumentNullException.ThrowIfNull(connectionLoader);
         ArgumentNullException.ThrowIfNull(client);

@@ -33,6 +33,12 @@ if ($items | Where-Object {
 $actualFiles = @($items | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
     $_.FullName.Substring($directoryPath.Length + 1).Replace('\', '/')
 } | Sort-Object)
+$handleScopeSidecars = @($actualFiles | Where-Object {
+        $_ -match '(?i)(^|/)(?:SessionDock\.HandleScope|HandleScope(?:\.Api)?)(?:\.|/|$)'
+    })
+if ($handleScopeSidecars.Count -ne 0) {
+    throw 'HandleScope must be embedded in SessionDock.exe; a component sidecar was published.'
+}
 $differences = @(Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $actualFiles -CaseSensitive)
 if ($differences.Count -ne 0 -or $actualFiles.Count -ne $expectedFiles.Count) {
     throw "Publish output contains missing or unexpected files:`n$($differences | Out-String)"
@@ -141,6 +147,13 @@ if ($containsUtf8SmokeArgument -or $containsUnicodeSmokeArgument) {
     throw 'Production SessionDock.exe contains the test-only runtime smoke switch.'
 }
 
+$bundledHandleScopeAssemblyName = 'SessionDock.HandleScope.dll'
+if (-not [SessionDockPublishIconProbe]::ContainsBytes(
+        $applicationPath,
+        [Text.Encoding]::UTF8.GetBytes($bundledHandleScopeAssemblyName))) {
+    throw 'Published SessionDock.exe does not contain the embedded HandleScope component identity.'
+}
+
 $iconGroupCount = [SessionDockPublishIconProbe]::ExtractIconEx(
     $applicationPath,
     -1,
@@ -194,6 +207,37 @@ function Resolve-PinnedPackageFile(
     return $matches[0]
 }
 
+function Get-CombinedDotNetNoticeSha256(
+    [string] $NetCoreNotice,
+    [string] $AspNetCoreNotice) {
+    $encoding = [Text.UTF8Encoding]::new($false)
+    $hash = [Security.Cryptography.IncrementalHash]::CreateHash(
+        [Security.Cryptography.HashAlgorithmName]::SHA256)
+    try {
+        $hash.AppendData($encoding.GetBytes(
+            "SessionDock .NET 10.0.10 runtime third-party notices`n`n" +
+            "===== Microsoft.NETCore.App.Runtime.win-x64 10.0.10 =====`n"))
+        $hash.AppendData([IO.File]::ReadAllBytes($NetCoreNotice))
+        $hash.AppendData($encoding.GetBytes(
+            "`n===== Microsoft.AspNetCore.App.Runtime.win-x64 10.0.10 =====`n"))
+        $hash.AppendData([IO.File]::ReadAllBytes($AspNetCoreNotice))
+        return [BitConverter]::ToString($hash.GetHashAndReset()).Replace('-', '')
+    }
+    finally {
+        $hash.Dispose()
+    }
+}
+
+$netCoreNoticePath = Resolve-PinnedPackageFile `
+    'microsoft.netcore.app.runtime.win-x64/10.0.10/THIRD-PARTY-NOTICES.TXT' `
+    '6D15E10A101C6BFFF2AB4429ED061BF76C456FC4B23AD6B03E0D0F8377148A21'
+$aspNetCoreNoticePath = Resolve-PinnedPackageFile `
+    'microsoft.aspnetcore.app.runtime.win-x64/10.0.10/THIRD-PARTY-NOTICES.TXT' `
+    '307D014F65D8482314F1400DDEAE7A0CBABB96C2207BCC77F6233CC10588E5D9'
+[void] (Resolve-PinnedPackageFile `
+    'microsoft.aspnetcore.app.runtime.win-x64/10.0.10/LICENSE.txt' `
+    'D7A68596AB69B06F51CA278A6545148E4269A9381C26D597C13DF5D88E08CF5B')
+
 $sources = [ordered]@{
     'LICENSE.md' = Join-Path $root 'LICENSE.md'
     'THIRD_PARTY_NOTICES.md' = Join-Path $root 'THIRD_PARTY_NOTICES.md'
@@ -201,9 +245,6 @@ $sources = [ordered]@{
     'licenses/DotNet-LICENSE.txt' = Resolve-PinnedPackageFile `
         'microsoft.netcore.app.runtime.win-x64/10.0.10/LICENSE.TXT' `
         'D7A68596AB69B06F51CA278A6545148E4269A9381C26D597C13DF5D88E08CF5B'
-    'licenses/DotNet-THIRD-PARTY-NOTICES.txt' = Resolve-PinnedPackageFile `
-        'microsoft.netcore.app.runtime.win-x64/10.0.10/THIRD-PARTY-NOTICES.TXT' `
-        '6D15E10A101C6BFFF2AB4429ED061BF76C456FC4B23AD6B03E0D0F8377148A21'
     'licenses/Microsoft.WindowsDesktop-LICENSE.txt' = Resolve-PinnedPackageFile `
         'microsoft.windowsdesktop.app.runtime.win-x64/10.0.10/LICENSE' `
         'A89886665765362EB77E0F8E26602C924520041D1711B2EEDC136434FE4D01AB'
@@ -213,6 +254,15 @@ $sources = [ordered]@{
     'licenses/Microsoft.Web.WebView2-NOTICE.txt' = Resolve-PinnedPackageFile `
         'microsoft.web.webview2/1.0.4078.44/NOTICE.txt' `
         '106423785C5B7EBA0A8E61D1837F2132E9C828E20AD530F565D981C1DF60DD90'
+}
+$expectedCombinedNoticeHash = Get-CombinedDotNetNoticeSha256 `
+    -NetCoreNotice $netCoreNoticePath `
+    -AspNetCoreNotice $aspNetCoreNoticePath
+$publishedCombinedNoticeHash = (Get-FileHash `
+    -LiteralPath (Join-Path $directoryPath 'licenses/DotNet-THIRD-PARTY-NOTICES.txt') `
+    -Algorithm SHA256).Hash
+if ($publishedCombinedNoticeHash -cne $expectedCombinedNoticeHash) {
+    throw 'Published .NET third-party notices are not the deterministic reviewed .NET Core and ASP.NET Core combination.'
 }
 foreach ($entry in $sources.GetEnumerator()) {
     if (-not (Test-Path -LiteralPath $entry.Value -PathType Leaf)) {
@@ -226,4 +276,4 @@ foreach ($entry in $sources.GetEnumerator()) {
     }
 }
 
-Write-Host "Verified exact production publish inventory, version, smoke-harness exclusion, and complete pinned notices for SessionDock $version."
+Write-Host "Verified exact production publish inventory, embedded HandleScope identity without sidecars, version, smoke-harness exclusion, and complete pinned notices for SessionDock $version."

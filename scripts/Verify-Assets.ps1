@@ -30,6 +30,55 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 . (Join-Path $PSScriptRoot 'ReleaseJson.ps1')
 
+if ($null -eq ('SessionDockReleaseBundleProbe' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Text;
+
+public static class SessionDockReleaseBundleProbe
+{
+    public static bool ContainsUtf8(string path, string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            throw new ArgumentException("The marker cannot be empty.", "value");
+        var pattern = Encoding.UTF8.GetBytes(value);
+        var prefix = new int[pattern.Length];
+        for (var index = 1; index < pattern.Length; index++)
+        {
+            var candidate = prefix[index - 1];
+            while (candidate > 0 && pattern[index] != pattern[candidate])
+                candidate = prefix[candidate - 1];
+            if (pattern[index] == pattern[candidate])
+                candidate++;
+            prefix[index] = candidate;
+        }
+        using (var stream = new FileStream(
+            path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            128 * 1024, FileOptions.SequentialScan))
+        {
+            var buffer = new byte[128 * 1024];
+            var matched = 0;
+            int count;
+            while ((count = stream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (var index = 0; index < count; index++)
+                {
+                    while (matched > 0 && buffer[index] != pattern[matched])
+                        matched = prefix[matched - 1];
+                    if (buffer[index] == pattern[matched])
+                        matched++;
+                    if (matched == pattern.Length)
+                        return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+'@
+}
+
 function Get-RelativeFiles([string] $Root) {
     $trimmedRoot = $Root.TrimEnd('\', '/')
     return @(Get-ChildItem -LiteralPath $trimmedRoot -Recurse -File -Force |
@@ -170,10 +219,22 @@ $expectedApplicationFiles = @(
     'licenses/Velopack-LICENSE.txt'
 )
 $sourceComparableApplicationFiles = $expectedApplicationFiles
+$applicationRelativeFiles = Get-RelativeFiles $applicationPath
+if ($applicationRelativeFiles | Where-Object {
+        $_ -match '(?i)(^|/)(?:SessionDock\.HandleScope|HandleScope(?:\.Api)?)(?:\.|/|$)'
+    }) {
+    throw 'Published application input contains a prohibited HandleScope sidecar.'
+}
 Assert-ExactSet `
     -Expected $expectedApplicationFiles `
-    -Actual (Get-RelativeFiles $applicationPath) `
+    -Actual $applicationRelativeFiles `
     -Description 'Published application input'
+$publishedMainExecutable = Join-Path $applicationPath 'SessionDock.exe'
+if (-not [SessionDockReleaseBundleProbe]::ContainsUtf8(
+        $publishedMainExecutable,
+        'SessionDock.HandleScope.dll')) {
+    throw 'Published SessionDock.exe is missing the embedded HandleScope component identity.'
+}
 & (Join-Path $PSScriptRoot 'Verify-ReleaseLicense.ps1') `
     -LicensePath (Join-Path $applicationPath 'LICENSE.md')
 
@@ -401,6 +462,11 @@ $packageExtraction = Join-Path ([IO.Path]::GetTempPath()) ("sessiondock-package-
 try {
     $packageArchive = [IO.Compression.ZipFile]::OpenRead($packagePath)
     try {
+        if ($packageArchive.Entries.FullName | Where-Object {
+                $_ -match '(?i)(^|/)(?:SessionDock\.HandleScope|HandleScope(?:\.Api)?)(?:\.|/|$)'
+            }) {
+            throw 'The full package contains a prohibited HandleScope sidecar.'
+        }
         Assert-ExactSet `
             -Expected $expectedPackageEntries `
             -Actual @($packageArchive.Entries.FullName) `
@@ -483,6 +549,11 @@ $portableExtraction = Join-Path ([IO.Path]::GetTempPath()) ("sessiondock-portabl
 try {
     $portableArchive = [IO.Compression.ZipFile]::OpenRead($portablePath)
     try {
+        if ($portableArchive.Entries.FullName | Where-Object {
+                $_ -match '(?i)(^|/)(?:SessionDock\.HandleScope|HandleScope(?:\.Api)?)(?:\.|/|$)'
+            }) {
+            throw 'The portable ZIP contains a prohibited HandleScope sidecar.'
+        }
         Assert-ExactSet `
             -Expected $expectedPortableEntries `
             -Actual @($portableArchive.Entries.FullName) `
@@ -562,6 +633,8 @@ if ($sbomChecksum.Count -ne 1 -or
     throw 'Release SBOM package checksum does not match the descriptor.'
 }
 $requiredSbomPackages = @(
+    'HandleScope',
+    'Microsoft.AspNetCore.App.Runtime.win-x64',
     'Microsoft.NETCore.App.Runtime.win-x64',
     'Microsoft.Web.WebView2',
     'Microsoft.WindowsDesktop.App.Runtime.win-x64',
@@ -570,6 +643,56 @@ $requiredSbomPackages = @(
 foreach ($requiredPackage in $requiredSbomPackages) {
     if (@($sbom.packages | Where-Object { $_.name -ceq $requiredPackage }).Count -ne 1) {
         throw "Release SBOM is missing required component '$requiredPackage'."
+    }
+}
+$handleScopeCommit = 'ef3b926848353115296faaa9f48f1a5be8c8bae2'
+$handleScopeSbomPackages = @($sbom.packages | Where-Object {
+        $_.SPDXID -ceq 'SPDXRef-Package-HandleScope'
+    })
+if ($handleScopeSbomPackages.Count -ne 1 -or
+    $handleScopeSbomPackages[0].name -cne 'HandleScope' -or
+    $handleScopeSbomPackages[0].versionInfo -cne '0.3.0' -or
+    $handleScopeSbomPackages[0].licenseDeclared -cne 'MIT' -or
+    $handleScopeSbomPackages[0].supplier -cne 'Person: Makmatoe' -or
+    $handleScopeSbomPackages[0].downloadLocation -cne
+        "https://github.com/Makmatoe/HandleScope/archive/${handleScopeCommit}.tar.gz" -or
+    $handleScopeSbomPackages[0].sourceInfo -notmatch [regex]::Escape($handleScopeCommit) -or
+    @($handleScopeSbomPackages[0].externalRefs | Where-Object {
+            $_.referenceType -ceq 'purl' -and
+            $_.referenceLocator -match [regex]::Escape($handleScopeCommit)
+        }).Count -ne 1) {
+    throw 'Release SBOM does not contain the exact reviewed HandleScope 0.3.0 source identity.'
+}
+$aspNetRuntime = @($sbom.packages | Where-Object {
+        $_.name -ceq 'Microsoft.AspNetCore.App.Runtime.win-x64'
+    })
+if ($aspNetRuntime.Count -ne 1 -or
+    $aspNetRuntime[0].versionInfo -cne '10.0.10' -or
+    $aspNetRuntime[0].licenseDeclared -cne 'MIT') {
+    throw 'Release SBOM does not describe the pinned ASP.NET Core runtime.'
+}
+$containsRelationships = @($sbom.relationships | Where-Object {
+        $_.spdxElementId -ceq 'SPDXRef-Package-SessionDock' -and
+        $_.relationshipType -ceq 'CONTAINS' -and
+        $_.relatedSpdxElement -ceq 'SPDXRef-Package-HandleScope'
+    })
+if ($containsRelationships.Count -ne 1 -or
+    @($sbom.relationships | Where-Object {
+            $_.spdxElementId -ceq 'SPDXRef-Package-SessionDock' -and
+            $_.relationshipType -ceq 'DEPENDS_ON' -and
+            $_.relatedSpdxElement -ceq 'SPDXRef-Package-HandleScope'
+        }).Count -ne 0) {
+    throw 'Release SBOM must model bundled HandleScope with exactly one CONTAINS relationship.'
+}
+foreach ($runtimeRelationship in @(
+        'SPDXRef-Package-Microsoft.AspNetCore.App.Runtime.win-x64',
+        'SPDXRef-Package-Microsoft.NETCore.App.Runtime.win-x64')) {
+    if (@($sbom.relationships | Where-Object {
+                $_.spdxElementId -ceq 'SPDXRef-Package-HandleScope' -and
+                $_.relationshipType -ceq 'DEPENDS_ON' -and
+                $_.relatedSpdxElement -ceq $runtimeRelationship
+            }).Count -ne 1) {
+        throw "Release SBOM is missing HandleScope runtime relationship '$runtimeRelationship'."
     }
 }
 

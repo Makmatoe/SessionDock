@@ -13,6 +13,9 @@ param(
     [string] $License,
 
     [Parameter(Mandatory)]
+    [string] $BundledHandleScopeManifest,
+
+    [Parameter(Mandatory)]
     [string] $Output
 )
 
@@ -58,6 +61,9 @@ $descriptorPath = Require-File $Descriptor 'Release descriptor'
 $projectPath = Require-File $Project 'Application project'
 $lockPath = Require-File $LockFile 'Application package lock'
 [void] (Require-File $License 'Release license')
+$handleScopeManifestPath = Require-File `
+    $BundledHandleScopeManifest `
+    'Bundled HandleScope provenance manifest'
 $outputPath = [IO.Path]::GetFullPath($Output)
 
 $release = ConvertFrom-ReleaseJson (Get-Content -LiteralPath $descriptorPath -Raw)
@@ -79,6 +85,23 @@ if ($runtimeVersions.Count -ne 1 -or $runtimeVersions[0] -cnotmatch '^\d+\.\d+\.
     throw 'The project must pin exactly one three-part RuntimeFrameworkVersion.'
 }
 $runtimeVersion = [string] $runtimeVersions[0]
+
+$handleScopeManifest = ConvertFrom-ReleaseJson (
+    Get-Content -LiteralPath $handleScopeManifestPath -Raw)
+$handleScopeProperties = @($handleScopeManifest.PSObject.Properties.Name | Sort-Object)
+if (@(Compare-Object `
+        @('component', 'componentVersion', 'schemaVersion', 'sources', 'upstream') `
+        $handleScopeProperties `
+        -CaseSensitive).Count -ne 0 -or
+    $handleScopeManifest.schemaVersion -ne 1 -or
+    $handleScopeManifest.component -cne 'HandleScope' -or
+    $handleScopeManifest.componentVersion -cne '0.3.0' -or
+    $handleScopeManifest.upstream.repository -cne 'https://github.com/Makmatoe/HandleScope' -or
+    $handleScopeManifest.upstream.tag -cne 'v0.3.0' -or
+    $handleScopeManifest.upstream.commit -cne 'ef3b926848353115296faaa9f48f1a5be8c8bae2' -or
+    @($handleScopeManifest.sources).Count -le 0) {
+    throw 'The bundled HandleScope provenance is not the reviewed 0.3.0 source identity.'
+}
 
 $lock = ConvertFrom-ReleaseJson (Get-Content -LiteralPath $lockPath -Raw)
 Write-Verbose 'Parsed application lock file.'
@@ -129,6 +152,29 @@ $releasePackage = [ordered]@{
     supplier = 'Person: Makmatoe'
 }
 $packages.Add($releasePackage)
+$handleScopePackage = [ordered]@{
+    name = 'HandleScope'
+    SPDXID = 'SPDXRef-Package-HandleScope'
+    versionInfo = [string] $handleScopeManifest.componentVersion
+    downloadLocation =
+        "https://github.com/Makmatoe/HandleScope/archive/$($handleScopeManifest.upstream.commit).tar.gz"
+    filesAnalyzed = $false
+    licenseConcluded = 'NOASSERTION'
+    licenseDeclared = 'MIT'
+    copyrightText = 'Copyright (c) 2026 Makmatoe'
+    supplier = 'Person: Makmatoe'
+    sourceInfo =
+        "Bundled reviewed source from $($handleScopeManifest.upstream.tag) at Git commit $($handleScopeManifest.upstream.commit)."
+    externalRefs = @(
+        [ordered]@{
+            referenceCategory = 'PACKAGE-MANAGER'
+            referenceType = 'purl'
+            referenceLocator =
+                "pkg:github/Makmatoe/HandleScope@$($handleScopeManifest.componentVersion)?vcs_url=git%2Bhttps%3A%2F%2Fgithub.com%2FMakmatoe%2FHandleScope.git%40$($handleScopeManifest.upstream.commit)"
+        }
+    )
+}
+$packages.Add($handleScopePackage)
 
 foreach ($dependency in $resolved.GetEnumerator() | Sort-Object Key) {
     $name = [string] $dependency.Key
@@ -144,6 +190,7 @@ foreach ($dependency in $resolved.GetEnumerator() | Sort-Object Key) {
         -SpdxId $id))
 }
 foreach ($runtimeName in @(
+        'Microsoft.AspNetCore.App.Runtime.win-x64',
         'Microsoft.NETCore.App.Runtime.win-x64',
         'Microsoft.WindowsDesktop.App.Runtime.win-x64')) {
     $id = 'SPDXRef-Package-' + ($runtimeName -replace '[^A-Za-z0-9.-]', '-')
@@ -162,11 +209,29 @@ $relationships.Add([ordered]@{
     relationshipType = 'DESCRIBES'
     relatedSpdxElement = 'SPDXRef-Package-SessionDock'
 })
-foreach ($package in @($packages.ToArray() | Where-Object { $_.SPDXID -cne 'SPDXRef-Package-SessionDock' })) {
+foreach ($package in @($packages.ToArray() | Where-Object {
+            $_.SPDXID -notin @(
+                'SPDXRef-Package-SessionDock',
+                'SPDXRef-Package-HandleScope')
+        })) {
     $relationships.Add([ordered]@{
         spdxElementId = 'SPDXRef-Package-SessionDock'
         relationshipType = 'DEPENDS_ON'
         relatedSpdxElement = $package.SPDXID
+    })
+}
+$relationships.Add([ordered]@{
+    spdxElementId = 'SPDXRef-Package-SessionDock'
+    relationshipType = 'CONTAINS'
+    relatedSpdxElement = 'SPDXRef-Package-HandleScope'
+})
+foreach ($runtimeId in @(
+        'SPDXRef-Package-Microsoft.AspNetCore.App.Runtime.win-x64',
+        'SPDXRef-Package-Microsoft.NETCore.App.Runtime.win-x64')) {
+    $relationships.Add([ordered]@{
+        spdxElementId = 'SPDXRef-Package-HandleScope'
+        relationshipType = 'DEPENDS_ON'
+        relatedSpdxElement = $runtimeId
     })
 }
 Write-Verbose 'Constructed SPDX relationships.'

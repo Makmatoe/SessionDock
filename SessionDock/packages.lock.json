@@ -20,6 +20,9 @@
         "resolved": "1.2.0",
         "contentHash": "Rz67gJL619fSBS6omaSINUxyDuwhIxkm5mmubf7uLd5Qgi6LLKaKCha+QFP6n+Bw/UjA0vutnH4JQfYzn6ANtw=="
       },
+      "sessiondock.handlescope": {
+        "type": "Project"
+      },
       "sessiondock.releasetrust": {
         "type": "Project"
       }

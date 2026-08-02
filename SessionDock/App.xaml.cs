@@ -6,6 +6,7 @@ using System.Windows.Media;
 using System.Windows.Shell;
 using System.Windows.Threading;
 using SessionDock.Services;
+using SessionDock.SystemProcesses;
 
 namespace SessionDock;
 
@@ -22,6 +23,11 @@ public partial class App : Application
         new();
     private AppThemeService? _themeService;
     private AppLocalizationService? _localizationService;
+    internal HandleScopeRuntimeCoordinator HandleScopeRuntimeCoordinator
+    {
+        get;
+        private set;
+    } = null!;
     public UiSoundService SoundService { get; private set; } = null!;
     public bool UiSoundsEnabled { get; set; } = true;
 #if SESSIONDOCK_SMOKE_HARNESS
@@ -104,6 +110,8 @@ public partial class App : Application
                 () =>
                 {
                     SoundService = new UiSoundService();
+                    HandleScopeRuntimeCoordinator =
+                        new HandleScopeRuntimeCoordinator();
                     var mainWindow = new MainWindow();
                     MainWindow = mainWindow;
 #if SESSIONDOCK_SMOKE_HARNESS
@@ -135,6 +143,7 @@ public partial class App : Application
         {
             _singleInstance.Dispose();
             _singleInstance = null;
+            HandleScopeRuntimeCoordinator?.Dispose();
             SoundService?.Dispose();
             Shutdown(1);
             return;
@@ -180,6 +189,7 @@ public partial class App : Application
             _themeService.ThemeChanged -= ThemeService_ThemeChanged;
         _themeService?.Dispose();
         _localizationService?.Dispose();
+        HandleScopeRuntimeCoordinator?.Dispose();
         SoundService?.Dispose();
         base.OnExit(e);
     }
@@ -318,6 +328,28 @@ public partial class App : Application
             mainWindow.VerifySemanticSelectorsForRuntimeSmoke();
             mainWindow.VerifyJoinUserUiForRuntimeSmoke();
             mainWindow.VerifyCompactLayoutForRuntimeSmoke();
+            var bundledHandleScope = await HandleScopeRuntimeCoordinator
+                .SetRuntimeSourceAsync(HandleScopeRuntimeSource.Bundled);
+            if (bundledHandleScope.Source != HandleScopeRuntimeSource.Bundled)
+            {
+                throw new InvalidOperationException(
+                    "The runtime smoke could not select bundled HandleScope.");
+            }
+            var enabledHandleScope = await HandleScopeRuntimeCoordinator
+                .EnableAsync();
+            if (enabledHandleScope.State != HandleScopeRuntimeState.Ready ||
+                enabledHandleScope.Source != HandleScopeRuntimeSource.Bundled)
+            {
+                throw new InvalidOperationException(
+                    "The bundled HandleScope worker did not become ready.");
+            }
+            var disabledHandleScope = await HandleScopeRuntimeCoordinator
+                .DisableAsync();
+            if (disabledHandleScope.State != HandleScopeRuntimeState.Off)
+            {
+                throw new InvalidOperationException(
+                    "The bundled HandleScope worker did not stop cleanly.");
+            }
 
             void HandleShutdownCompleted(Exception? shutdownFailure)
             {

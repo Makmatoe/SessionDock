@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\SessionDock.ico</ApplicationIcon>
     <StartupObject>SessionDock.Program</StartupObject>
-    <Version>2.9.0</Version>
+    <Version>3.0.0</Version>
     <Product>SessionDock</Product>
     <Authors>Makmatoe</Authors>
     <Copyright>Copyright (c) 2026 Makmatoe</Copyright>
@@ -43,6 +43,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
     <PackageReference Include="Velopack" Version="1.2.0" />
     <ProjectReference Include="..\SessionDock.ReleaseTrust\SessionDock.ReleaseTrust.csproj" />
+    <ProjectReference Include="..\SessionDock.HandleScope\SessionDock.HandleScope.csproj" />
     <None Update="handlescope.example.json"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="Never" />
@@ -59,8 +60,11 @@
           Link="licenses\DotNet-LICENSE.txt"
           CopyToPublishDirectory="PreserveNewest" />
     <None Include="$(NuGetPackageRoot)microsoft.netcore.app.runtime.win-x64\10.0.10\THIRD-PARTY-NOTICES.TXT"
-          Link="licenses\DotNet-THIRD-PARTY-NOTICES.txt"
-          CopyToPublishDirectory="PreserveNewest" />
+          Visible="false"
+          CopyToPublishDirectory="Never" />
+    <None Include="$(NuGetPackageRoot)microsoft.aspnetcore.app.runtime.win-x64\10.0.10\THIRD-PARTY-NOTICES.TXT"
+          Visible="false"
+          CopyToPublishDirectory="Never" />
     <None Include="$(NuGetPackageRoot)microsoft.windowsdesktop.app.runtime.win-x64\10.0.10\LICENSE"
           Link="licenses\Microsoft.WindowsDesktop-LICENSE.txt"
           CopyToPublishDirectory="PreserveNewest" />

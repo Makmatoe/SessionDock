@@ -48,45 +48,42 @@ SessionDock is designed around these boundaries:
 - The optional generic launch hook requires a Windows-trusted HTTPS certificate
   for a numeric loopback address and a valid bearer token. Plain HTTP generic
   hooks are rejected.
-- HandleScope uses a separate verified loopback process, discovery-file, and
-  rotating-token boundary. Its API is optional, explicitly enabled, and never
-  bundled or elevated by SessionDock. The embedded compatibility bootstrap is
-  trusted through the SessionDock package. The explicit **Check versions**
-  action is the only remote catalog refresh: it accepts only a bounded catalog
-  signed by the pinned SessionDock P-256 release key with the exact product,
-  repository, key ID, schema, validity window, and a nondecreasing
-  sequence/generation floor. A failed, expired, or rolled-back candidate cannot
-  replace the last trusted local catalog. Catalog entries authorize immutable
-  release assets, executable identities, SessionDock version ranges, and a
-  bounded capability set; they cannot define executable code, commands, local
-  paths, or API endpoints.
-- Checking versions and changing Automatic, Keep installed, Exact, `v1`, or
-  `v2` preferences never install, replace, start, stop, upgrade, or downgrade
-  HandleScope. Installation is a separate confirmed action for one selected
-  compatible release. SessionDock requires the catalog-authorized package and
-  checksum identities, matching checksum contents, any cataloged immutable
-  release manifest, executable identities, safe bounded ZIP layout, and
-  complete internal inventory before running a standard-user setup adapter
-  compiled into SessionDock. The signed `handlescope.setup.native.v1`
-  capability selects only
-  the fixed locked `api/HandleScope.Setup.exe`; its catalog-pinned v2 manifest
-  identity must match the extracted file before the direct `verify` and
-  `install --start-now --enable-autostart` phases. Reviewed 0.1.4 and 0.2.2
-  releases retain only their fixed Windows PowerShell `RemoteSigned` adapter.
-  Unknown, missing, or contradictory setup capabilities fail before download or
-  launch. SessionDock refuses downgrades and never uses `Bypass` or
-  `Unrestricted`, changes saved policy, overrides Group Policy, requests
-  elevation, or automatically opts in the integration.
-- The legacy `%LOCALAPPDATA%\SessionDock\handlescope.json` policy file and exact
-  five-field `%LOCALAPPDATA%\HandleScope\connection.json` discovery document
-  remain unchanged. Discovery continues to report `apiVersion: "v1"`. After
-  local path, reparse-point, owner, non-elevated token, current-session, PID,
-  discovery-time, strict numeric-loopback, rotating-token, and executable
-  identity checks, SessionDock requests authenticated `/v1/metadata`. The
-  metadata must exactly match the signed-catalog runtime identity and may
-  select only SessionDock's compiled `/v1/handles/close` or
-  `/v2/handles/close` adapter. Only the catalog-authorized v0.1.4 runtime may
-  use a metadata-404 legacy fallback, and that fallback is `v1` only.
+- SessionDock 3.0 includes the reviewed HandleScope 0.3.0 engine inside
+  `SessionDock.exe`, but keeps it optional and disabled until the user enables
+  it. The source snapshot, upstream tag/commit, allowlisted files, and hashes are
+  pinned in `SessionDock.HandleScope/handlescope-upstream.json` and checked by repository,
+  build, release-inventory, license, and SBOM gates.
+- Included mode creates one non-elevated, current-user/current-session child
+  owned by SessionDock. Bootstrap data travels through an inherited anonymous
+  pipe. Its rotating 256-bit bearer token stays in parent/child memory and is
+  never placed in a file, command line, environment variable, setting, log, or
+  UI. The child binds only to ephemeral numeric IPv4 loopback, verifies its
+  parent, rejects browser-originated requests, and exits when disabled or when
+  the parent lifetime ends. It creates no service, scheduled task, autostart
+  entry, or separately mutable executable.
+- Normal SessionDock use never downloads, installs, starts through PowerShell,
+  elevates, or separately updates HandleScope. Therefore script execution
+  policy, UAC, a download-time antivirus verdict on a HandleScope ZIP, and a
+  standalone autostart task are not part of the included trust boundary.
+  SessionDock package verification covers the embedded engine with the rest of
+  `SessionDock.exe`.
+- **Standalone HandleScope (advanced)** preserves the old separate-process
+  compatibility boundary. SessionDock connects only after the user selects that
+  source and the already running API passes strict discovery-file,
+  reparse-point, owner, non-elevated token, current-session, PID, start-time,
+  numeric-loopback, executable-identity, and authenticated metadata checks.
+  SessionDock never downloads, installs, starts, stops, updates, downgrades,
+  reconfigures, or uninstalls the standalone application.
+- The legacy `%LOCALAPPDATA%\SessionDock\handlescope.json` opt-in remains
+  compatible. Source selection is stored separately in strict
+  `handlescope-runtime.json`; a fresh missing selection defaults to included,
+  while a one-time 2.x migration preserves a verified enabled standalone or an
+  old Keep installed/Exact choice. An invalid selection fails closed. Included
+  mode does not use the standalone
+  `%LOCALAPPDATA%\HandleScope\connection.json` document. Both sources require
+  authenticated `/v1/metadata` and can select only SessionDock's compiled
+  `/v1/handles/close` or `/v2/handles/close` adapter and the single fixed
+  `roblox-singleton-event-v1` policy.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content.
 - Safe metadata transfer uses a small versioned allowlist and bounded strict
@@ -119,7 +116,11 @@ include a signed release descriptor, Velopack package metadata, an SPDX SBOM,
 complete dependency notices, checksums covering every other asset, and a GitHub
 artifact attestation. The release verifier rejects unexpected package files and
 requires exact byte equality for the application files carried by the NUPKG and
-portable ZIP. SessionDock does not currently have an Authenticode certificate,
+portable ZIP. HandleScope is compiled into `SessionDock.exe`; an unexpected
+HandleScope executable, installer, script, or other publish sidecar is a release
+verification failure. The verifier also checks the pinned HandleScope source
+provenance, MIT license, notices, and SBOM entry. SessionDock does not currently
+have an Authenticode certificate,
 so Windows reports Unknown publisher for Setup. The signed update descriptor,
 package hash, checksums, and GitHub attestation reduce substitution risk but do
 not provide Windows publisher identity and do not make an unsigned executable

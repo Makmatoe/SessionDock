@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using SessionDock.Services;
+using SessionDock.SystemProcesses;
 using Velopack;
 using Velopack.Locators;
 
@@ -11,6 +12,12 @@ public static class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        if (HandleScopeWorkerCommand.IsInvocation(args))
+        {
+            Environment.ExitCode = HandleScopeWorkerCommand.Run(args);
+            Array.Clear(args);
+            return;
+        }
 #if SESSIONDOCK_SMOKE_HARNESS
         if (!RuntimeSmokeTestOptions.TryParse(
                 args,

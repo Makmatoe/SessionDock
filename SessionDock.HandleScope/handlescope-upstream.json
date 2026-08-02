@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "component": "HandleScope",
+  "componentVersion": "0.3.0",
+  "upstream": {
+    "repository": "https://github.com/Makmatoe/HandleScope",
+    "tag": "v0.3.0",
+    "commit": "ef3b926848353115296faaa9f48f1a5be8c8bae2"
+  },
+  "sources": [
+    {
+      "sourcePath": "HandleScope.Api/ApiHost.cs",
+      "destinationPath": "Upstream/HandleScope.Api/ApiHost.cs",
+      "sha256": "695b7cbc58ca5d2f42017094047f22da91146d0eea09551b12e18023476522a0"
+    },
+    {
+      "sourcePath": "HandleScope.Api/AutomationPolicy.cs",
+      "destinationPath": "Upstream/HandleScope.Api/AutomationPolicy.cs",
+      "sha256": "a83c696a75460af3233779fab714fa647aef5064e37f62aef0f18067f814a17d"
+    },
+    {
+      "sourcePath": "HandleScope.Api/Contracts.cs",
+      "destinationPath": "Upstream/HandleScope.Api/Contracts.cs",
+      "sha256": "d312b94dd0d810690f089d3448a55be5b651a905af2f0608856201a843b29547"
+    },
+    {
+      "sourcePath": "HandleScope.Api/DryRunPlanStore.cs",
+      "destinationPath": "Upstream/HandleScope.Api/DryRunPlanStore.cs",
+      "sha256": "ef00c8e569da89933216c776648dee81d22c5d48768875e8cb18212cb3a4795e"
+    },
+    {
+      "sourcePath": "HandleScope.Api/RobloxExecutableVerifier.cs",
+      "destinationPath": "Upstream/HandleScope.Api/RobloxExecutableVerifier.cs",
+      "sha256": "a1774ac3bf8628060514c4f8feede2a3199b4f44e4fba420e205a4088b50e099"
+    },
+    {
+      "sourcePath": "HandleScope.Api/StrictCloseRequestReader.cs",
+      "destinationPath": "Upstream/HandleScope.Api/StrictCloseRequestReader.cs",
+      "sha256": "7fec0da30ac4642f9567f51772aa46d6da384fa841dc8c62a52db800f1592bb3"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Compatibility/ApiCompatibilityPreferenceStore.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Compatibility/ApiCompatibilityPreferenceStore.cs",
+      "sha256": "526912390c54ee7116dd269cb2bd09393f64c8954ab1fa80fd7b83a3c1072549"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Models/HandleEntry.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Models/HandleEntry.cs",
+      "sha256": "4938c5ccb1c26068c02be3555b06ea8f522fd3807a8b6e7258980a3359cd9d51"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Models/ProcessIdentity.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Models/ProcessIdentity.cs",
+      "sha256": "7f749cec82577f3b16d46e8878cace983574aedf7096168bb95745a4d1a11285"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Models/ProcessRow.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Models/ProcessRow.cs",
+      "sha256": "696b95983af7afdcf6e07870ac6099895d74e14e3cc9c2c697ef8d77bf4978fd"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Models/ProcessSnapshot.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Models/ProcessSnapshot.cs",
+      "sha256": "ad59fd25fe36899b7523ddda1496184065c09e9f25fe38bdc189085b861cf6d5"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Models/RobloxAutomationRecipe.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Models/RobloxAutomationRecipe.cs",
+      "sha256": "61933b264a79dcccd35d0876accb14a5ad58297d59217f40299fe1fc961bd27a"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Services/AutomationCommandBuilder.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Services/AutomationCommandBuilder.cs",
+      "sha256": "d9a8d54ef161bd8e0ad703a5774cc1c28c233fd8803c4dfc5b857288cfaa9adb"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Services/HandleService.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Services/HandleService.cs",
+      "sha256": "4c5be325d49ae8e6e376fbe6f35d975484db1e91425a429d49a057e5227b9d23"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Services/NativeMethods.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Services/NativeMethods.cs",
+      "sha256": "7f60f7f5e07ce8a9779e6e2eb367e25e98a6e59dd86fc4f8c28f6c0d592cada0"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Services/ProcessIdentityService.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Services/ProcessIdentityService.cs",
+      "sha256": "8cea5e3edc7bf6aaab2e30d9bb644c8c3208d7a0e0b3018418bf4a3861f2037c"
+    },
+    {
+      "sourcePath": "HandleScope.Core/Services/ProcessService.cs",
+      "destinationPath": "Upstream/HandleScope.Core/Services/ProcessService.cs",
+      "sha256": "1791b9aac6c33b7f0ba1f54d0767e85dc669cc8f30af96b6f1d3a43d5a838f61"
+    }
+  ]
+}

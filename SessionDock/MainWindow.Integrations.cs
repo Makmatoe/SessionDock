@@ -9,7 +9,10 @@ public partial class MainWindow
         if (_operationBusy)
             return;
 
-        var dialog = new IntegrationsDialog { Owner = this };
+        var dialog = new IntegrationsDialog(_handleScopeRuntimeCoordinator)
+        {
+            Owner = this
+        };
         dialog.ShowDialog();
     }
 }

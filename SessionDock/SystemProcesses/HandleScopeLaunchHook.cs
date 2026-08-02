@@ -20,15 +20,27 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
     private readonly HandleScopeConnectionLoader _connectionLoader;
     private readonly HttpClient _client;
     private readonly HandleScopeApiBootstrapper _apiBootstrapper;
+    private readonly HandleScopeRuntimeCoordinator? _runtimeCoordinator;
     private readonly object _lifetimeLock = new();
     private readonly SemaphoreSlim _operationGate = new(1, 1);
     private bool _disposed;
 
-    public bool IsConfigured => _configurationLoader.LoadEnabled() is not null;
+    public bool IsConfigured => _runtimeCoordinator?.IsEnabled ??
+        _configurationLoader.LoadEnabled() is not null;
 
     public HandleScopeLaunchHook()
         : this(new HandleScopeConfigurationLoader(), new HandleScopeConnectionLoader())
     {
+    }
+
+    internal HandleScopeLaunchHook(
+        HandleScopeRuntimeCoordinator runtimeCoordinator)
+        : this(
+            new HandleScopeConfigurationLoader(),
+            new HandleScopeConnectionLoader())
+    {
+        ArgumentNullException.ThrowIfNull(runtimeCoordinator);
+        _runtimeCoordinator = runtimeCoordinator;
     }
 
     public HandleScopeLaunchHook(
@@ -68,7 +80,7 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
         {
             Timeout = RequestTimeout
         };
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("SessionDock/2.1");
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd("SessionDock/3.0");
         _apiBootstrapper = new HandleScopeApiBootstrapper(
             _connectionLoader,
             _client,
@@ -143,8 +155,10 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
             if (configuration is null)
                 return;
 
-            var connection = await _apiBootstrapper.GetExistingAsync(
-                cancellationToken);
+            var connection = _runtimeCoordinator is null
+                ? await _apiBootstrapper.GetExistingAsync(cancellationToken)
+                : await _runtimeCoordinator.GetReadyConnectionAsync(
+                    cancellationToken);
             if (connection is null)
                 return;
 
@@ -162,8 +176,10 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
                 // The discovery token is intentionally short-lived. Treat the
                 // all-process sweep as a separate operation and reload its
                 // connection instead of carrying credentials across the two.
-                var sweepConnection = await _apiBootstrapper.GetExistingAsync(
-                    timeout.Token);
+                var sweepConnection = _runtimeCoordinator is null
+                    ? await _apiBootstrapper.GetExistingAsync(timeout.Token)
+                    : await _runtimeCoordinator.GetReadyConnectionAsync(
+                        timeout.Token);
                 if (sweepConnection is null)
                     return;
 
