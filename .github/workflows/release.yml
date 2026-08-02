@@ -99,6 +99,7 @@ jobs:
           $tag = $env:RELEASE_TAG
           Copy-Item "SessionDock/ReleaseNotes/$version.en-US.md" artifacts/release-input/notes.md
           Copy-Item SessionDock/Resources/update-public-key.pem artifacts/release-input/update-public-key.pem
+          Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap.json artifacts/release-input/handlescope-compatibility-bootstrap.json
           Copy-Item SessionDock/SessionDock.csproj artifacts/release-input/application.csproj
           Copy-Item SessionDock/packages.lock.json artifacts/release-input/packages.lock.json
           Copy-Item global.json artifacts/release-input/global.json
@@ -270,14 +271,143 @@ jobs:
             --identity current
           if ($LASTEXITCODE -ne 0) { throw "Descriptor preparation failed with exit code $LASTEXITCODE." }
 
-      - name: Sign only the update descriptor with the protected P-256 key
+      - name: Prepare the canonical unsigned HandleScope compatibility catalog
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
+        run: |
+          $catalogName = 'sessiondock-handlescope-compatibility.json'
+          $catalogHistory = [Collections.Generic.List[object]]::new()
+          $catalogAssetIds = [Collections.Generic.HashSet[long]]::new()
+          [int] $page = 1
+          while ($true) {
+            if ($page -gt 100) {
+              throw 'Published release history exceeded the bounded catalog freshness search.'
+            }
+            $releasePageJson = gh api `
+              -H 'Accept: application/vnd.github+json' `
+              -H 'X-GitHub-Api-Version: 2022-11-28' `
+              "/repos/$env:GITHUB_REPOSITORY/releases?per_page=100&page=$page"
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Unable to inspect published release history for the catalog freshness floor.'
+            }
+            $releasePage = @($releasePageJson | ConvertFrom-Json)
+            foreach ($release in $releasePage) {
+              if ($release.draft -or $release.prerelease) { continue }
+              $releaseCatalogAssets = @($release.assets | Where-Object {
+                  $_.name -ceq $catalogName
+                })
+              if ($releaseCatalogAssets.Count -gt 1) {
+                throw "Published release $($release.tag_name) has an ambiguous catalog asset."
+              }
+              if ($releaseCatalogAssets.Count -eq 1) {
+                $asset = $releaseCatalogAssets[0]
+                try {
+                  [long] $assetId = $asset.id
+                  [long] $assetSize = $asset.size
+                }
+                catch {
+                  throw "Published release $($release.tag_name) has invalid catalog asset metadata."
+                }
+                $assetDigest = [string] $asset.digest
+                if ($assetId -le 0 -or
+                    $assetSize -le 0 -or
+                    $assetSize -gt 256KB -or
+                    $asset.state -cne 'uploaded' -or
+                    $assetDigest -cnotmatch '^sha256:[0-9a-f]{64}$' -or
+                    -not $catalogAssetIds.Add($assetId)) {
+                  throw "Published release $($release.tag_name) has untrusted catalog asset metadata."
+                }
+                $catalogHistory.Add([pscustomobject]@{
+                    AssetId = $assetId
+                    Digest = $assetDigest
+                    Size = $assetSize
+                  })
+              }
+            }
+            if ($releasePage.Count -lt 100) { break }
+            $page++
+          }
+          if ($catalogHistory.Count -eq 0 -and
+              $env:RELEASE_VERSION -cne '2.8.0') {
+            throw 'Only SessionDock 2.8.0 may establish the first HandleScope catalog sequence.'
+          }
+
+          $catalogArguments = @(
+            'prepare-catalog'
+            '--manifest', './release-input/handlescope-compatibility-bootstrap.json'
+            '--output', './handlescope-catalog.unsigned.json'
+            '--digest-output', './handlescope-catalog.digest.base64url'
+            '--sessiondock-version', $env:RELEASE_VERSION
+          )
+          if ($catalogHistory.Count -gt 0) {
+            if (Test-Path -LiteralPath ./prior-catalog) {
+              throw 'The prior catalog staging directory already exists.'
+            }
+            $priorCatalogDirectory = (New-Item `
+                -ItemType Directory `
+                -Path ./prior-catalog).FullName
+            $assetHeaders = @{
+              Accept = 'application/octet-stream'
+              Authorization = "Bearer $env:GH_TOKEN"
+              'User-Agent' = 'SessionDock-release-workflow'
+              'X-GitHub-Api-Version' = '2022-11-28'
+            }
+            foreach ($historicalAsset in @($catalogHistory |
+                Sort-Object AssetId)) {
+              $destination = Join-Path `
+                $priorCatalogDirectory `
+                "$($historicalAsset.AssetId).json"
+              try {
+                Invoke-WebRequest `
+                  -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/assets/$($historicalAsset.AssetId)" `
+                  -Headers $assetHeaders `
+                  -OutFile $destination `
+                  -MaximumRedirection 5 `
+                  -TimeoutSec 60
+              }
+              catch {
+                throw "Published catalog asset $($historicalAsset.AssetId) could not be downloaded by immutable ID."
+              }
+              $downloadedAsset = Get-Item -LiteralPath $destination
+              $downloadedDigest = (Get-FileHash `
+                  -LiteralPath $destination `
+                  -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($downloadedAsset.Length -ne $historicalAsset.Size -or
+                  $downloadedDigest -cne
+                    $historicalAsset.Digest.Substring(7)) {
+                throw "Published catalog asset $($historicalAsset.AssetId) changed after enumeration."
+              }
+            }
+            $priorFiles = @(Get-ChildItem ./prior-catalog -File -Force)
+            if ($priorFiles.Count -ne $catalogHistory.Count) {
+              throw 'The authenticated catalog history download is incomplete.'
+            }
+            $catalogArguments += @(
+              '--prior-directory', $priorCatalogDirectory
+              '--public-key', './release-input/update-public-key.pem'
+            )
+          }
+          & ./release-input/signer/ReleaseSigner.exe @catalogArguments
+          if ($LASTEXITCODE -ne 0) { throw "Compatibility catalog preparation failed with exit code $LASTEXITCODE." }
+
+      - name: Sign release metadata with the protected P-256 key
         shell: pwsh
         env:
           UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64: ${{ secrets.UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64 }}
-        run: >-
-          ./release-input/scripts/Sign-ReleaseDescriptorDigest.ps1
-          -DigestPath ./descriptor.digest.base64url
-          -SignaturePath ./descriptor.signature.base64url
+        run: |
+          $digests = @(
+            './descriptor.digest.base64url'
+            './handlescope-catalog.digest.base64url'
+          )
+          $signatures = @(
+            './descriptor.signature.base64url'
+            './handlescope-catalog.signature.base64url'
+          )
+          & ./release-input/scripts/Sign-ReleaseDescriptorDigest.ps1 `
+            -DigestPath $digests `
+            -SignaturePath $signatures
 
       - name: Complete and verify the externally signed release descriptor
         shell: pwsh
@@ -291,6 +421,19 @@ jobs:
             --public-key ./release-input/update-public-key.pem
           if ($LASTEXITCODE -ne 0) { throw "External descriptor completion failed with exit code $LASTEXITCODE." }
 
+      - name: Complete and verify the externally signed HandleScope compatibility catalog
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
+        run: |
+          & ./release-input/signer/ReleaseSigner.exe complete-catalog `
+            --manifest ./handlescope-catalog.unsigned.json `
+            --signature-file ./handlescope-catalog.signature.base64url `
+            --output ./release-output/sessiondock-handlescope-compatibility.json `
+            --public-key ./release-input/update-public-key.pem `
+            --sessiondock-version $env:RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "External compatibility catalog completion failed with exit code $LASTEXITCODE." }
+
       - name: Verify the signed descriptor and assemble release metadata
         shell: pwsh
         env:
@@ -302,6 +445,12 @@ jobs:
             --package $package[0].FullName `
             --public-key ./release-input/update-public-key.pem
           if ($LASTEXITCODE -ne 0) { throw "Descriptor verification failed with exit code $LASTEXITCODE." }
+
+          & ./release-input/signer/ReleaseSigner.exe verify-catalog `
+            --manifest ./release-output/sessiondock-handlescope-compatibility.json `
+            --public-key ./release-input/update-public-key.pem `
+            --sessiondock-version $env:RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "Compatibility catalog verification failed with exit code $LASTEXITCODE." }
 
           & ./release-input/scripts/New-ReleaseSbom.ps1 `
             -Descriptor ./release-output/sessiondock-release.json `
@@ -319,6 +468,9 @@ jobs:
           & ./release-input/scripts/Verify-Assets.ps1 `
             -Directory ./release-output `
             -Manifest ./release-output/sessiondock-release.json `
+            -CompatibilityCatalog ./release-output/sessiondock-handlescope-compatibility.json `
+            -ReleaseSigner ./release-input/signer/ReleaseSigner.exe `
+            -PublicKey ./release-input/update-public-key.pem `
             -PublishedApplicationDirectory ./release-input/app `
             -ExpectedTag $env:RELEASE_TAG
 
@@ -446,6 +598,7 @@ jobs:
             'RELEASES-win-x64-sessiondock'
             'releases.win-x64-sessiondock.json'
             "SessionDock-$env:RELEASE_VERSION-sbom.spdx.json"
+            'sessiondock-handlescope-compatibility.json'
             'sessiondock-release.json'
             'SessionDock-win-x64-Portable.zip'
             'SessionDock-win-x64-Setup.exe'
@@ -482,6 +635,14 @@ jobs:
             if ($actualHash -cne $checksumEntries[$name]) {
               throw "Approved draft checksum mismatch: $name"
             }
+          }
+
+          & ./release-verification/signer/ReleaseSigner.exe verify-catalog `
+            --manifest ./approved-assets/sessiondock-handlescope-compatibility.json `
+            --public-key ./release-verification/update-public-key.pem `
+            --sessiondock-version $env:RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Approved HandleScope compatibility catalog signature verification failed.'
           }
 
           foreach ($asset in $assets) {
@@ -648,6 +809,36 @@ jobs:
           RELEASE_RUN_ATTEMPT: ${{ github.run_attempt }}
           PRIOR_PUBLICATION_INTENT_VERIFIED: ${{ steps.prior-publication-intent.outputs.verified }}
         run: |
+          $catalogName = 'sessiondock-handlescope-compatibility.json'
+          New-Item -ItemType Directory final-catalog-verification -Force | Out-Null
+          gh release download $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --dir ./final-catalog-verification `
+            --pattern $catalogName
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to re-download the HandleScope catalog immediately before publication.'
+          }
+          $finalCatalogs = @(Get-ChildItem ./final-catalog-verification -File -Force)
+          if ($finalCatalogs.Count -ne 1 -or $finalCatalogs[0].Name -cne $catalogName) {
+            throw 'The final HandleScope catalog verification download is not exact.'
+          }
+          $approvedCatalogHash = (Get-FileHash `
+            -LiteralPath ./approved-assets/sessiondock-handlescope-compatibility.json `
+            -Algorithm SHA256).Hash
+          $finalCatalogHash = (Get-FileHash `
+            -LiteralPath $finalCatalogs[0].FullName `
+            -Algorithm SHA256).Hash
+          if ($finalCatalogHash -cne $approvedCatalogHash) {
+            throw 'The HandleScope catalog changed after approved-draft verification.'
+          }
+          & ./release-verification/signer/ReleaseSigner.exe verify-catalog `
+            --manifest $finalCatalogs[0].FullName `
+            --public-key ./release-verification/update-public-key.pem `
+            --sessiondock-version $env:RELEASE_VERSION
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Final HandleScope compatibility catalog signature verification failed.'
+          }
+
           $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json body,isDraft,isPrerelease,tagName,name
           if ($LASTEXITCODE -ne 0) { throw 'Unable to inspect the reverified release before publication.' }
           $release = $releaseJson | ConvertFrom-Json

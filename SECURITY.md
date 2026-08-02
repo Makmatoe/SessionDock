@@ -50,22 +50,36 @@ SessionDock is designed around these boundaries:
   hooks are rejected.
 - HandleScope uses a separate verified loopback process, discovery-file, and
   rotating-token boundary. Its API is optional, explicitly enabled, and never
-  bundled or elevated by SessionDock. The explicit install action is pinned to
-  the immutable HandleScope v0.1.4 Windows x64 release. It requires the exact
-  package and checksum sizes and SHA-256 hashes, a matching same-release
-  checksum, safe bounded ZIP layout, and complete internal manifest before
-  running the standard-user installer. SessionDock uses `RemoteSigned` only for
-  that verified child PowerShell process so the Windows default `Restricted`
-  policy does not reject it; it never uses `Bypass` or `Unrestricted`, changes
-  saved policy, or overrides Group Policy. It supplies no downgrade switch,
-  elevation request, or automatic integration opt-in. The installer starts the
-  API and enables HandleScope's limited
-  per-user autostart only after the user confirms the action, including notice
-  that an older supported per-user installation may be replaced. Before
-  inspecting or trusting the local API, SessionDock also requires the exact published
-  v0.1.4 executable size and SHA-256 hash at the expected non-reparse per-user
-  path, then retains the process-path, session, owner, non-elevated token, PID,
-  discovery-time, strict loopback, rotating-token, and health-policy checks.
+  bundled or elevated by SessionDock. The embedded compatibility bootstrap is
+  trusted through the SessionDock package. The explicit **Check versions**
+  action is the only remote catalog refresh: it accepts only a bounded catalog
+  signed by the pinned SessionDock P-256 release key with the exact product,
+  repository, key ID, schema, validity window, and a nondecreasing
+  sequence/generation floor. A failed, expired, or rolled-back candidate cannot
+  replace the last trusted local catalog. Catalog entries authorize immutable
+  release assets, executable identities, SessionDock version ranges, and a
+  bounded capability set; they cannot define executable code, commands, local
+  paths, or API endpoints.
+- Checking versions and changing Automatic, Keep installed, Exact, `v1`, or
+  `v2` preferences never install, replace, start, stop, upgrade, or downgrade
+  HandleScope. Installation is a separate confirmed action for one selected
+  compatible release. SessionDock requires the catalog-authorized package and
+  checksum identities, matching checksum contents, optional immutable release
+  manifest, API executable identity, safe bounded ZIP layout, and complete
+  internal inventory before running the standard-user installer. It refuses a
+  downgrade and uses `RemoteSigned` only for that verified child process; it
+  never uses `Bypass` or `Unrestricted`, changes saved policy, overrides Group
+  Policy, requests elevation, or automatically opts in the integration.
+- The legacy `%LOCALAPPDATA%\SessionDock\handlescope.json` policy file and exact
+  five-field `%LOCALAPPDATA%\HandleScope\connection.json` discovery document
+  remain unchanged. Discovery continues to report `apiVersion: "v1"`. After
+  local path, reparse-point, owner, non-elevated token, current-session, PID,
+  discovery-time, strict numeric-loopback, rotating-token, and executable
+  identity checks, SessionDock requests authenticated `/v1/metadata`. The
+  metadata must exactly match the signed-catalog runtime identity and may
+  select only SessionDock's compiled `/v1/handles/close` or
+  `/v2/handles/close` adapter. Only the catalog-authorized v0.1.4 runtime may
+  use a metadata-404 legacy fallback, and that fallback is `v1` only.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content.
 - Safe metadata transfer uses a small versioned allowlist and bounded strict

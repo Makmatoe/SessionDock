@@ -1,9 +1,13 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
+using System.Net.Http;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using SessionDock.ReleaseTrust;
 using SessionDock.Services;
 using SessionDock.SystemProcesses;
 
@@ -16,6 +20,7 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private readonly HandleScopeIntegrationService _integrationService = new();
     private readonly HandleScopeReleaseInstaller _releaseInstaller = new();
+    private readonly HandleScopeVersionManager _versionManager = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly AccessibilityLiveRegion _stateLiveRegion;
     private readonly AccessibilityLiveRegion _actionStatusLiveRegion;
@@ -26,6 +31,8 @@ public partial class HandleScopeIntegrationDialog : Window
     private bool _isBusy;
     private bool _installCommitInProgress;
     private bool _isClosed;
+    private bool _isPopulatingVersions;
+    private HandleScopeVersionSnapshot? _versionSnapshot;
 
     public HandleScopeIntegrationDialog()
     {
@@ -45,6 +52,20 @@ public partial class HandleScopeIntegrationDialog : Window
     {
         Loaded -= HandleScopeIntegrationDialog_Loaded;
         WindowLayoutService.FitToWorkArea(this);
+        try
+        {
+            PopulateVersionSelectors(_versionManager.Load());
+        }
+        catch (Exception exception) when (
+            exception is HandleScopeCatalogException or IOException or
+                UnauthorizedAccessException or
+                InvalidOperationException or ArgumentException or
+                NotSupportedException)
+        {
+            Trace.WriteLine(
+                $"HandleScope version catalog could not be loaded: {exception.GetType().Name}.");
+            VersionSummaryText.Text = Localize("Handle.VersionCatalogInvalid");
+        }
         await RunActionAsync(
             cancellationToken => _integrationService.InspectAsync(cancellationToken),
             Localize("Handle.ActionInspected"),
@@ -56,6 +77,244 @@ public partial class HandleScopeIntegrationDialog : Window
             cancellationToken => _integrationService.InspectAsync(cancellationToken),
             Localize("Handle.ActionRefreshed"),
             repairEnablesIntegration: true);
+
+    private async void CheckVersionsButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_isBusy)
+            return;
+
+        SetBusy(true);
+        SetActionStatus(Localize("Handle.CheckVersionsWorking"));
+        try
+        {
+            var snapshot = await _versionManager.RefreshAsync(
+                _lifetimeCancellation.Token);
+            PopulateVersionSelectors(snapshot);
+            if (_isClosed)
+                return;
+            var result = await _integrationService.InspectAsync(
+                _lifetimeCancellation.Token);
+            _state = result.State;
+            _canRepairConfiguration = result.CanRepairConfiguration;
+            RenderState();
+            SetActionStatus(Localize("Handle.CheckVersionsSucceeded"));
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_isClosed)
+                SetActionStatus(string.Empty);
+        }
+        catch (Exception exception) when (
+            exception is HandleScopeCatalogException or HttpRequestException or
+                IOException or UnauthorizedAccessException or
+                InvalidOperationException or ArgumentException or
+                NotSupportedException)
+        {
+            Trace.WriteLine(
+                $"HandleScope version check failed safely: {exception.GetType().Name}.");
+            SetActionStatus(
+                Localize("Handle.CheckVersionsFailed"),
+                isError: true);
+        }
+        finally
+        {
+            if (!_isClosed)
+                SetBusy(false);
+        }
+    }
+
+    private void VersionSelectionChanged(
+        object sender,
+        SelectionChangedEventArgs e)
+    {
+        if (_isPopulatingVersions ||
+            _versionSnapshot is null ||
+            RuntimeVersionComboBox.SelectedItem is not RuntimeVersionChoice runtime ||
+            ApiVersionComboBox.SelectedItem is not ApiVersionChoice api)
+        {
+            return;
+        }
+
+        var selection = new HandleScopeSelection(
+            runtime.Mode,
+            runtime.Version,
+            api.ApiContract);
+        var selectedRelease = ResolveSelectedRelease(
+            selection,
+            _versionSnapshot);
+        if (api.ApiContract is not null &&
+            (selectedRelease is null ||
+             !selectedRelease.ApiContracts.Contains(
+                 api.ApiContract,
+                 StringComparer.Ordinal)))
+        {
+            if (ReferenceEquals(sender, RuntimeVersionComboBox) &&
+                selectedRelease is not null)
+            {
+                selection = selection with { ExactApiContract = null };
+            }
+            else
+            {
+                SetActionStatus(
+                    Localize("Handle.ApiVersionUnavailable"),
+                    isError: true);
+                PopulateVersionSelectors(_versionSnapshot);
+                return;
+            }
+        }
+
+        try
+        {
+            var snapshot = _versionManager.SaveSelection(
+                selection,
+                _versionSnapshot.Catalog);
+            PopulateVersionSelectors(snapshot);
+            SetActionStatus(Localize("Handle.VersionSelectionSaved"));
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or
+                InvalidOperationException or ArgumentException or
+                NotSupportedException)
+        {
+            Trace.WriteLine(
+                $"HandleScope version preference was not saved: {exception.GetType().Name}.");
+            SetActionStatus(
+                Localize("Handle.VersionSelectionFailed"),
+                isError: true);
+            PopulateVersionSelectors(_versionSnapshot);
+        }
+    }
+
+    private void PopulateVersionSelectors(HandleScopeVersionSnapshot snapshot)
+    {
+        _versionSnapshot = snapshot;
+        _isPopulatingVersions = true;
+        try
+        {
+            RuntimeVersionComboBox.Items.Clear();
+            var automatic = new RuntimeVersionChoice(
+                snapshot.CompatibleReleases.Count == 0
+                    ? Localize("Handle.VersionAutomaticUnavailable")
+                    : Localize(
+                        "Handle.VersionAutomatic",
+                        snapshot.RecommendedRelease.Version),
+                HandleScopeVersionSelectionMode.Automatic,
+                null);
+            RuntimeVersionComboBox.Items.Add(automatic);
+            var keepInstalled = new RuntimeVersionChoice(
+                snapshot.InstalledRuntime is null
+                    ? Localize("Handle.VersionKeepInstalledMissing")
+                    : Localize(
+                        "Handle.VersionKeepInstalled",
+                        snapshot.InstalledRuntime.Version.ToString(3)),
+                HandleScopeVersionSelectionMode.KeepInstalled,
+                null);
+            RuntimeVersionComboBox.Items.Add(keepInstalled);
+            foreach (var release in snapshot.CompatibleReleases)
+            {
+                RuntimeVersionComboBox.Items.Add(new RuntimeVersionChoice(
+                    Localize(
+                        release.Version == snapshot.RecommendedRelease.Version
+                            ? "Handle.VersionExactRecommended"
+                            : "Handle.VersionExact",
+                        release.Version),
+                    HandleScopeVersionSelectionMode.Exact,
+                    new Version(release.Version)));
+            }
+
+            RuntimeVersionComboBox.SelectedItem =
+                RuntimeVersionComboBox.Items
+                    .OfType<RuntimeVersionChoice>()
+                    .FirstOrDefault(choice =>
+                        choice.Mode == snapshot.Selection.VersionMode &&
+                        choice.Version == snapshot.Selection.ExactVersion)
+                ?? automatic;
+
+            ApiVersionComboBox.Items.Clear();
+            var automaticApi = new ApiVersionChoice(
+                Localize("Handle.ApiVersionAutomatic"),
+                null);
+            ApiVersionComboBox.Items.Add(automaticApi);
+            ApiVersionComboBox.Items.Add(new ApiVersionChoice(
+                Localize("Handle.ApiVersionV2"),
+                "v2"));
+            ApiVersionComboBox.Items.Add(new ApiVersionChoice(
+                Localize("Handle.ApiVersionV1"),
+                "v1"));
+            ApiVersionComboBox.SelectedItem =
+                ApiVersionComboBox.Items
+                    .OfType<ApiVersionChoice>()
+                    .First(choice =>
+                        choice.ApiContract == snapshot.Selection.ExactApiContract);
+        }
+        finally
+        {
+            _isPopulatingVersions = false;
+        }
+
+        RenderVersionSummary();
+        UpdateActionAvailability();
+    }
+
+    private void RenderVersionSummary()
+    {
+        if (_versionSnapshot is null)
+            return;
+
+        var installed = _versionSnapshot.InstalledRuntime?.Version.ToString(3)
+            ?? Localize("Handle.VersionNone");
+        var selected = _versionSnapshot.SelectedRelease?.Version
+            ?? Localize("Handle.VersionNone");
+        VersionSummaryText.Text = _versionSnapshot.CompatibleReleases.Count == 0
+            ? Localize(
+                "Handle.VersionSummaryNoCompatible",
+                installed,
+                _versionSnapshot.RecommendedRelease.Version)
+            : Localize(
+                _versionSnapshot.SelectionIsValid
+                    ? "Handle.VersionSummary"
+                    : "Handle.VersionSummaryInvalidPreference",
+                installed,
+                _versionSnapshot.RecommendedRelease.Version,
+                selected);
+
+        if (_versionSnapshot.SelectedRelease is { } release)
+        {
+            InstallHandleScopeLabel.Text = Localize(
+                "Handle.InstallVersion",
+                release.Version);
+            OpenSetupGuideLabel.Text = Localize(
+                "Handle.SetupGuideVersion",
+                release.Version);
+            AutomationProperties.SetName(
+                InstallHandleScopeButton,
+                Localize("Handle.InstallNameVersion", release.Version));
+            AutomationProperties.SetName(
+                OpenHandleScopeSetupButton,
+                Localize("Handle.SetupGuideNameVersion", release.Version));
+        }
+    }
+
+    private static HandleScopeCompatibleRelease? ResolveSelectedRelease(
+        HandleScopeSelection selection,
+        HandleScopeVersionSnapshot snapshot) => selection.VersionMode switch
+        {
+            HandleScopeVersionSelectionMode.Automatic =>
+                snapshot.CompatibleReleases.FirstOrDefault(release =>
+                    release.Version == snapshot.RecommendedRelease.Version),
+            HandleScopeVersionSelectionMode.KeepInstalled =>
+                snapshot.InstalledRuntime is null
+                    ? null
+                    : snapshot.CompatibleReleases.FirstOrDefault(release =>
+                        new Version(release.Version) ==
+                        snapshot.InstalledRuntime.Version),
+            HandleScopeVersionSelectionMode.Exact =>
+                snapshot.CompatibleReleases.FirstOrDefault(release =>
+                    new Version(release.Version) == selection.ExactVersion),
+            _ => null
+        };
 
     private async void EnableButton_Click(object sender, RoutedEventArgs e) =>
         await RunActionAsync(
@@ -108,10 +367,20 @@ public partial class HandleScopeIntegrationDialog : Window
         if (_isBusy)
             return;
 
+        var snapshot = _versionSnapshot;
+        var selectedRelease = snapshot?.SelectedRelease;
+        if (snapshot is null || selectedRelease is null)
+        {
+            SetActionStatus(
+                Localize("Handle.VersionSelectionUnavailable"),
+                isError: true);
+            return;
+        }
+
         var confirmation = MessageBox.Show(
             this,
-            Localize("Handle.InstallConfirm"),
-            Localize("Handle.InstallConfirmTitle"),
+            Localize("Handle.InstallConfirm", selectedRelease.Version),
+            Localize("Handle.InstallConfirmTitle", selectedRelease.Version),
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning,
             MessageBoxResult.No);
@@ -119,17 +388,22 @@ public partial class HandleScopeIntegrationDialog : Window
             return;
 
         SetBusy(true);
-        SetActionStatus(Localize("Handle.ProgressPreparing"));
+        SetActionStatus(Localize(
+            "Handle.ProgressPreparing",
+            selectedRelease.Version));
         try
         {
             var progress = new ImmediateProgress<HandleScopeReleaseInstallProgress>(
                 UpdateInstallProgress);
-            var installed = await _releaseInstaller.InstallPinnedAsync(
+            var installed = await _releaseInstaller.InstallAsync(
+                selectedRelease,
+                snapshot.Catalog,
                 progress,
                 _lifetimeCancellation.Token);
             if (_isClosed)
                 return;
 
+            ReloadVersionSnapshotAfterInstall();
             var result = await _integrationService.InspectAsync(
                 _lifetimeCancellation.Token);
             _state = result.State;
@@ -157,7 +431,7 @@ public partial class HandleScopeIntegrationDialog : Window
                 Localize(
                     "Handle.InstallFailed",
                     LocalizeInstallFailureReason(exception.FailureKind),
-                    OfficialSetupUrl),
+                    CurrentSetupUrl),
                 isError: true);
         }
         finally
@@ -165,6 +439,25 @@ public partial class HandleScopeIntegrationDialog : Window
             _installCommitInProgress = false;
             if (!_isClosed)
                 SetBusy(false);
+        }
+    }
+
+    private void ReloadVersionSnapshotAfterInstall()
+    {
+        try
+        {
+            PopulateVersionSelectors(_versionManager.Load());
+        }
+        catch (Exception exception) when (
+            exception is HandleScopeCatalogException or IOException or
+                UnauthorizedAccessException or InvalidOperationException or
+                ArgumentException or NotSupportedException)
+        {
+            Trace.WriteLine(
+                $"HandleScope version state could not be reloaded after installation: {exception.GetType().Name}.");
+            _versionSnapshot = null;
+            VersionSummaryText.Text = Localize("Handle.VersionCatalogInvalid");
+            UpdateActionAvailability();
         }
     }
 
@@ -176,7 +469,7 @@ public partial class HandleScopeIntegrationDialog : Window
         var visibleStatus = progress.Stage switch
         {
             HandleScopeReleaseInstallStage.CheckingRelease =>
-                Localize("Handle.ProgressPreparing"),
+                Localize("Handle.ProgressPreparing", progress.Version),
             HandleScopeReleaseInstallStage.DownloadingPackage =>
                 Localize(
                     "Handle.ProgressDownloading",
@@ -212,7 +505,7 @@ public partial class HandleScopeIntegrationDialog : Window
     {
         try
         {
-            Process.Start(CreateOfficialSetupStartInfo());
+            Process.Start(CreateOfficialSetupStartInfo(CurrentSetupUrl));
             SetActionStatus(Localize("Handle.SetupGuideOpened"));
         }
         catch (Exception exception) when (
@@ -222,16 +515,36 @@ public partial class HandleScopeIntegrationDialog : Window
             Trace.WriteLine(
                 $"HandleScope setup guide could not be opened: {exception.GetType().Name}.");
             SetActionStatus(
-                Localize("Handle.SetupGuideFailed", OfficialSetupUrl),
+                Localize("Handle.SetupGuideFailed", CurrentSetupUrl),
                 isError: true);
         }
     }
 
-    internal static ProcessStartInfo CreateOfficialSetupStartInfo() => new()
+    internal static ProcessStartInfo CreateOfficialSetupStartInfo() =>
+        CreateOfficialSetupStartInfo(OfficialSetupUrl);
+
+    internal static ProcessStartInfo CreateOfficialSetupStartInfo(string url) => new()
     {
-        FileName = OfficialSetupUrl,
+        FileName = url,
         UseShellExecute = true
     };
+
+    internal static string CreateOfficialSetupUrl(string version)
+    {
+        if (!Version.TryParse(version, out var parsed) ||
+            parsed.Build < 0 || parsed.Revision >= 0 ||
+            parsed.ToString(3) != version)
+        {
+            throw new ArgumentException(
+                "The HandleScope setup-guide version is invalid.",
+                nameof(version));
+        }
+        return $"https://github.com/Makmatoe/HandleScope/blob/v{version}/docs/INSTALL.md";
+    }
+
+    private string CurrentSetupUrl => _versionSnapshot?.SelectedRelease is { } release
+        ? CreateOfficialSetupUrl(release.Version)
+        : OfficialSetupUrl;
 
     private async Task RunActionAsync(
         Func<CancellationToken, Task<HandleScopeIntegrationResult>> action,
@@ -419,8 +732,15 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private void UpdateActionAvailability()
     {
-        InstallHandleScopeButton.IsEnabled = !_isBusy;
-        OpenHandleScopeSetupButton.IsEnabled = !_isBusy;
+        InstallHandleScopeButton.IsEnabled = !_isBusy &&
+            _versionSnapshot?.SelectedRelease is not null;
+        OpenHandleScopeSetupButton.IsEnabled = !_isBusy &&
+            _versionSnapshot?.SelectedRelease is not null;
+        var hasCompatibleRelease =
+            _versionSnapshot?.CompatibleReleases.Count > 0;
+        RuntimeVersionComboBox.IsEnabled = !_isBusy && hasCompatibleRelease;
+        ApiVersionComboBox.IsEnabled = !_isBusy && hasCompatibleRelease;
+        CheckVersionsButton.IsEnabled = !_isBusy;
         RefreshButton.IsEnabled = !_isBusy;
         EnableButton.IsEnabled = !_isBusy && _state is
             HandleScopeIntegrationState.InstalledStopped or
@@ -461,6 +781,7 @@ public partial class HandleScopeIntegrationDialog : Window
         _isClosed = true;
         _lifetimeCancellation.Cancel();
         _releaseInstaller.Dispose();
+        _versionManager.Dispose();
         _integrationService.Dispose();
         _lifetimeCancellation.Dispose();
     }
@@ -500,5 +821,14 @@ public partial class HandleScopeIntegrationDialog : Window
 
         public void Report(T value) => _report(value);
     }
+
+    private sealed record RuntimeVersionChoice(
+        string DisplayName,
+        HandleScopeVersionSelectionMode Mode,
+        Version? Version);
+
+    private sealed record ApiVersionChoice(
+        string DisplayName,
+        string? ApiContract);
 
 }

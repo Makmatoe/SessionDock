@@ -10,7 +10,16 @@ internal interface IHandleScopeProcessVerifier
     bool IsExpected(HandleScopeConnection connection);
 }
 
-internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
+internal interface IHandleScopeResolvedProcessVerifier :
+    IHandleScopeProcessVerifier
+{
+    bool TryResolveExpected(
+        HandleScopeConnection connection,
+        out HandleScopeRuntimeIdentity? runtimeIdentity);
+}
+
+internal sealed class HandleScopeProcessVerifier :
+    IHandleScopeResolvedProcessVerifier
 {
     internal const string ExpectedProcessName = "HandleScope.Api";
     internal static readonly TimeSpan AllowedClockSkew = TimeSpan.FromSeconds(5);
@@ -52,15 +61,35 @@ internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
             "Api",
             "HandleScope.Api.exe"));
 
-    public bool IsExpected(HandleScopeConnection connection)
+    public bool IsExpected(HandleScopeConnection connection) =>
+        TryVerifyExpected(
+            connection,
+            requireRuntimeIdentity: false,
+            out _);
+
+    public bool TryResolveExpected(
+        HandleScopeConnection connection,
+        out HandleScopeRuntimeIdentity? runtimeIdentity) =>
+        TryVerifyExpected(
+            connection,
+            requireRuntimeIdentity: true,
+            out runtimeIdentity);
+
+    private bool TryVerifyExpected(
+        HandleScopeConnection connection,
+        bool requireRuntimeIdentity,
+        out HandleScopeRuntimeIdentity? runtimeIdentity)
     {
         ArgumentNullException.ThrowIfNull(connection);
+        runtimeIdentity = null;
 
         try
         {
             if (!TryGetExpectedProcessSnapshot(
                     connection.ApiProcessId,
-                    out var snapshot))
+                    requireRuntimeIdentity,
+                    out var snapshot,
+                    out runtimeIdentity))
                 return false;
 
             using var current = Process.GetCurrentProcess();
@@ -82,9 +111,12 @@ internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
 
     private bool TryGetExpectedProcessSnapshot(
         int processId,
-        out HandleScopeProcessSnapshot snapshot)
+        bool requireRuntimeIdentity,
+        out HandleScopeProcessSnapshot snapshot,
+        out HandleScopeRuntimeIdentity? runtimeIdentity)
     {
         snapshot = default;
+        runtimeIdentity = null;
         if (!HandleScopePathSecurity.IsSafeExistingPath(
                 _localAppDataRoot,
                 _expectedExecutablePath,
@@ -93,8 +125,19 @@ internal sealed class HandleScopeProcessVerifier : IHandleScopeProcessVerifier
         {
             return false;
         }
-        if (!_installedRuntimeVerifier.IsAuthorized(_expectedExecutablePath))
+        if (_installedRuntimeVerifier is IHandleScopeRuntimeIdentityResolver resolver)
+        {
+            if (!resolver.TryIdentify(_expectedExecutablePath, out runtimeIdentity) ||
+                runtimeIdentity is null)
+            {
+                return false;
+            }
+        }
+        else if (requireRuntimeIdentity ||
+                 !_installedRuntimeVerifier.IsAuthorized(_expectedExecutablePath))
+        {
             return false;
+        }
 
         using var process = Process.GetProcessById(processId);
         var actualPath = process.MainModule?.FileName;

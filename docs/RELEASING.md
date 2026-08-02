@@ -151,44 +151,67 @@ cryptographic package authorization without requiring a commercial Windows
 code-signing certificate. Never use this key to sign executables or HandleScope
 releases.
 
-## HandleScope compatibility pin
+## HandleScope signed compatibility catalog
 
-SessionDock does not bundle or elevate HandleScope. Its confirmed install action
-downloads and invokes only the immutable HandleScope v0.1.4 standard-user
-installer. It uses `-ExecutionPolicy RemoteSigned` only for the verified child
-process so Windows' default `Restricted` policy does not reject the script. It
-never uses `Bypass` or `Unrestricted`, changes saved policy, overrides Group
-Policy, requests elevation, permits a downgrade, or automatically enables the
-SessionDock integration. The pinned official installation guide remains
-available for manual setup.
+SessionDock does not bundle or elevate HandleScope. Compatibility is defined by
+`SessionDock/Resources/handlescope-compatibility-bootstrap.json`, not by a
+hard-coded current-version URL. The unsigned bootstrap is covered by the
+SessionDock package trust boundary and supplies offline-safe defaults. Each
+published SessionDock release also carries the top-level
+`sessiondock-handlescope-compatibility.json` asset signed by the same protected
+P-256 release key as the update descriptor. The app retrieves that asset only
+after the user selects **Check versions** and rejects invalid, expired, or
+rolled-back catalogs without replacing its last trusted local copy.
 
-The supported runtime is HandleScope v0.1.4 from commit
-`624dfc3abb6991b4f8eab8c8895ea11936f24919`. Its published
-`HandleScope.Api.exe` is exactly 50,275,061 bytes with SHA-256
-`9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95`.
-SessionDock embeds that identity and rejects any other executable before its
-path or process can be trusted. Existing path, reparse-point, standard-user,
-current-session, PID, discovery-time, strict loopback, rotating-token, and
-health-policy checks remain mandatory.
+The catalog has one exact product/repository/key identity, a monotonically
+increasing `sequence`, bounded generation/expiry window, exact SessionDock
+version binding, one recommended release, and a sorted set of at most 32
+HandleScope releases. Every release entry must include:
 
-The managed installer additionally pins `HandleScope-0.1.4-win-x64.zip` to
-100,841,616 bytes and SHA-256
-`b06bfe850b8334b6be86d9037ea43e7210845420e7473cf7c17d030277c06622`,
-and `SHA256SUMS.txt` to 198 bytes and SHA-256
-`860bcd77e7cd83693a87b15a1f464908e6dbe43195b0ed0572684e009b1e6ccf`.
-The release was independently confirmed public, non-draft, non-prerelease,
-immutable, and latest. Its attested `HandleScope-0.1.4-win-x64.spdx.json` is
-16,689 bytes with SHA-256
-`bff70ad4909d28f247453be84b7a024b230dab79d97dc49773bafe2f4bb12711`.
-The versioned upstream integration contract explicitly authorizes the confirmed
-managed path and requires disclosure that an older supported per-user install
-may be replaced.
+- a stable version/tag, `supported` or `revoked` state, and SessionDock version
+  range;
+- only API contracts and capabilities implemented and allowlisted in the
+  shipped SessionDock binary (`v1` and `v2` are the current compiled adapters);
+- exact names, byte sizes, and SHA-256 hashes for the Windows x64 package,
+  checksum file, optional immutable release manifest, and API executable; and
+- the canonical tag-pinned upstream SessionDock integration contract URL.
 
-Do not change the pinned setup URL, version, asset sizes, or digests until a
-newer immutable HandleScope release and its integration contract have been
-reviewed together. A future change must retain the explicit confirmation,
-standard-user/no-bypass boundary, update all five localized resources and
-current release notes, and extend the focused installer/runtime tests.
+The catalog is authorization data, never executable policy. It cannot add an
+endpoint, command, script, local path, or capability that SessionDock has not
+compiled. `connection.json` discovery remains `v1`; newer runtimes negotiate
+an authenticated metadata document against catalog identity before SessionDock
+chooses the compiled `/v1/handles/close` or `/v2/handles/close` adapter. The
+v0.1.4 catalog entry intentionally retains its metadata-404 legacy `v1`
+fallback and exact historical package/executable identities.
+
+Before adding or recommending a HandleScope release, review the immutable
+public tag, commit, canonical assets, checksum contents, optional manifest,
+standard-user installer, versioned integration contract, discovery schema,
+authenticated metadata schema, API behavior, and required capabilities
+together. Add or update the sorted bootstrap entry, advance `sequence`, set
+`sessionDockVersion` to the project version, refresh the validity dates without
+exceeding the 400-day window, and leave the bootstrap `signature` empty. Never
+reuse a sequence for different content, remove a still-needed backwards-
+compatibility entry, or mark a release supported merely because its version is
+newer. Prefer `revoked` for an identity that clients must stop selecting.
+
+The reviewer-gated release job performs `prepare-catalog`, signs the canonical
+catalog digest alongside the update-descriptor digest without writing the
+private key to disk, runs `complete-catalog` and `verify-catalog` with the
+pinned public key, verifies the final asset topology, and publishes the signed
+catalog. Release review must confirm that the embedded bootstrap and signed
+asset describe the intended compatibility set and recommendation.
+
+Checking the catalog or changing Automatic, Keep installed, Exact, `v1`, or
+`v2` preferences must never install or replace software. Installation stays a
+separate confirmation for the selected catalog release. Retain exact asset and
+executable verification, safe ZIP/inventory checks, the standard-user
+`RemoteSigned`-only child process, the downgrade refusal, and the separate
+integration opt-in. Never introduce `Bypass`, `Unrestricted`, elevation, silent
+installation, silent updating, or silent downgrading. Any compatibility change
+must update all five localized resources and current release notes and extend
+the focused catalog, installer, runtime, negotiation, and backwards-
+compatibility tests.
 
 ## Prepare and validate
 

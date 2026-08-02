@@ -7,6 +7,15 @@ param(
     [string] $Manifest,
 
     [Parameter(Mandatory)]
+    [string] $CompatibilityCatalog,
+
+    [Parameter(Mandatory)]
+    [string] $ReleaseSigner,
+
+    [Parameter(Mandatory)]
+    [string] $PublicKey,
+
+    [Parameter(Mandatory)]
     [string] $PublishedApplicationDirectory,
 
     [string] $ExpectedRepository = 'Makmatoe/SessionDock',
@@ -107,6 +116,9 @@ function Get-XmlChildText([Xml.XmlElement] $Parent, [string] $Name) {
 
 $directoryPath = [IO.Path]::GetFullPath($Directory).TrimEnd('\', '/')
 $manifestPath = [IO.Path]::GetFullPath($Manifest)
+$catalogPath = [IO.Path]::GetFullPath($CompatibilityCatalog)
+$releaseSignerPath = [IO.Path]::GetFullPath($ReleaseSigner)
+$publicKeyPath = [IO.Path]::GetFullPath($PublicKey)
 $applicationPath = [IO.Path]::GetFullPath($PublishedApplicationDirectory).TrimEnd('\', '/')
 if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
     throw "Release directory not found: $directoryPath"
@@ -118,6 +130,19 @@ $expectedManifestPath = Join-Path $directoryPath 'sessiondock-release.json'
 if (-not $manifestPath.Equals($expectedManifestPath, [StringComparison]::OrdinalIgnoreCase) -or
     -not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
     throw 'The release descriptor must be the top-level sessiondock-release.json asset.'
+}
+$catalogName = 'sessiondock-handlescope-compatibility.json'
+$expectedCatalogPath = Join-Path $directoryPath $catalogName
+if (-not $catalogPath.Equals($expectedCatalogPath, [StringComparison]::OrdinalIgnoreCase) -or
+    -not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
+    throw "The HandleScope compatibility catalog must be the top-level $catalogName asset."
+}
+foreach ($trustedVerifierInput in @($releaseSignerPath, $publicKeyPath)) {
+    if (-not (Test-Path -LiteralPath $trustedVerifierInput -PathType Leaf) -or
+        -not [string]::IsNullOrWhiteSpace(
+            [string] (Get-Item -LiteralPath $trustedVerifierInput).LinkType)) {
+        throw 'The catalog verifier and public key must be regular staged files.'
+    }
 }
 $releaseItems = @(Get-ChildItem -LiteralPath $directoryPath -Force)
 if ($releaseItems | Where-Object {
@@ -213,6 +238,55 @@ if ($signatureBytes.Length -ne 64) {
     throw 'Descriptor signature must be one P-256 signature.'
 }
 
+$catalogInfo = Get-Item -LiteralPath $catalogPath
+if ($catalogInfo.Length -le 0 -or $catalogInfo.Length -gt 256 * 1024) {
+    throw 'HandleScope compatibility catalog must be between 1 byte and 256 KiB.'
+}
+$catalog = ConvertFrom-ReleaseJson (Get-Content -LiteralPath $catalogPath -Raw)
+$requiredCatalogFields = @(
+    'schemaVersion', 'product', 'repository', 'keyId', 'sequence', 'generatedAt',
+    'expiresAt', 'sessionDockVersion', 'recommendedVersion', 'releases', 'signature'
+)
+Assert-ExactSet `
+    -Expected $requiredCatalogFields `
+    -Actual @($catalog.PSObject.Properties.Name) `
+    -Description 'HandleScope compatibility catalog'
+$catalogReleases = @($catalog.releases)
+if ($catalog.schemaVersion -ne 1 -or
+    $catalog.product -cne 'SessionDock.HandleScopeCompatibility' -or
+    $catalog.repository -cne $ExpectedRepository -or
+    $catalog.keyId -cne 'sessiondock-release-2026-01' -or
+    [long] $catalog.sequence -le 0 -or
+    $catalog.sessionDockVersion -cne [string] $descriptor.version -or
+    $catalog.recommendedVersion -cnotmatch '^\d+\.\d+\.\d+$' -or
+    $catalogReleases.Count -le 0 -or
+    $catalogReleases.Count -gt 32 -or
+    @($catalogReleases | Where-Object {
+            $_.version -ceq $catalog.recommendedVersion -and
+            $_.status -ceq 'supported'
+        }).Count -ne 1) {
+    throw 'HandleScope compatibility catalog identity or release binding is invalid.'
+}
+try {
+    $catalogSignatureBytes = [Convert]::FromBase64String(
+        [string] $catalog.signature)
+}
+catch [FormatException] {
+    throw 'HandleScope compatibility catalog signature is not valid Base64.'
+}
+if ($catalogSignatureBytes.Length -ne 64 -or
+    [Convert]::ToBase64String($catalogSignatureBytes) -cne
+        [string] $catalog.signature) {
+    throw 'HandleScope compatibility catalog signature must be one canonical P-256 signature.'
+}
+& $releaseSignerPath verify-catalog `
+    --manifest $catalogPath `
+    --public-key $publicKeyPath `
+    --sessiondock-version ([string] $descriptor.version)
+if ($LASTEXITCODE -ne 0) {
+    throw 'HandleScope compatibility catalog cryptographic verification failed.'
+}
+
 $packageName = "SessionDockApp-$($descriptor.version)-$ExpectedChannel-full.nupkg"
 $portableName = 'SessionDock-win-x64-Portable.zip'
 $setupName = 'SessionDock-win-x64-Setup.exe'
@@ -229,6 +303,7 @@ $expectedReleaseFiles = @(
     $portableName,
     $setupName,
     "releases.$ExpectedChannel.json",
+    $catalogName,
     'sessiondock-release.json'
 )
 Assert-ExactSet `
@@ -525,4 +600,4 @@ Assert-ExactSet `
     -Actual @($checksumNames) `
     -Description 'SHA256SUMS.txt'
 
-Write-Host 'Verified exact release inventory, feeds, SPDX SBOM, checksums, licenses, package contents, and executable structure.'
+Write-Host 'Verified exact release inventory, signed HandleScope catalog, feeds, SPDX SBOM, checksums, licenses, package contents, and executable structure.'

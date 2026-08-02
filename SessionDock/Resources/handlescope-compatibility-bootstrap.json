@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "product": "SessionDock.HandleScopeCompatibility",
+  "repository": "Makmatoe/SessionDock",
+  "keyId": "sessiondock-release-2026-01",
+  "sequence": 1,
+  "generatedAt": "2026-08-02T00:00:00.0000000+00:00",
+  "expiresAt": "2027-08-02T00:00:00.0000000+00:00",
+  "sessionDockVersion": "2.8.0",
+  "recommendedVersion": "0.2.2",
+  "releases": [
+    {
+      "version": "0.1.4",
+      "tag": "v0.1.4",
+      "status": "supported",
+      "minimumSessionDockVersion": "2.7.6",
+      "maximumSessionDockVersionExclusive": null,
+      "apiContracts": [
+        "v1"
+      ],
+      "capabilities": [
+        "handlescope.http.v1",
+        "handlescope.plan.single-use.v1",
+        "handlescope.policy.roblox-singleton-event.v1"
+      ],
+      "package": {
+        "name": "HandleScope-0.1.4-win-x64.zip",
+        "size": 100841616,
+        "sha256": "b06bfe850b8334b6be86d9037ea43e7210845420e7473cf7c17d030277c06622"
+      },
+      "checksums": {
+        "name": "SHA256SUMS.txt",
+        "size": 198,
+        "sha256": "860bcd77e7cd83693a87b15a1f464908e6dbe43195b0ed0572684e009b1e6ccf"
+      },
+      "manifest": null,
+      "apiExecutable": {
+        "path": "api/HandleScope.Api.exe",
+        "size": 50275061,
+        "sha256": "9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95"
+      },
+      "contractUrl": "https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/integrations/sessiondock.md"
+    },
+    {
+      "version": "0.2.2",
+      "tag": "v0.2.2",
+      "status": "supported",
+      "minimumSessionDockVersion": "2.8.0",
+      "maximumSessionDockVersionExclusive": null,
+      "apiContracts": [
+        "v1",
+        "v2"
+      ],
+      "capabilities": [
+        "handlescope.http.v1",
+        "handlescope.http.v2",
+        "handlescope.plan.single-use.v1",
+        "handlescope.policy.roblox-singleton-event.v1"
+      ],
+      "package": {
+        "name": "HandleScope-0.2.2-win-x64.zip",
+        "size": 100857426,
+        "sha256": "768d8ecd64da530936439d45141c7838992b5ec98cc345d29de5700a06e688d5"
+      },
+      "checksums": {
+        "name": "SHA256SUMS.txt",
+        "size": 303,
+        "sha256": "21fd994b30ea48cdb0d427f502313f5c25cf61ee0bd8cca94254a0a925a8f52a"
+      },
+      "manifest": {
+        "name": "HandleScope-0.2.2-win-x64.release.json",
+        "size": 1159,
+        "sha256": "cc45d6ea2931b98fd03f2355d220b0f6b629d7bfb37aa869d803a3f0747b4ae8"
+      },
+      "apiExecutable": {
+        "path": "api/HandleScope.Api.exe",
+        "size": 50282056,
+        "sha256": "c59832edde22c177a7aa8b7f94541d2c5cbb42790a043a7ec893dcd975501ce5"
+      },
+      "contractUrl": "https://github.com/Makmatoe/HandleScope/blob/v0.2.2/docs/integrations/sessiondock.md"
+    }
+  ],
+  "signature": ""
+}

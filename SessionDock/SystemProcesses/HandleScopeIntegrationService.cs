@@ -20,6 +20,7 @@ public sealed class HandleScopeIntegrationService : IDisposable
     private readonly HandleScopeIntegrationConfigurationStore _configurationStore;
     private readonly IHandleScopeProcessVerifier _processVerifier;
     private readonly IHandleScopeInstalledRuntimeVerifier _installedRuntimeVerifier;
+    private readonly HandleScopeApiBootstrapper _apiBootstrapper;
     private readonly Func<string, bool>? _isReparsePoint;
     private readonly HttpClient _client;
     private bool _disposed;
@@ -77,11 +78,18 @@ public sealed class HandleScopeIntegrationService : IDisposable
             _executablePath,
             isReparsePoint,
             _installedRuntimeVerifier);
-        _isReparsePoint = isReparsePoint;
         _client = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = RequestTimeout
         };
+        _apiBootstrapper = new HandleScopeApiBootstrapper(
+            _connectionLoader,
+            _client,
+            _processVerifier,
+            new HandleScopeSelectionStore(Path.Combine(
+                Path.GetFullPath(sessionDockDataRoot),
+                "handlescope-preferences.json")));
+        _isReparsePoint = isReparsePoint;
     }
 
     public Task<HandleScopeIntegrationResult> InspectAsync(
@@ -114,6 +122,15 @@ public sealed class HandleScopeIntegrationService : IDisposable
             var health = await ProbeHealthAsync(
                 connection.BaseUrl,
                 cancellationToken);
+            if (health == HealthProbeResult.Ready &&
+                _processVerifier is IHandleScopeResolvedProcessVerifier)
+            {
+                var negotiated = await _apiBootstrapper.GetExistingAsync(
+                    cancellationToken);
+                return negotiated is null
+                    ? Result(HandleScopeIntegrationState.UpdateRequired)
+                    : Result(HandleScopeIntegrationState.Ready);
+            }
             return health switch
             {
                 HealthProbeResult.Ready =>
