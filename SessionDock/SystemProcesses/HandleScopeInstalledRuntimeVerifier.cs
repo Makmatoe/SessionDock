@@ -11,10 +11,10 @@ internal interface IHandleScopeInstalledRuntimeVerifier
 internal sealed class HandleScopeInstalledRuntimeVerifier :
     IHandleScopeInstalledRuntimeVerifier
 {
-    internal const string SupportedVersion = "0.1.3";
-    internal const long ExpectedExecutableSize = 50_275_056;
+    internal const string SupportedVersion = "0.1.4";
+    internal const long ExpectedExecutableSize = 50_275_061;
     internal const string ExpectedExecutableSha256 =
-        "ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852";
+        "9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95";
 
     private readonly long _expectedSize;
     private readonly byte[] _expectedSha256;

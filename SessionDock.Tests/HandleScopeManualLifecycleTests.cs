@@ -12,14 +12,14 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         $"SessionDock.HandleScope.ManualLifecycle.{Guid.NewGuid():N}");
 
     [Fact]
-    public void SupportedRuntimeIdentity_MatchesPublishedImmutableV013Asset()
+    public void SupportedRuntimeIdentity_MatchesPublishedImmutableV014Asset()
     {
-        Assert.Equal("0.1.3", HandleScopeInstalledRuntimeVerifier.SupportedVersion);
+        Assert.Equal("0.1.4", HandleScopeInstalledRuntimeVerifier.SupportedVersion);
         Assert.Equal(
-            50_275_056,
+            50_275_061,
             HandleScopeInstalledRuntimeVerifier.ExpectedExecutableSize);
         Assert.Equal(
-            "ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852",
+            "9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95",
             HandleScopeInstalledRuntimeVerifier.ExpectedExecutableSha256);
         Assert.Equal(
             32,
@@ -55,7 +55,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         var startInfo = HandleScopeIntegrationDialog.CreateOfficialSetupStartInfo();
 
         Assert.Equal(
-            "https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md",
+            "https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/INSTALL.md",
             startInfo.FileName);
         Assert.True(startInfo.UseShellExecute);
         Assert.Empty(startInfo.ArgumentList);
@@ -119,7 +119,10 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.Contains("Install-HandleScopeApi.ps1", source, StringComparison.Ordinal);
         Assert.Contains("-StartNow", source, StringComparison.Ordinal);
         Assert.Contains("-EnableAutostart", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("-ExecutionPolicy", source, StringComparison.Ordinal);
+        Assert.Contains("-ExecutionPolicy", source, StringComparison.Ordinal);
+        Assert.Contains("RemoteSigned", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bypass", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Unrestricted", source, StringComparison.Ordinal);
         Assert.DoesNotContain("-EnableSessionDock", source, StringComparison.Ordinal);
         Assert.DoesNotContain("-AllowDowngrade", source, StringComparison.Ordinal);
         Assert.DoesNotContain("StartAsync(", source, StringComparison.Ordinal);
@@ -145,6 +148,15 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.Equal(5, files.Length);
 
         string[]? expectedKeys = null;
+        var replacementDisclosureTerms = new Dictionary<string, string>(
+            StringComparer.Ordinal)
+        {
+            ["de-DE"] = "ersetzen",
+            ["en-US"] = "replace",
+            ["es-ES"] = "reemplazar",
+            ["fr-FR"] = "remplacer",
+            ["nl-NL"] = "vervangen"
+        };
         foreach (var file in files)
         {
             var document = XDocument.Load(file);
@@ -189,6 +201,11 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
                 HandleScopeReleaseInstaller.PinnedVersion,
                 strings["Handle.InstallConfirm"],
                 StringComparison.Ordinal);
+            var culture = Path.GetFileNameWithoutExtension(file)["Strings.".Length..];
+            Assert.Contains(
+                replacementDisclosureTerms[culture],
+                strings["Handle.InstallConfirm"],
+                StringComparison.OrdinalIgnoreCase);
             var disabledPresentation = string.Concat(
                 strings["Handle.StateDisabledTitle"],
                 " ",
@@ -235,7 +252,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
                 repositoryRoot,
                 path))));
 
-        Assert.Contains("v0.1.3", documentation, StringComparison.Ordinal);
+        Assert.Contains("v0.1.4", documentation, StringComparison.Ordinal);
         Assert.Contains(
             HandleScopeInstalledRuntimeVerifier.ExpectedExecutableSha256,
             documentation,
@@ -245,7 +262,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             documentation,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Install HandleScope v0.1.3",
+            "Install HandleScope v0.1.4",
             documentation,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -256,7 +273,15 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             HandleScopeReleaseInstaller.PinnedChecksumsSha256,
             documentation,
             StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("100,839,933", documentation, StringComparison.Ordinal);
+        Assert.Contains(
+            "624dfc3abb6991b4f8eab8c8895ea11936f24919",
+            documentation,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "bff70ad4909d28f247453be84b7a024b230dab79d97dc49773bafe2f4bb12711",
+            documentation,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("100,841,616", documentation, StringComparison.Ordinal);
         Assert.Contains("standard-user", documentation, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "API running - integration disabled",
@@ -286,7 +311,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.All(currentNotes, path =>
         {
             var notes = File.ReadAllText(path);
-            Assert.Contains("v0.1.3", notes, StringComparison.Ordinal);
+            Assert.Contains("v0.1.4", notes, StringComparison.Ordinal);
         });
     }
 

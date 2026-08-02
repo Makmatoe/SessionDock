@@ -51,15 +51,19 @@ SessionDock is designed around these boundaries:
 - HandleScope uses a separate verified loopback process, discovery-file, and
   rotating-token boundary. Its API is optional, explicitly enabled, and never
   bundled or elevated by SessionDock. The explicit install action is pinned to
-  the immutable HandleScope v0.1.3 Windows x64 release. It requires the exact
+  the immutable HandleScope v0.1.4 Windows x64 release. It requires the exact
   package and checksum sizes and SHA-256 hashes, a matching same-release
   checksum, safe bounded ZIP layout, and complete internal manifest before
-  running the standard-user installer. SessionDock supplies no execution-policy
-  override, downgrade switch, elevation request, or automatic integration
-  opt-in. The installer starts the API and enables HandleScope's limited
-  per-user autostart only after the user confirms the action. Before inspecting
-  or trusting the local API, SessionDock also requires the exact published
-  v0.1.3 executable size and SHA-256 hash at the expected non-reparse per-user
+  running the standard-user installer. SessionDock uses `RemoteSigned` only for
+  that verified child PowerShell process so the Windows default `Restricted`
+  policy does not reject it; it never uses `Bypass` or `Unrestricted`, changes
+  saved policy, or overrides Group Policy. It supplies no downgrade switch,
+  elevation request, or automatic integration opt-in. The installer starts the
+  API and enables HandleScope's limited
+  per-user autostart only after the user confirms the action, including notice
+  that an older supported per-user installation may be replaced. Before
+  inspecting or trusting the local API, SessionDock also requires the exact published
+  v0.1.4 executable size and SHA-256 hash at the expected non-reparse per-user
   path, then retains the process-path, session, owner, non-elevated token, PID,
   discovery-time, strict loopback, rotating-token, and health-policy checks.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local

@@ -137,15 +137,15 @@ destinations, private-server codes, and server job IDs.
 The optional HandleScope integration inspects only the expected local install
 and SessionDock opt-in files when its panel opens or the user selects Refresh.
 It hashes the expected executable locally and accepts only the exact published
-HandleScope v0.1.3 size and SHA-256 digest. SessionDock contacts GitHub for
-HandleScope only after the user selects **Install HandleScope v0.1.3** and
+HandleScope v0.1.4 size and SHA-256 digest. SessionDock contacts GitHub for
+HandleScope only after the user selects **Install HandleScope v0.1.4** and
 confirms the warning. It downloads the pinned package and checksum from the
 canonical immutable release; ordinary network metadata such as the source IP
 address and SessionDock user agent is visible to GitHub and its release-asset
 hosts. The request includes no HandleScope token, configuration, local path, or
 Roblox account data. The files are staged in a random temporary directory and
 removed after completion or a pre-install failure when cleanup succeeds.
-Selecting **Open official v0.1.3 setup guide** asks the user's default browser
+Selecting **Open official v0.1.4 setup guide** asks the user's default browser
 to open the pinned official GitHub documentation with that browser's ordinary
 network and privacy behavior.
 
@@ -155,8 +155,11 @@ successful Roblox launch, and only after local connection-file and same-session
 process checks. While the integration is disabled, opening the panel and
 selecting Refresh or Test performs no process, discovery-file, or API probe.
 The explicit confirmed install action runs HandleScope's verified standard-user
-installer without elevation or a PowerShell execution-policy bypass. The
-installer starts the API and enables its limited per-user autostart task; it
+installer without elevation and may replace an older supported per-user
+installation as disclosed by the confirmation. It uses `RemoteSigned` only for
+that child process, never `Bypass` or `Unrestricted`; saved policy is unchanged
+and Group Policy remains authoritative. The installer starts the API and enables its limited
+per-user autostart task; it
 does not enable the SessionDock integration. No lifecycle action occurs merely
 because SessionDock or the integration panel opens. When testing or using the
 enabled integration, SessionDock reads the rotating bearer token from HandleScope's

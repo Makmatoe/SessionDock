@@ -420,15 +420,45 @@ internal sealed record HandleScopeReleaseAsset(
     byte[] Sha256,
     Uri DownloadUri);
 
+internal enum HandleScopeInstallFailureKind
+{
+    ReleaseDownload,
+    ReleaseIntegrity,
+    LocalEnvironment,
+    Installer
+}
+
 internal sealed class HandleScopeInstallException : Exception
 {
     internal HandleScopeInstallException(string message)
-        : base(message)
+        : this(HandleScopeInstallFailureKind.ReleaseIntegrity, message)
     {
     }
 
     internal HandleScopeInstallException(string message, Exception innerException)
-        : base(message, innerException)
+        : this(
+            HandleScopeInstallFailureKind.ReleaseIntegrity,
+            message,
+            innerException)
     {
     }
+
+    internal HandleScopeInstallException(
+        HandleScopeInstallFailureKind failureKind,
+        string message)
+        : base(message)
+    {
+        FailureKind = failureKind;
+    }
+
+    internal HandleScopeInstallException(
+        HandleScopeInstallFailureKind failureKind,
+        string message,
+        Exception innerException)
+        : base(message, innerException)
+    {
+        FailureKind = failureKind;
+    }
+
+    internal HandleScopeInstallFailureKind FailureKind { get; }
 }

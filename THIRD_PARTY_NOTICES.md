@@ -59,7 +59,7 @@ Roblox Player, the Microsoft Edge WebView2 Runtime, and
 [HandleScope](https://github.com/Makmatoe/HandleScope) are not licensed as part
 of SessionDock. HandleScope is optional and not bundled in SessionDock releases.
 After explicit confirmation, SessionDock can download and run the separate
-product's pinned v0.1.3 per-user installer from its canonical immutable GitHub
+product's pinned v0.1.4 per-user installer from its canonical immutable GitHub
 release. HandleScope remains governed by its own license and publisher terms;
 the pinned official setup instructions remain available in the user's browser.
 

@@ -154,18 +154,24 @@ and Windows-signature-checked before launch.
 Optional post-launch integrations accept loopback addresses only and are off
 until the user configures them. HandleScope is optional, off by default, and
 never bundled or elevated by SessionDock. The explicit **Install HandleScope
-v0.1.3** action downloads only the pinned Windows x64 package and matching
+v0.1.4** action downloads only the pinned Windows x64 package and matching
 checksum from the immutable canonical release. SessionDock verifies the fixed
 asset sizes and SHA-256 hashes, same-release checksum, safe ZIP layout, and
-every internal file before running HandleScope's standard-user installer. It
-does not bypass PowerShell execution policy. The installer starts the API and
-enables HandleScope's limited per-user autostart; enabling the SessionDock
+every internal file before running HandleScope's standard-user installer. The
+confirmation discloses that an older supported per-user installation may be
+replaced. The
+verified child process uses `RemoteSigned` so Windows' default `Restricted`
+policy does not reject it; SessionDock never uses `Bypass` or `Unrestricted`,
+changes saved policy, or overrides Group Policy. The installer starts the API
+and enables HandleScope's limited per-user autostart; enabling the SessionDock
 integration remains a separate explicit action. The pinned
-[official HandleScope v0.1.3 setup guide](https://github.com/Makmatoe/HandleScope/blob/v0.1.3/docs/INSTALL.md)
-remains available for review and manual setup. SessionDock accepts only the
-exact published v0.1.3 API executable at its expected per-user path: 50,275,056
+[official HandleScope v0.1.4 setup guide](https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/INSTALL.md)
+remains available for review and manual setup. The immutable
+[v0.1.4 SessionDock integration contract](https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/integrations/sessiondock.md#user-control-boundary)
+explicitly authorizes this confirmed path. SessionDock accepts only the
+exact published v0.1.4 API executable at its expected per-user path: 50,275,061
 bytes with SHA-256
-`ca273df4b3822e358658c43fd764c70661f9279b37d883d11a470cd363ad7852`.
+`9925d032819750809d66f5e6f267606cb1d6ff419acadffc15d7bdbcb1402e95`.
 
 To use the optional connector, select **Integrations** in the SessionDock
 sidebar. That panel also manages the separate **Open with SessionDock** link

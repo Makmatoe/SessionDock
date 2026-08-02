@@ -20,33 +20,39 @@ public sealed class HandleScopeReleaseInstallerTests
         $"https://github.com/Makmatoe/HandleScope/releases/download/{TagName}/{ChecksumsName}");
 
     [Fact]
-    public void PinnedRelease_MatchesSupportedImmutableV013Assets()
+    public void PinnedRelease_MatchesSupportedImmutableV014Assets()
     {
         var release = HandleScopeReleaseInstaller.CreatePinnedRelease();
 
-        Assert.Equal("0.1.3", release.Version);
-        Assert.Equal("v0.1.3", release.TagName);
+        Assert.Equal("0.1.4", release.Version);
+        Assert.Equal("v0.1.4", release.TagName);
         Assert.Equal(
             HandleScopeInstalledRuntimeVerifier.SupportedVersion,
             release.Version);
         Assert.Equal(
-            "HandleScope-0.1.3-win-x64.zip",
+            "HandleScope-0.1.4-win-x64.zip",
             release.Package.Name);
-        Assert.Equal(100_839_933, release.Package.Size);
+        Assert.Equal(100_841_616, release.Package.Size);
+        Assert.Equal(
+            "b06bfe850b8334b6be86d9037ea43e7210845420e7473cf7c17d030277c06622",
+            HandleScopeReleaseInstaller.PinnedPackageSha256);
         Assert.Equal(
             HandleScopeReleaseInstaller.PinnedPackageSha256,
             Hex(release.Package.Sha256));
         Assert.Equal("SHA256SUMS.txt", release.Checksums.Name);
         Assert.Equal(198, release.Checksums.Size);
         Assert.Equal(
+            "860bcd77e7cd83693a87b15a1f464908e6dbe43195b0ed0572684e009b1e6ccf",
+            HandleScopeReleaseInstaller.PinnedChecksumsSha256);
+        Assert.Equal(
             HandleScopeReleaseInstaller.PinnedChecksumsSha256,
             Hex(release.Checksums.Sha256));
         Assert.StartsWith(
-            "https://github.com/Makmatoe/HandleScope/releases/download/v0.1.3/",
+            "https://github.com/Makmatoe/HandleScope/releases/download/v0.1.4/",
             release.Package.DownloadUri.AbsoluteUri,
             StringComparison.Ordinal);
         Assert.StartsWith(
-            "https://github.com/Makmatoe/HandleScope/releases/download/v0.1.3/",
+            "https://github.com/Makmatoe/HandleScope/releases/download/v0.1.4/",
             release.Checksums.DownloadUri.AbsoluteUri,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -131,6 +137,8 @@ public sealed class HandleScopeReleaseInstallerTests
             "-NoLogo",
             "-NoProfile",
             "-NonInteractive",
+            "-ExecutionPolicy",
+            "RemoteSigned",
             "-File",
             fullInstallerPath
         };
@@ -147,6 +155,8 @@ public sealed class HandleScopeReleaseInstallerTests
         Assert.Equal(expectedArguments, startInfo.ArgumentList);
         Assert.False(startInfo.UseShellExecute);
         Assert.True(startInfo.CreateNoWindow);
+        Assert.True(startInfo.RedirectStandardError);
+        Assert.True(startInfo.RedirectStandardOutput);
         Assert.True(string.IsNullOrEmpty(startInfo.Verb));
         Assert.Equal(Path.GetDirectoryName(fullInstallerPath), startInfo.WorkingDirectory);
         Assert.EndsWith(
@@ -157,12 +167,122 @@ public sealed class HandleScopeReleaseInstallerTests
     }
 
     [Fact]
+    public async Task CreateInstallerStartInfo_RunsVerifiedScriptFromRestrictedProcessPolicy()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var installerPath = Path.Combine(root, "verified-installer.ps1");
+            await File.WriteAllTextAsync(
+                installerPath,
+                "param([switch]$VerifyOnly)\nif (-not $VerifyOnly) { exit 9 }\nexit 0\n",
+                TestContext.Current.CancellationToken);
+            var startInfo = HandleScopeReleaseInstaller.CreateInstallerStartInfo(
+                installerPath,
+                verifyOnly: true);
+            startInfo.Environment["PSExecutionPolicyPreference"] = "Restricted";
+
+            using var process = new Process { StartInfo = startInfo };
+            Assert.True(process.Start());
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+
+            Assert.Equal(0, process.ExitCode);
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task RunProcessAsync_PreservesBoundedVerifiedInstallerFailureReason()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var installerPath = Path.Combine(root, "failing-installer.ps1");
+            await File.WriteAllTextAsync(
+                installerPath,
+                "param([switch]$VerifyOnly)\nthrow 'reviewed installer failure'\n",
+                TestContext.Current.CancellationToken);
+            var startInfo = HandleScopeReleaseInstaller.CreateInstallerStartInfo(
+                installerPath,
+                verifyOnly: true);
+
+            var result = await HandleScopeReleaseInstaller.RunProcessAsync(
+                startInfo,
+                TestContext.Current.CancellationToken);
+
+            Assert.NotEqual(0, result.ExitCode);
+            var failureReason = Assert.IsType<string>(result.FailureReason);
+            Assert.Contains(
+                "reviewed installer failure",
+                failureReason,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public void ExtractProcessFailureReason_DecodesBoundedPowerShellCliXml()
+    {
+        const string cliXml = """
+            #< CLIXML
+            <Objs xmlns="http://schemas.microsoft.com/powershell/2004/04"><Obj><MS><S S="progress">ignored</S><S S="Error">reviewed installer failure_x000D__x000A_At C:\temp\installer.ps1:1 char:1</S></MS></Obj></Objs>
+            """;
+
+        var reason = HandleScopeReleaseInstaller.ExtractProcessFailureReason(cliXml);
+
+        Assert.Equal("reviewed installer failure", reason);
+        Assert.Null(HandleScopeReleaseInstaller.ExtractProcessFailureReason(
+            "#< CLIXML\n<Objs><S S=\"Error\">truncated"));
+    }
+
+    [Fact]
+    public async Task RunProcessAsync_DrainsOutputAfterRetentionLimit()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var installerPath = Path.Combine(root, "noisy-installer.ps1");
+            await File.WriteAllTextAsync(
+                installerPath,
+                "param([switch]$VerifyOnly)\n[Console]::Error.WriteLine('bounded failure')\n$chunk = 'x' * 1024\n1..128 | ForEach-Object { [Console]::Out.WriteLine($chunk); [Console]::Error.WriteLine($chunk) }\nexit 23\n",
+                TestContext.Current.CancellationToken);
+            var startInfo = HandleScopeReleaseInstaller.CreateInstallerStartInfo(
+                installerPath,
+                verifyOnly: true);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+            var result = await HandleScopeReleaseInstaller.RunProcessAsync(
+                startInfo,
+                timeout.Token);
+
+            Assert.Equal(23, result.ExitCode);
+            Assert.Equal("bounded failure", result.FailureReason);
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Fact]
     public void IntegrationDialog_UsesLocalizedPinnedInstallAction()
     {
+        var repositoryRoot = FindRepositoryRoot();
         var xaml = File.ReadAllText(Path.Combine(
-            FindRepositoryRoot(),
+            repositoryRoot,
             "SessionDock",
             "HandleScopeIntegrationDialog.xaml"));
+        var codeBehind = File.ReadAllText(Path.Combine(
+            repositoryRoot,
+            "SessionDock",
+            "HandleScopeIntegrationDialog.xaml.cs"));
+        var normalizedCodeBehind = codeBehind.ReplaceLineEndings("\n");
 
         Assert.Contains(
             "x:Name=\"InstallHandleScopeButton\"",
@@ -177,6 +297,10 @@ public sealed class HandleScopeReleaseInstallerTests
             xaml,
             StringComparison.Ordinal);
         Assert.DoesNotContain("GetHandleScopeButton", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "LocalizeInstallFailureReason(exception.FailureKind),\n                    OfficialSetupUrl",
+            normalizedCodeBehind,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -290,7 +414,7 @@ public sealed class HandleScopeReleaseInstallerTests
             var installerPath = await HandleScopeReleasePolicy.ExtractAndVerifyAsync(
                 archivePath,
                 Path.Combine(root, "extracted"),
-                "0.1.2",
+                HandleScopeReleaseInstaller.PinnedVersion,
                 TestContext.Current.CancellationToken);
 
             Assert.True(File.Exists(installerPath));
@@ -305,8 +429,11 @@ public sealed class HandleScopeReleaseInstallerTests
         }
     }
 
-    [Fact]
-    public async Task InstallPinnedAsync_VerifiesThenInstallsValidatedFakeHttpBundle()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InstallPinnedAsync_VerifiesThenInstallsValidatedFakeHttpBundle(
+        bool includeContentLength)
     {
         var root = CreateTemporaryRoot();
         try
@@ -318,19 +445,21 @@ public sealed class HandleScopeReleaseInstallerTests
             var checksumHash = SHA256.HashData(checksumBytes);
             using var handler = new FakeReleaseHandler(
                 packageBytes,
-                checksumBytes);
+                checksumBytes,
+                includeContentLength);
             var invocations = new List<ProcessInvocation>();
-            Task<int> RunProcess(
+            Task<HandleScopeInstallerProcessResult> RunProcess(
                 ProcessStartInfo startInfo,
                 CancellationToken cancellationToken)
             {
                 var arguments = startInfo.ArgumentList.ToArray();
-                Assert.True(File.Exists(arguments[4]));
+                Assert.True(File.Exists(arguments[6]));
                 invocations.Add(new(
                     startInfo.FileName,
                     arguments,
                     cancellationToken));
-                return Task.FromResult(0);
+                return Task.FromResult(
+                    new HandleScopeInstallerProcessResult(0, FailureReason: null));
             }
 
             using var installer = new HandleScopeReleaseInstaller(
@@ -352,10 +481,10 @@ public sealed class HandleScopeReleaseInstallerTests
             Assert.Equal(Version, result.Version);
             Assert.Equal(2, invocations.Count);
             Assert.Equal("-VerifyOnly", Assert.Single(
-                invocations[0].Arguments.Skip(5)));
+                invocations[0].Arguments.Skip(7)));
             Assert.Equal(
                 new[] { "-StartNow", "-EnableAutostart" },
-                invocations[1].Arguments.Skip(5));
+                invocations[1].Arguments.Skip(7));
             Assert.Equal(cancellation.Token, invocations[0].CancellationToken);
             Assert.Equal(CancellationToken.None, invocations[1].CancellationToken);
             Assert.Equal(invocations[0].FileName, invocations[1].FileName);
@@ -381,6 +510,238 @@ public sealed class HandleScopeReleaseInstallerTests
         }
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InstallPinnedAsync_PreservesFailedInstallerPhaseGuidance(
+        bool failVerification)
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var packageBytes = CreateValidBundle();
+            var packageHash = SHA256.HashData(packageBytes);
+            var checksumBytes = Encoding.UTF8.GetBytes(
+                $"{Hex(packageHash)}  {PackageName}\n");
+            var checksumHash = SHA256.HashData(checksumBytes);
+            using var handler = new FakeReleaseHandler(
+                packageBytes,
+                checksumBytes);
+            var invocationCount = 0;
+            Task<HandleScopeInstallerProcessResult> RunProcess(
+                ProcessStartInfo startInfo,
+                CancellationToken cancellationToken)
+            {
+                invocationCount++;
+                var shouldFail = failVerification
+                    ? invocationCount == 1
+                    : invocationCount == 2;
+                return Task.FromResult(new HandleScopeInstallerProcessResult(
+                    shouldFail ? 17 : 0,
+                    shouldFail ? "reviewed phase failure" : null));
+            }
+
+            using var installer = new HandleScopeReleaseInstaller(
+                handler,
+                root,
+                RunProcess,
+                CreateIdentity(
+                    packageHash,
+                    packageBytes.LongLength,
+                    checksumHash,
+                    checksumBytes.LongLength));
+
+            var exception = await Assert.ThrowsAsync<HandleScopeInstallException>(() =>
+                installer.InstallPinnedAsync(
+                    progress: null,
+                    TestContext.Current.CancellationToken));
+
+            Assert.Equal(
+                HandleScopeInstallFailureKind.Installer,
+                exception.FailureKind);
+            Assert.Contains(
+                failVerification ? "Nothing was installed" : "Refresh the status",
+                exception.Message,
+                StringComparison.Ordinal);
+            Assert.Contains(
+                "reviewed phase failure",
+                exception.Message,
+                StringComparison.Ordinal);
+            Assert.Equal(failVerification ? 1 : 2, invocationCount);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task InstallPinnedAsync_RejectsContradictoryDeclaredLength(
+        bool mismatchChecksumLength)
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var packageBytes = CreateValidBundle();
+            var packageHash = SHA256.HashData(packageBytes);
+            var checksumBytes = Encoding.UTF8.GetBytes(
+                $"{Hex(packageHash)}  {PackageName}\n");
+            var checksumHash = SHA256.HashData(checksumBytes);
+            using var handler = new FakeReleaseHandler(
+                packageBytes,
+                checksumBytes,
+                packageDeclaredLength: mismatchChecksumLength
+                    ? null
+                    : packageBytes.LongLength + 1,
+                checksumsDeclaredLength: mismatchChecksumLength
+                    ? checksumBytes.LongLength + 1
+                    : null);
+            static Task<HandleScopeInstallerProcessResult> UnexpectedProcess(
+                ProcessStartInfo startInfo,
+                CancellationToken cancellationToken) =>
+                throw new Xunit.Sdk.XunitException(
+                    "A package with a contradictory declared length was executed.");
+
+            using var installer = new HandleScopeReleaseInstaller(
+                handler,
+                root,
+                UnexpectedProcess,
+                CreateIdentity(
+                    packageHash,
+                    packageBytes.LongLength,
+                    checksumHash,
+                    checksumBytes.LongLength));
+
+            await Assert.ThrowsAsync<HandleScopeInstallException>(() =>
+                installer.InstallPinnedAsync(
+                    progress: null,
+                    TestContext.Current.CancellationToken));
+
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task InstallPinnedAsync_RejectsInvalidHeaderlessPackageBody(
+        int lengthDelta)
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var expectedPackage = CreateValidBundle();
+            byte[] servedPackage = lengthDelta switch
+            {
+                -1 => expectedPackage[..^1],
+                0 => expectedPackage.ToArray(),
+                1 => [.. expectedPackage, 0],
+                _ => throw new Xunit.Sdk.XunitException("Unexpected test case.")
+            };
+            if (lengthDelta == 0)
+                servedPackage[0] ^= 0xFF;
+            var packageHash = SHA256.HashData(expectedPackage);
+            var checksumBytes = Encoding.UTF8.GetBytes(
+                $"{Hex(packageHash)}  {PackageName}\n");
+            var checksumHash = SHA256.HashData(checksumBytes);
+            using var handler = new FakeReleaseHandler(
+                servedPackage,
+                checksumBytes,
+                includeContentLength: false);
+            static Task<HandleScopeInstallerProcessResult> UnexpectedProcess(
+                ProcessStartInfo startInfo,
+                CancellationToken cancellationToken) =>
+                throw new Xunit.Sdk.XunitException(
+                    "An invalid headerless package was executed.");
+
+            using var installer = new HandleScopeReleaseInstaller(
+                handler,
+                root,
+                UnexpectedProcess,
+                CreateIdentity(
+                    packageHash,
+                    expectedPackage.LongLength,
+                    checksumHash,
+                    checksumBytes.LongLength));
+
+            await Assert.ThrowsAsync<HandleScopeInstallException>(() =>
+                installer.InstallPinnedAsync(
+                    progress: null,
+                    TestContext.Current.CancellationToken));
+
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task InstallPinnedAsync_RejectsInvalidHeaderlessChecksumBody(
+        int lengthDelta)
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var packageBytes = CreateValidBundle();
+            var packageHash = SHA256.HashData(packageBytes);
+            var expectedChecksums = Encoding.UTF8.GetBytes(
+                $"{Hex(packageHash)}  {PackageName}\n");
+            byte[] servedChecksums = lengthDelta switch
+            {
+                -1 => expectedChecksums[..^1],
+                0 => expectedChecksums.ToArray(),
+                1 => [.. expectedChecksums, 0],
+                _ => throw new Xunit.Sdk.XunitException("Unexpected test case.")
+            };
+            if (lengthDelta == 0)
+                servedChecksums[0] ^= 0x01;
+            var checksumHash = SHA256.HashData(expectedChecksums);
+            using var handler = new FakeReleaseHandler(
+                packageBytes,
+                servedChecksums,
+                includeContentLength: false);
+            static Task<HandleScopeInstallerProcessResult> UnexpectedProcess(
+                ProcessStartInfo startInfo,
+                CancellationToken cancellationToken) =>
+                throw new Xunit.Sdk.XunitException(
+                    "An invalid headerless checksum was executed.");
+
+            using var installer = new HandleScopeReleaseInstaller(
+                handler,
+                root,
+                UnexpectedProcess,
+                CreateIdentity(
+                    packageHash,
+                    packageBytes.LongLength,
+                    checksumHash,
+                    expectedChecksums.LongLength));
+
+            await Assert.ThrowsAsync<HandleScopeInstallException>(() =>
+                installer.InstallPinnedAsync(
+                    progress: null,
+                    TestContext.Current.CancellationToken));
+
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
     [Fact]
     public async Task InstallPinnedAsync_WrapsProcessLaunchFailureAndCleansTemporaryFiles()
     {
@@ -395,7 +756,7 @@ public sealed class HandleScopeReleaseInstallerTests
                 packageBytes,
                 checksumBytes);
             var checksumHash = SHA256.HashData(checksumBytes);
-            static Task<int> RejectProcessStart(
+            static Task<HandleScopeInstallerProcessResult> RejectProcessStart(
                 ProcessStartInfo startInfo,
                 CancellationToken cancellationToken) =>
                 throw new Win32Exception("Process creation was blocked.");
@@ -428,8 +789,8 @@ public sealed class HandleScopeReleaseInstallerTests
     private static bool IsForbiddenInstallerArgument(string argument) =>
         argument.Equals("-EnableSessionDock", StringComparison.OrdinalIgnoreCase) ||
         argument.Equals("-AllowDowngrade", StringComparison.OrdinalIgnoreCase) ||
-        argument.Equals("-ExecutionPolicy", StringComparison.OrdinalIgnoreCase) ||
-        argument.Equals("Bypass", StringComparison.OrdinalIgnoreCase);
+        argument.Equals("Bypass", StringComparison.OrdinalIgnoreCase) ||
+        argument.Equals("Unrestricted", StringComparison.OrdinalIgnoreCase);
 
     private static HandleScopeReleaseIdentity CreateIdentity(byte[] packageHash) =>
         CreateIdentity(
@@ -561,7 +922,10 @@ public sealed class HandleScopeReleaseInstallerTests
 
     private sealed class FakeReleaseHandler(
         byte[] package,
-        byte[] checksums)
+        byte[] checksums,
+        bool includeContentLength = true,
+        long? packageDeclaredLength = null,
+        long? checksumsDeclaredLength = null)
         : HttpMessageHandler
     {
         private static readonly Uri PackageRedirect = new(
@@ -584,23 +948,49 @@ public sealed class HandleScopeReleaseInstallerTests
             if (uri == ChecksumsUri)
                 return Task.FromResult(Redirect(ChecksumsRedirect));
             if (uri == PackageRedirect)
-                return Task.FromResult(Ok(package));
+                return Task.FromResult(Ok(package, packageDeclaredLength));
             if (uri == ChecksumsRedirect)
-                return Task.FromResult(Ok(checksums));
+                return Task.FromResult(Ok(checksums, checksumsDeclaredLength));
             throw new InvalidOperationException($"Unexpected request URI: {uri}");
         }
 
-        private static HttpResponseMessage Ok(byte[] contents) => new(
-            HttpStatusCode.OK)
+        private HttpResponseMessage Ok(byte[] contents, long? declaredLength)
         {
-            Content = new ByteArrayContent(contents)
-        };
+            HttpContent content = includeContentLength
+                ? new ByteArrayContent(contents)
+                : new HeaderlessByteArrayContent(contents);
+            if (declaredLength is not null)
+                content.Headers.ContentLength = declaredLength;
+            Assert.Equal(
+                declaredLength ??
+                    (includeContentLength ? contents.LongLength : null),
+                content.Headers.ContentLength);
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = content
+            };
+        }
 
         private static HttpResponseMessage Redirect(Uri location)
         {
             var response = new HttpResponseMessage(HttpStatusCode.Found);
             response.Headers.Location = location;
             return response;
+        }
+    }
+
+    private sealed class HeaderlessByteArrayContent(byte[] contents)
+        : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context) =>
+            stream.WriteAsync(contents, 0, contents.Length);
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 }
