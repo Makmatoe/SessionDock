@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using SessionDock.ReleaseTrust;
 
 namespace SessionDock.SystemProcesses;
 
@@ -30,14 +31,16 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             $"HandleScope-{PinnedVersion}-win-x64.zip",
             PinnedPackageSize,
             Convert.FromHexString(PinnedPackageSha256),
-            new Uri(
-                $"https://github.com/Makmatoe/HandleScope/releases/download/{PinnedTag}/HandleScope-{PinnedVersion}-win-x64.zip")),
+            HandleScopeCatalogInstallPolicy.CreateCanonicalAssetUri(
+                PinnedTag,
+                $"HandleScope-{PinnedVersion}-win-x64.zip")),
         new HandleScopeReleaseAsset(
             "SHA256SUMS.txt",
             PinnedChecksumsSize,
             Convert.FromHexString(PinnedChecksumsSha256),
-            new Uri(
-                $"https://github.com/Makmatoe/HandleScope/releases/download/{PinnedTag}/SHA256SUMS.txt")));
+            HandleScopeCatalogInstallPolicy.CreateCanonicalAssetUri(
+                PinnedTag,
+                "SHA256SUMS.txt")));
 
     private const int MaximumAssetRedirects = 3;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromMinutes(15);
@@ -48,6 +51,9 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         Task<HandleScopeInstallerProcessResult>>
         _runProcess;
     private readonly HandleScopeReleaseIdentity _release;
+    private readonly HandleScopeCompatibilityCatalogService _catalogService;
+    private readonly string _localAppDataRoot;
+    private readonly Func<DateTimeOffset> _utcNow;
     private readonly HttpClient _client;
     private bool _disposed;
 
@@ -67,7 +73,10 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             ProcessStartInfo,
             CancellationToken,
             Task<HandleScopeInstallerProcessResult>> runProcess,
-        HandleScopeReleaseIdentity? release = null)
+        HandleScopeReleaseIdentity? release = null,
+        HandleScopeCompatibilityCatalogService? catalogService = null,
+        string? localAppDataRoot = null,
+        Func<DateTimeOffset>? utcNow = null)
     {
         ArgumentNullException.ThrowIfNull(handler);
         ArgumentException.ThrowIfNullOrWhiteSpace(temporaryRoot);
@@ -75,6 +84,12 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         _temporaryRoot = Path.GetFullPath(temporaryRoot);
         _runProcess = runProcess;
         _release = release ?? CreatePinnedRelease();
+        _catalogService = catalogService ??
+            new HandleScopeCompatibilityCatalogService();
+        _localAppDataRoot = Path.GetFullPath(
+            localAppDataRoot ?? Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData));
+        _utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         _client = new HttpClient(handler, disposeHandler: true)
         {
             Timeout = RequestTimeout
@@ -88,23 +103,82 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             $"SessionDock/{applicationVersion}");
     }
 
-    internal async Task<HandleScopeReleaseInstallResult> InstallPinnedAsync(
+    internal Task<HandleScopeReleaseInstallResult> InstallPinnedAsync(
+        IProgress<HandleScopeReleaseInstallProgress>? progress,
+        CancellationToken cancellationToken) => InstallCoreAsync(
+            new HandleScopeCatalogInstallSelection(
+                _release,
+                Manifest: null,
+                CatalogRelease: null),
+            catalogFloor: null,
+            progress,
+            cancellationToken);
+
+    internal async Task<HandleScopeReleaseInstallResult> InstallAsync(
+        HandleScopeCompatibleRelease selectedRelease,
+        VerifiedHandleScopeCompatibilityCatalog verifiedCatalog,
         IProgress<HandleScopeReleaseInstallProgress>? progress,
         CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(selectedRelease);
+        ArgumentNullException.ThrowIfNull(verifiedCatalog);
+        try
+        {
+            HandleScopeCatalogInstallSelection selection;
+            VerifiedHandleScopeCompatibilityCatalog catalogFloor;
+            using (var catalogLease = _catalogService.AcquireCurrentCatalog(
+                       verifiedCatalog,
+                       cancellationToken))
+            {
+                catalogFloor = catalogLease.Catalog;
+                selection = HandleScopeCatalogInstallPolicy.Select(
+                    selectedRelease,
+                    catalogFloor,
+                    HandleScopeCompatibilityRequirements.SessionDockVersion);
+                HandleScopeCatalogInstallPolicy.RefuseKnownDowngrade(
+                    selection,
+                    catalogFloor,
+                    _localAppDataRoot);
+            }
+
+            return await InstallCoreAsync(
+                selection,
+                catalogFloor,
+                progress,
+                cancellationToken);
+        }
+        catch (HandleScopeCatalogException exception)
+        {
+            throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.ReleaseIntegrity,
+                "The HandleScope catalog changed or expired before the selected release could be installed safely.",
+                exception);
+        }
+    }
+
+    private async Task<HandleScopeReleaseInstallResult> InstallCoreAsync(
+        HandleScopeCatalogInstallSelection selection,
+        VerifiedHandleScopeCompatibilityCatalog? catalogFloor,
+        IProgress<HandleScopeReleaseInstallProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(selection);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var release = selection.Release;
         progress?.Report(new(
             HandleScopeReleaseInstallStage.CheckingRelease,
-            Version: null,
+            Version: release.Version,
             Percentage: null));
 
         string? operationRoot = null;
         try
         {
-            var release = _release;
             var checksumBytes = await DownloadSmallAssetAsync(
                 release.Checksums,
                 HandleScopeReleasePolicy.MaximumChecksumBytes,
+                "The HandleScope checksum file could not be downloaded from GitHub.",
+                "The HandleScope checksum download changed size.",
                 cancellationToken);
             VerifyHash(
                 checksumBytes,
@@ -113,6 +187,26 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             HandleScopeReleasePolicy.VerifyChecksumManifest(
                 checksumBytes,
                 release);
+            if (selection.Manifest is { } manifest &&
+                selection.CatalogRelease is { } catalogRelease)
+            {
+                var manifestBytes = await DownloadSmallAssetAsync(
+                    manifest,
+                    HandleScopeReleasePolicy.MaximumMetadataBytes,
+                    "The HandleScope release manifest could not be downloaded from GitHub.",
+                    "The HandleScope release manifest download changed size.",
+                    cancellationToken);
+                VerifyHash(
+                    manifestBytes,
+                    manifest.Sha256,
+                    "The HandleScope release manifest failed its catalog SHA-256 check.");
+                HandleScopeCatalogInstallPolicy.VerifyManifestChecksumEntry(
+                    checksumBytes,
+                    manifest);
+                HandleScopeCatalogInstallPolicy.VerifyExternalManifest(
+                    manifestBytes,
+                    catalogRelease);
+            }
 
             cancellationToken.ThrowIfCancellationRequested();
             operationRoot = CreateOperationDirectory();
@@ -123,7 +217,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
                 HandleScopeReleaseInstallStage.DownloadingPackage,
                 release.Version,
                 0));
-            await DownloadPackageAsync(
+            await using var archiveStream = await DownloadPackageAsync(
                 release,
                 archivePath,
                 progress,
@@ -134,48 +228,88 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
                 release.Version,
                 Percentage: null));
             var extractionRoot = Path.Combine(operationRoot, "extracted");
-            var installerPath = await HandleScopeReleasePolicy.ExtractAndVerifyAsync(
-                archivePath,
+            using var bundle = await HandleScopeReleasePolicy
+                .ExtractAndVerifyLockedAsync(
+                archiveStream,
                 extractionRoot,
+                _temporaryRoot,
                 release.Version,
                 cancellationToken);
 
-            var verificationStartInfo = CreateInstallerStartInfo(
-                installerPath,
-                verifyOnly: true);
-            var verificationResult = await _runProcess(
-                verificationStartInfo,
-                cancellationToken);
-            if (verificationResult.ExitCode != 0)
+            HandleScopeCatalogReadLease? executionCatalogLease = null;
+            try
             {
-                throw new HandleScopeInstallException(
-                    HandleScopeInstallFailureKind.Installer,
-                    AppendInstallerReason(
-                        "HandleScope rejected its downloaded release inventory. Nothing was installed.",
-                        verificationResult.FailureReason));
+                if (catalogFloor is not null &&
+                    selection.CatalogRelease is { } selectedCatalogRelease)
+                {
+                    executionCatalogLease = _catalogService.AcquireCurrentCatalog(
+                        catalogFloor,
+                        cancellationToken);
+                    var currentSelection = HandleScopeCatalogInstallPolicy.Select(
+                        selectedCatalogRelease,
+                        executionCatalogLease.Catalog,
+                        HandleScopeCompatibilityRequirements.SessionDockVersion);
+                    if (!HandleScopeCatalogInstallPolicy.HasSameAuthorizedIdentity(
+                            selection,
+                            currentSelection))
+                    {
+                        throw new HandleScopeInstallException(
+                            HandleScopeInstallFailureKind.ReleaseIntegrity,
+                            "The selected HandleScope release identity changed before execution. The downloaded package was not run.");
+                    }
+                    HandleScopeCatalogInstallPolicy.RefuseKnownDowngrade(
+                        currentSelection,
+                        executionCatalogLease.Catalog,
+                        _localAppDataRoot);
+                }
+
+                var verificationStartInfo = CreateInstallerStartInfo(
+                    bundle.InstallerPath,
+                    verifyOnly: true);
+                await bundle.RevalidateForExecutionAsync(cancellationToken);
+                EnsureExecutionCatalogUnexpired(executionCatalogLease);
+                var verificationResult = await _runProcess(
+                    verificationStartInfo,
+                    cancellationToken);
+                await bundle.RevalidateForExecutionAsync(cancellationToken);
+                if (verificationResult.ExitCode != 0)
+                {
+                    throw new HandleScopeInstallException(
+                        HandleScopeInstallFailureKind.Installer,
+                        AppendInstallerReason(
+                            "HandleScope rejected its downloaded release inventory. Nothing was installed.",
+                            verificationResult.FailureReason));
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                progress?.Report(new(
+                    HandleScopeReleaseInstallStage.InstallingPackage,
+                    release.Version,
+                    Percentage: null));
+                await bundle.RevalidateForExecutionAsync(cancellationToken);
+                var installStartInfo = CreateInstallerStartInfo(
+                    bundle.InstallerPath,
+                    verifyOnly: false);
+                EnsureExecutionCatalogUnexpired(executionCatalogLease);
+
+                // Once the reviewed installer starts, let its atomic replacement
+                // finish instead of interrupting it during a file swap.
+                var installResult = await _runProcess(
+                    installStartInfo,
+                    CancellationToken.None);
+                await bundle.RevalidateForExecutionAsync(CancellationToken.None);
+                if (installResult.ExitCode != 0)
+                {
+                    throw new HandleScopeInstallException(
+                        HandleScopeInstallFailureKind.Installer,
+                        AppendInstallerReason(
+                            "HandleScope's per-user installer did not complete. Its atomic file step preserves the prior install on replacement failure, but a later start or autostart step may have failed after the new files were installed. Refresh the status before retrying.",
+                            installResult.FailureReason));
+                }
             }
-
-            cancellationToken.ThrowIfCancellationRequested();
-            progress?.Report(new(
-                HandleScopeReleaseInstallStage.InstallingPackage,
-                release.Version,
-                Percentage: null));
-            var installStartInfo = CreateInstallerStartInfo(
-                installerPath,
-                verifyOnly: false);
-
-            // Once the reviewed installer starts, let its atomic replacement
-            // finish instead of interrupting it during a file swap.
-            var installResult = await _runProcess(
-                installStartInfo,
-                CancellationToken.None);
-            if (installResult.ExitCode != 0)
+            finally
             {
-                throw new HandleScopeInstallException(
-                    HandleScopeInstallFailureKind.Installer,
-                    AppendInstallerReason(
-                        "HandleScope's per-user installer did not complete. Its atomic file step preserves the prior install on replacement failure, but a later start or autostart step may have failed after the new files were installed. Refresh the status before retrying.",
-                        installResult.FailureReason));
+                executionCatalogLease?.Dispose();
             }
 
             return new HandleScopeReleaseInstallResult(release.Version);
@@ -205,7 +339,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         {
             throw new HandleScopeInstallException(
                 ClassifyUnexpectedFailure(exception),
-                $"HandleScope {PinnedVersion} could not be installed safely. No unverified package was run.",
+                $"HandleScope {release.Version} could not be installed safely. No unverified package was run.",
                 exception);
         }
         finally
@@ -215,12 +349,25 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         }
     }
 
+    private void EnsureExecutionCatalogUnexpired(
+        HandleScopeCatalogReadLease? catalogLease)
+    {
+        if (catalogLease is not null &&
+            catalogLease.Catalog.ExpiresAt <= _utcNow())
+        {
+            throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.ReleaseIntegrity,
+                "The signed HandleScope catalog expired before execution. The downloaded package was not run.");
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
         _disposed = true;
         _client.Dispose();
+        _catalogService.Dispose();
     }
 
     internal static SocketsHttpHandler CreateDownloadHandler() => new()
@@ -285,6 +432,8 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
     private async Task<byte[]> DownloadSmallAssetAsync(
         HandleScopeReleaseAsset asset,
         int maximumBytes,
+        string downloadErrorMessage,
+        string sizeErrorMessage,
         CancellationToken cancellationToken)
     {
         using var response = await SendAssetRequestAsync(
@@ -298,7 +447,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         {
             throw new HandleScopeInstallException(
                 HandleScopeInstallFailureKind.ReleaseDownload,
-                "The HandleScope checksum file could not be downloaded from GitHub.");
+                downloadErrorMessage);
         }
 
         var bytes = await ReadBoundedAsync(
@@ -308,12 +457,12 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         if (bytes.LongLength != asset.Size)
         {
             throw new HandleScopeInstallException(
-                "The HandleScope checksum download changed size.");
+                sizeErrorMessage);
         }
         return bytes;
     }
 
-    private async Task DownloadPackageAsync(
+    private async Task<FileStream> DownloadPackageAsync(
         HandleScopeReleaseIdentity release,
         string targetPath,
         IProgress<HandleScopeReleaseInstallProgress>? progress,
@@ -335,50 +484,75 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
 
         await using var input = await response.Content.ReadAsStreamAsync(
             cancellationToken);
-        await using var output = new FileStream(
+        var output = new FileStream(
             targetPath,
             FileMode.CreateNew,
-            FileAccess.Write,
+            FileAccess.ReadWrite,
             FileShare.None,
             bufferSize: 128 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[128 * 1024];
-        long downloaded = 0;
-        var lastPercentage = 0;
-        while (true)
+        try
         {
-            var read = await input.ReadAsync(buffer, cancellationToken);
-            if (read == 0)
-                break;
-            downloaded = checked(downloaded + read);
-            if (downloaded > release.Package.Size ||
-                downloaded > HandleScopeReleasePolicy.MaximumPackageBytes)
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var buffer = new byte[128 * 1024];
+            long downloaded = 0;
+            var lastPercentage = 0;
+            while (true)
+            {
+                var read = await input.ReadAsync(buffer, cancellationToken);
+                if (read == 0)
+                    break;
+                downloaded = checked(downloaded + read);
+                if (downloaded > release.Package.Size ||
+                    downloaded > HandleScopeReleasePolicy.MaximumPackageBytes)
+                {
+                    throw new HandleScopeInstallException(
+                        "The HandleScope package exceeded its published size.");
+                }
+                hash.AppendData(buffer, 0, read);
+                await output.WriteAsync(
+                    buffer.AsMemory(0, read),
+                    cancellationToken);
+                var percentage = (int)(downloaded * 100 / release.Package.Size);
+                if (percentage > lastPercentage)
+                {
+                    lastPercentage = percentage;
+                    progress?.Report(new(
+                        HandleScopeReleaseInstallStage.DownloadingPackage,
+                        release.Version,
+                        percentage));
+                }
+            }
+            await output.FlushAsync(cancellationToken);
+            output.Flush(flushToDisk: true);
+
+            if (downloaded != release.Package.Size ||
+                !CryptographicOperations.FixedTimeEquals(
+                    hash.GetHashAndReset(),
+                    release.Package.Sha256))
             {
                 throw new HandleScopeInstallException(
-                    "The HandleScope package exceeded its published size.");
+                    "The HandleScope package failed its published SHA-256 check.");
             }
-            hash.AppendData(buffer, 0, read);
-            await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            var percentage = (int)(downloaded * 100 / release.Package.Size);
-            if (percentage > lastPercentage)
-            {
-                lastPercentage = percentage;
-                progress?.Report(new(
-                    HandleScopeReleaseInstallStage.DownloadingPackage,
-                    release.Version,
-                    percentage));
-            }
-        }
-        await output.FlushAsync(cancellationToken);
 
-        if (downloaded != release.Package.Size ||
-            !CryptographicOperations.FixedTimeEquals(
-                hash.GetHashAndReset(),
-                release.Package.Sha256))
+            output.Position = 0;
+            var retainedHash = await SHA256.HashDataAsync(
+                output,
+                cancellationToken);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    retainedHash,
+                    release.Package.Sha256))
+            {
+                throw new HandleScopeInstallException(
+                    "The locked HandleScope package changed after download verification.");
+            }
+            output.Position = 0;
+            return output;
+        }
+        catch
         {
-            throw new HandleScopeInstallException(
-                "The HandleScope package failed its published SHA-256 check.");
+            await output.DisposeAsync();
+            throw;
         }
     }
 

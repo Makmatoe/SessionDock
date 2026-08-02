@@ -375,8 +375,12 @@ try {
         'SessionDock/SessionDock.csproj',
         'SessionDock/Assets/SessionDock.Icon.png',
         'SessionDock/Assets/SessionDock.ico',
+        'SessionDock/Resources/handlescope-compatibility-bootstrap.json',
         'SessionDock/Resources/update-public-key.pem',
+        'SessionDock.ReleaseTrust/HandleScopeCompatibilityCatalog.cs',
+        'SessionDock.ReleaseTrust/HandleScopeCompatibilityCatalogPolicy.cs',
         'SessionDock.ReleaseTrust/ReleaseDescriptorPolicy.cs',
+        'SessionDock/tools/ReleaseSigner/Program.cs',
         'licenses/Velopack-LICENSE.txt',
         'scripts/New-ReleaseChecksums.ps1',
         'scripts/New-ReleaseSbom.ps1',
@@ -581,6 +585,7 @@ try {
         $releaseValidateJob -notmatch '(?m)^          node-version:\s*24\.18\.0\s*$' -or
         $releaseValidateJob -notmatch '(?m)^          package-manager-cache:\s*false\s*$' -or
         $releaseValidateJob -notmatch 'SOURCE_COMMIT:\s*\$\{\{\s*github\.sha\s*\}\}' -or
+        $releaseValidateJob -notmatch 'Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap\.json artifacts/release-input/handlescope-compatibility-bootstrap\.json' -or
         $releaseValidateJob -notmatch 'Copy-Item discord-release-bot/src/release-automation\.js artifacts/release-input/release-automation\.mjs' -or
         $releaseValidateJob -notmatch "'generate'" -or
         $releaseValidateJob -notmatch '''--source-commit'', \$env:SOURCE_COMMIT' -or
@@ -655,7 +660,57 @@ try {
         $releaseStageJob -notmatch 'Sign-ReleaseDescriptorDigest\.ps1' -or
         $releaseStageJob -notmatch 'ReleaseSigner\.exe prepare' -or
         $releaseStageJob -notmatch 'ReleaseSigner\.exe complete') {
-        throw 'The protected staging job must sign only the descriptor, draft, and attest with its required permissions.'
+        throw 'The protected staging job must sign only release metadata, draft, and attest with its required permissions.'
+    }
+    $releaseMetadataSigningStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $releaseStageJob `
+        -Name 'Sign release metadata with the protected P-256 key'
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $releaseMetadataSigningStep `
+        -Name 'Sign release metadata with the protected P-256 key'
+    if (@([regex]::Matches(
+                $releaseStageJob,
+                "'prepare-catalog'")).Count -ne 1 -or
+        @([regex]::Matches(
+                $releaseStageJob,
+                'ReleaseSigner\.exe complete-catalog')).Count -ne 1 -or
+        @([regex]::Matches(
+                $releaseStageJob,
+                'ReleaseSigner\.exe verify-catalog')).Count -ne 1 -or
+        @([regex]::Matches(
+                $releaseStageJob,
+                '--sessiondock-version')).Count -ne 3 -or
+        $releaseStageJob -notmatch '''--sessiondock-version'', \$env:RELEASE_VERSION' -or
+        $releaseStageJob -notmatch 'gh api' -or
+        $releaseStageJob -notmatch '/releases\?per_page=100&page=\$page' -or
+        $releaseStageJob -notmatch '\$page -gt 100' -or
+        $releaseStageJob -notmatch '\$release\.draft -or \$release\.prerelease' -or
+        $releaseStageJob -notmatch '\$releaseCatalogAssets\.Count -eq 1' -or
+        $releaseStageJob -notmatch 'HashSet\[long\]' -or
+        $releaseStageJob -notmatch '\$catalogAssetIds\.Add\(\$assetId\)' -or
+        $releaseStageJob -notmatch '\^sha256:\[0-9a-f\]\{64\}\$' -or
+        $releaseStageJob -notmatch "\$env:RELEASE_VERSION -cne '2\.8\.0'" -or
+        $releaseStageJob -notmatch 'Invoke-WebRequest' -or
+        $releaseStageJob -notmatch '/releases/assets/\$\(\$historicalAsset\.AssetId\)' -or
+        $releaseStageJob -notmatch 'Get-FileHash' -or
+        $releaseStageJob -notmatch '\$downloadedDigest -cne' -or
+        $releaseStageJob -notmatch '\$catalogHistory\.Count' -or
+        $releaseStageJob -notmatch '''--prior-directory'', \$priorCatalogDirectory' -or
+        $releaseStageJob -notmatch '''--public-key'', ''\./release-input/update-public-key\.pem''' -or
+        $releaseStageJob -notmatch 'ReleaseSigner\.exe @catalogArguments' -or
+        $releaseStageJob -notmatch '--output ./release-output/sessiondock-handlescope-compatibility\.json' -or
+        $releaseStageJob -notmatch '-CompatibilityCatalog ./release-output/sessiondock-handlescope-compatibility\.json' -or
+        $releaseStageJob -notmatch '-ReleaseSigner ./release-input/signer/ReleaseSigner\.exe' -or
+        $releaseStageJob -notmatch '-PublicKey ./release-input/update-public-key\.pem' -or
+        $releaseMetadataSigningStep -notmatch "'\./descriptor\.digest\.base64url'" -or
+        $releaseMetadataSigningStep -notmatch "'\./handlescope-catalog\.digest\.base64url'" -or
+        $releaseMetadataSigningStep -notmatch "'\./descriptor\.signature\.base64url'" -or
+        $releaseMetadataSigningStep -notmatch "'\./handlescope-catalog\.signature\.base64url'" -or
+        $releaseMetadataSigningStep -notmatch '-DigestPath \$digests' -or
+        $releaseMetadataSigningStep -notmatch '-SignaturePath \$signatures' -or
+        $releaseStageJob -match 'Sort-Object PublishedAt' -or
+        $releaseStageJob -match '''--prior-manifest''') {
+        throw 'The protected staging job must prepare, jointly sign, complete, and verify the version-bound HandleScope catalog.'
     }
     $retiredAuthenticodeVerifier = 'Test-' + 'AuthenticodeSignature\.ps1'
     if ($releaseStageJob -match 'Azure/(?:login|artifact-signing-action)@' -or
@@ -674,6 +729,17 @@ try {
         $releasePublishJob -notmatch '(?m)^      attestations:\s*read\s*$' -or
         $releasePublishJob -notmatch 'gh release download' -or
         $releasePublishJob -notmatch 'SHA256SUMS\.txt' -or
+        $releasePublishJob -notmatch "'sessiondock-handlescope-compatibility\.json'" -or
+        @([regex]::Matches(
+                $releasePublishJob,
+                'ReleaseSigner\.exe')).Count -ne 2 -or
+        @([regex]::Matches(
+                $releasePublishJob,
+                'ReleaseSigner\.exe verify-catalog')).Count -ne 2 -or
+        $releasePublishJob -notmatch '--manifest ./approved-assets/sessiondock-handlescope-compatibility\.json' -or
+        $releasePublishJob -notmatch '--manifest \$finalCatalogs\[0\]\.FullName' -or
+        $releasePublishJob -notmatch '--public-key ./release-verification/update-public-key\.pem' -or
+        $releasePublishJob -notmatch '--sessiondock-version \$env:RELEASE_VERSION' -or
         $releasePublishJob -notmatch 'Compare-Object \$expectedNames \$actualNames -CaseSensitive' -or
         $releasePublishJob -notmatch '\[Collections\.Generic\.Dictionary\[string, string\]\]::new\(\s*\r?\n\s*\[StringComparer\]::Ordinal\)' -or
         $releasePublishJob -notmatch '(?s)Compare-Object\s+`\s*\r?\n\s*\$expectedChecksumNames\s+`\s*\r?\n\s*@\(\$checksumEntries\.Keys \| Sort-Object\)\s+`\s*\r?\n\s*-CaseSensitive' -or
@@ -746,9 +812,24 @@ try {
         $releasePriorIntentStep -notmatch 'No earlier guarded publication-intent artifact exists for this tag commit' -or
         $releasePriorIntentStep -notmatch "'verified=true'[^\r\n]*GITHUB_OUTPUT" -or
         $releaseFinalPublishStep -notmatch 'PRIOR_PUBLICATION_INTENT_VERIFIED:\s*\$\{\{\s*steps\.prior-publication-intent\.outputs\.verified\s*\}\}' -or
+        $releaseFinalPublishStep -notmatch 'gh release download \$env:RELEASE_TAG' -or
+        $releaseFinalPublishStep -notmatch '--dir ./final-catalog-verification' -or
+        $releaseFinalPublishStep -notmatch '\$finalCatalogHash -cne \$approvedCatalogHash' -or
+        $releaseFinalPublishStep -notmatch 'ReleaseSigner\.exe verify-catalog' -or
         $releaseFinalPublishStep -notmatch "PRIOR_PUBLICATION_INTENT_VERIFIED -cne 'true'" -or
         $releaseFinalPublishStep -notmatch 'already-public release lacks verified evidence from an earlier guarded publication attempt') {
         throw 'Publication recovery must require exact, durable evidence from an earlier fully reverified attempt.'
+    }
+    $finalCatalogVerificationIndex = $releaseFinalPublishStep.IndexOf(
+        'ReleaseSigner.exe verify-catalog',
+        [StringComparison]::Ordinal)
+    $releasePublicationMutationIndex = $releaseFinalPublishStep.IndexOf(
+        'gh release edit',
+        [StringComparison]::Ordinal)
+    if ($finalCatalogVerificationIndex -lt 0 -or
+        $releasePublicationMutationIndex -lt 0 -or
+        $finalCatalogVerificationIndex -ge $releasePublicationMutationIndex) {
+        throw 'The freshly downloaded HandleScope catalog must be signature-verified immediately before publication.'
     }
     $requiredPriorIntentVerificationPatterns = @(
         '\$intentPrefix = "release-publication-intent-\$env:EXPECTED_SOURCE_DIGEST-"'
@@ -814,7 +895,8 @@ try {
     if ($releasePublishJob -match '(?m)^      (?:id-token|artifact-metadata):\s*write\s*$' -or
         $releasePublishJob -match '(?m)^      attestations:\s*write\s*$' -or
         $releasePublishSecretReferences.Count -ne 0 -or
-        $releasePublishJob -match 'ReleaseSigner|private-key') {
+        $releasePublishJob -match 'ReleaseSigner\.exe (?:prepare|complete|sign-local|prepare-catalog|complete-catalog)' -or
+        $releasePublishJob -match 'private-key') {
         throw 'The final publication job must not receive signing secrets or attestation write permissions.'
     }
     if (@([regex]::Matches($releaseWorkflowContents, '--draft=false')).Count -ne 1) {
@@ -1056,8 +1138,44 @@ try {
     if ($descriptorSigningContents -notmatch 'ImportPkcs8PrivateKey' -or
         $descriptorSigningContents -notmatch 'IeeeP1363FixedFieldConcatenation' -or
         $descriptorSigningContents -notmatch 'CryptographicOperations\]::ZeroMemory' -or
+        $descriptorSigningContents -notmatch '\$digestFullPaths\.Count' -or
+        $descriptorSigningContents -notmatch '\$canonicalDigest -cne \$digest' -or
         $descriptorSigningContents -notmatch 'Remove-Item Env:UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64') {
-        throw 'The update-descriptor signer must validate P-256 and clear decoded key material.'
+        throw 'The release-metadata signer must validate P-256, support bounded digest batches, and clear decoded key material.'
+    }
+    $releaseSignerContents = Get-Content -LiteralPath `
+        (Join-Path $root 'SessionDock/tools/ReleaseSigner/Program.cs') -Raw
+    $verifyAssetsContents = Get-Content -LiteralPath `
+        (Join-Path $root 'scripts/Verify-Assets.ps1') -Raw
+    foreach ($catalogCommand in @(
+            'prepare-catalog',
+            'complete-catalog',
+            'verify-catalog'
+        )) {
+        if ($releaseSignerContents -notmatch [regex]::Escape($catalogCommand)) {
+            throw "The release signer is missing the required HandleScope command: $catalogCommand"
+        }
+    }
+    if ($releaseSignerContents -notmatch 'HandleScopeCompatibilityCatalogPolicy\.CreateCanonicalPayload' -or
+        $releaseSignerContents -notmatch 'HandleScopeCompatibilityCatalogPolicy\.VerifyEmbedded' -or
+        $releaseSignerContents -notmatch 'HandleScopeCompatibilityCatalogPolicy\.Verify' -or
+        $releaseSignerContents -notmatch 'sessiondock-version' -or
+        $releaseSignerContents -notmatch 'prior-manifest' -or
+        $releaseSignerContents -notmatch 'prior-directory' -or
+        $releaseSignerContents -notmatch 'foreach \(var priorPath in priorPaths\)' -or
+        $releaseSignerContents -notmatch 'maximumSequence = Math\.Max' -or
+        $releaseSignerContents -notmatch 'prior\.GeneratedAt > maximumGeneratedAt' -or
+        $releaseSignerContents -notmatch 'candidate\.Catalog\.Sequence <= maximumSequence' -or
+        $releaseSignerContents -notmatch 'candidate\.GeneratedAt <= maximumGeneratedAt' -or
+        $releaseSignerContents -notmatch 'candidate\.Catalog\.Sequence != 1' -or
+        $verifyAssetsContents -notmatch '\[string\] \$CompatibilityCatalog' -or
+        $verifyAssetsContents -notmatch '\[string\] \$ReleaseSigner' -or
+        $verifyAssetsContents -notmatch '\[string\] \$PublicKey' -or
+        $verifyAssetsContents -notmatch '\$catalogName = ''sessiondock-handlescope-compatibility\.json''' -or
+        $verifyAssetsContents -notmatch '(?s)\$expectedReleaseFiles = @\(.*?\$catalogName.*?\)' -or
+        $verifyAssetsContents -notmatch '& \$releaseSignerPath verify-catalog' -or
+        $verifyAssetsContents -notmatch '\$catalog\.sessionDockVersion -cne \[string\] \$descriptor\.version') {
+        throw 'Release signing and asset verification must enforce the signed, version-bound HandleScope catalog contract.'
     }
     $secretReferences = @(Get-WorkflowSecretReferences -Contents $releaseWorkflowContents)
     $uniqueSecretReferences = @($secretReferences | Sort-Object -Unique)

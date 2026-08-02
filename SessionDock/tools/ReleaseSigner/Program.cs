@@ -24,13 +24,31 @@ internal static class ReleaseSignerProgram
     private static readonly HashSet<string> VerifyOptions = new(
         ["manifest", "package", "public-key"],
         StringComparer.Ordinal);
+    private static readonly HashSet<string> CatalogPrepareOptions = new(
+        [
+            "manifest", "output", "digest-output", "sessiondock-version",
+            "prior-manifest", "prior-directory", "public-key"
+        ],
+        StringComparer.Ordinal);
+    private static readonly HashSet<string> CatalogCompleteOptions = new(
+        [
+            "manifest", "signature-file", "output", "public-key",
+            "sessiondock-version"
+        ],
+        StringComparer.Ordinal);
+    private static readonly HashSet<string> CatalogVerifyOptions = new(
+        ["manifest", "public-key", "sessiondock-version"],
+        StringComparer.Ordinal);
 
     public static async Task<int> RunAsync(string[] arguments)
     {
         try
         {
             if (arguments.Length == 0)
-                throw new ArgumentException("Specify prepare, complete, verify, or sign-local.");
+            {
+                throw new ArgumentException(
+                    "Specify prepare, complete, verify, sign-local, prepare-catalog, complete-catalog, or verify-catalog.");
+            }
 
             var command = arguments[0];
             var options = ParseOptions(arguments[1..], command switch
@@ -39,8 +57,11 @@ internal static class ReleaseSignerProgram
                 "complete" => CompleteOptions,
                 "verify" => VerifyOptions,
                 "sign-local" => LocalSignOptions,
+                "prepare-catalog" => CatalogPrepareOptions,
+                "complete-catalog" => CatalogCompleteOptions,
+                "verify-catalog" => CatalogVerifyOptions,
                 _ => throw new ArgumentException(
-                    "Specify prepare, complete, verify, or sign-local.")
+                    "Specify prepare, complete, verify, sign-local, prepare-catalog, complete-catalog, or verify-catalog.")
             });
 
             switch (command)
@@ -54,9 +75,20 @@ internal static class ReleaseSignerProgram
                 case "sign-local":
                     await SignLocalAsync(options);
                     break;
-                default:
+                case "verify":
                     await VerifyAsync(options);
                     break;
+                case "prepare-catalog":
+                    await PrepareCatalogAsync(options);
+                    break;
+                case "complete-catalog":
+                    await CompleteCatalogAsync(options);
+                    break;
+                case "verify-catalog":
+                    await VerifyCatalogAsync(options);
+                    break;
+                default:
+                    throw new ArgumentException("The release signing command is invalid.");
             }
             return 0;
         }
@@ -66,7 +98,7 @@ internal static class ReleaseSignerProgram
             ReleaseTrustException)
         {
             Console.Error.WriteLine(
-                $"Release descriptor operation failed: {exception.Message}");
+                $"Release signing operation failed: {exception.Message}");
             return 1;
         }
     }
@@ -99,19 +131,7 @@ internal static class ReleaseSignerProgram
             throw new ArgumentException(
                 "The prepared descriptor already contains a signature.");
         }
-        var signatureText = (await File.ReadAllTextAsync(signaturePath)).Trim();
-        if (signatureText.Length is <= 0 or > 256 ||
-            signatureText.Any(char.IsWhiteSpace))
-        {
-            throw new ArgumentException(
-                "The managed signature must be one canonical base64url value.");
-        }
-        var signature = Base64UrlDecode(signatureText);
-        if (signature.Length != 64)
-        {
-            throw new ArgumentException(
-                "The managed signer must return one 64-byte P-256 ES256 signature.");
-        }
+        var signature = await ReadManagedSignatureAsync(signaturePath);
         var signed = unsigned with
         {
             Signature = Convert.ToBase64String(signature)
@@ -234,6 +254,78 @@ internal static class ReleaseSignerProgram
             $"Verified {verified.Descriptor.Tag} ({verified.Descriptor.PackageFile}).");
     }
 
+    private static async Task PrepareCatalogAsync(
+        IReadOnlyDictionary<string, string> options)
+    {
+        var manifestPath = RequireFile(options, "manifest");
+        var expectedVersion = RequireStableVersion(
+            options,
+            "sessiondock-version");
+        var verified = HandleScopeCompatibilityCatalogPolicy.VerifyEmbedded(
+            await File.ReadAllTextAsync(manifestPath));
+        EnsureCatalogReleaseBinding(verified, expectedVersion);
+        await EnsureCatalogFreshnessAsync(verified, options);
+        if (verified.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            throw new ArgumentException(
+                "The HandleScope compatibility catalog is already expired.");
+        }
+
+        await WriteCatalogAsync(Require(options, "output"), verified.Catalog);
+        var digest = SHA256.HashData(
+            HandleScopeCompatibilityCatalogPolicy.CreateCanonicalPayload(
+                verified.Catalog));
+        await WriteCanonicalTextAsync(
+            Require(options, "digest-output"),
+            Base64UrlEncode(digest));
+    }
+
+    private static async Task CompleteCatalogAsync(
+        IReadOnlyDictionary<string, string> options)
+    {
+        var manifestPath = RequireFile(options, "manifest");
+        var signaturePath = RequireFile(options, "signature-file");
+        var publicKeyPath = RequireFile(options, "public-key");
+        var expectedVersion = RequireStableVersion(
+            options,
+            "sessiondock-version");
+        var unsigned = HandleScopeCompatibilityCatalogPolicy.VerifyEmbedded(
+            await File.ReadAllTextAsync(manifestPath));
+        EnsureCatalogReleaseBinding(unsigned, expectedVersion);
+        if (unsigned.ExpiresAt <= DateTimeOffset.UtcNow)
+        {
+            throw new ArgumentException(
+                "The HandleScope compatibility catalog is already expired.");
+        }
+
+        var signature = await ReadManagedSignatureAsync(signaturePath);
+        var signed = unsigned.Catalog with
+        {
+            Signature = Convert.ToBase64String(signature)
+        };
+        var verified = HandleScopeCompatibilityCatalogPolicy.Verify(
+            HandleScopeCompatibilityCatalogPolicy.Serialize(signed),
+            await File.ReadAllTextAsync(publicKeyPath));
+        EnsureCatalogReleaseBinding(verified, expectedVersion);
+        await WriteCatalogAsync(Require(options, "output"), signed);
+    }
+
+    private static async Task VerifyCatalogAsync(
+        IReadOnlyDictionary<string, string> options)
+    {
+        var manifestPath = RequireFile(options, "manifest");
+        var publicKeyPath = RequireFile(options, "public-key");
+        var expectedVersion = RequireStableVersion(
+            options,
+            "sessiondock-version");
+        var verified = HandleScopeCompatibilityCatalogPolicy.Verify(
+            await File.ReadAllTextAsync(manifestPath),
+            await File.ReadAllTextAsync(publicKeyPath));
+        EnsureCatalogReleaseBinding(verified, expectedVersion);
+        Console.WriteLine(
+            $"Verified HandleScope compatibility catalog sequence {verified.Catalog.Sequence} for SessionDock {verified.SessionDockVersion}.");
+    }
+
     private static Dictionary<string, string> ParseOptions(
         string[] arguments,
         HashSet<string> allowed)
@@ -282,6 +374,133 @@ internal static class ReleaseSignerProgram
         return path;
     }
 
+    private static string RequireDirectory(
+        IReadOnlyDictionary<string, string> options,
+        string name)
+    {
+        var path = Path.GetFullPath(Require(options, name));
+        if (!Directory.Exists(path))
+            throw new ArgumentException($"The --{name} directory does not exist.");
+        return path;
+    }
+
+    private static Version RequireStableVersion(
+        IReadOnlyDictionary<string, string> options,
+        string name)
+    {
+        var value = Require(options, name);
+        if (!Version.TryParse(value, out var version) ||
+            version.Build < 0 || version.Revision >= 0 ||
+            version.ToString(3) != value)
+        {
+            throw new ArgumentException(
+                $"The --{name} value must be a three-part stable version.");
+        }
+        return version;
+    }
+
+    private static void EnsureCatalogReleaseBinding(
+        VerifiedHandleScopeCompatibilityCatalog catalog,
+        Version expectedSessionDockVersion)
+    {
+        if (catalog.SessionDockVersion != expectedSessionDockVersion)
+        {
+            throw new ArgumentException(
+                "The HandleScope compatibility catalog does not match the SessionDock release version.");
+        }
+    }
+
+    private static async Task EnsureCatalogFreshnessAsync(
+        VerifiedHandleScopeCompatibilityCatalog candidate,
+        IReadOnlyDictionary<string, string> options)
+    {
+        var hasPriorManifest = options.ContainsKey("prior-manifest");
+        var hasPriorDirectory = options.ContainsKey("prior-directory");
+        var hasPublicKey = options.ContainsKey("public-key");
+        if (hasPriorManifest && hasPriorDirectory)
+        {
+            throw new ArgumentException(
+                "Specify either one prior catalog or a prior catalog directory, not both.");
+        }
+        var hasPriorCatalogs = hasPriorManifest || hasPriorDirectory;
+        if (hasPriorCatalogs != hasPublicKey)
+        {
+            throw new ArgumentException(
+                "Prior catalogs and the public key must be supplied together.");
+        }
+        if (!hasPriorCatalogs)
+        {
+            if (candidate.Catalog.Sequence != 1)
+            {
+                throw new ArgumentException(
+                    "The first published HandleScope compatibility catalog must use sequence 1.");
+            }
+            return;
+        }
+
+        string[] priorPaths;
+        if (hasPriorManifest)
+        {
+            priorPaths = [RequireFile(options, "prior-manifest")];
+        }
+        else
+        {
+            var priorDirectory = RequireDirectory(options, "prior-directory");
+            var entries = Directory.GetFileSystemEntries(
+                priorDirectory,
+                "*",
+                SearchOption.TopDirectoryOnly);
+            if (entries.Length is <= 0 or > 10_000 ||
+                entries.Any(path =>
+                    !File.Exists(path) ||
+                    new FileInfo(path).LinkTarget is not null))
+            {
+                throw new ArgumentException(
+                    "The prior catalog directory must contain only 1 to 10,000 regular files.");
+            }
+            priorPaths = entries.Order(StringComparer.Ordinal).ToArray();
+        }
+
+        var publicKeyPath = RequireFile(options, "public-key");
+        var publicKey = await File.ReadAllTextAsync(publicKeyPath);
+        long maximumSequence = 0;
+        var maximumGeneratedAt = DateTimeOffset.MinValue;
+        foreach (var priorPath in priorPaths)
+        {
+            var priorJson = await File.ReadAllTextAsync(priorPath);
+            var priorCatalog = HandleScopeCompatibilityCatalogPolicy.Deserialize(
+                priorJson);
+            if (!DateTimeOffset.TryParseExact(
+                    priorCatalog.GeneratedAt,
+                    "O",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.RoundtripKind,
+                    out var priorGeneratedAt) ||
+                priorGeneratedAt.Offset != TimeSpan.Zero)
+            {
+                throw new ArgumentException(
+                    "A prior HandleScope catalog generation time is invalid.");
+            }
+            var prior = HandleScopeCompatibilityCatalogPolicy.Verify(
+                priorJson,
+                publicKey,
+                priorGeneratedAt);
+            maximumSequence = Math.Max(
+                maximumSequence,
+                prior.Catalog.Sequence);
+            maximumGeneratedAt = prior.GeneratedAt > maximumGeneratedAt
+                ? prior.GeneratedAt
+                : maximumGeneratedAt;
+        }
+
+        if (candidate.Catalog.Sequence <= maximumSequence ||
+            candidate.GeneratedAt <= maximumGeneratedAt)
+        {
+            throw new ArgumentException(
+                "The HandleScope compatibility catalog must strictly advance the authenticated historical sequence and generation-time maxima.");
+        }
+    }
+
     private static string NormalizeReleaseNotes(string value)
     {
         var normalized = value.Replace("\r\n", "\n", StringComparison.Ordinal)
@@ -317,6 +536,14 @@ internal static class ReleaseSignerProgram
             path,
             ReleaseDescriptorPolicy.Serialize(descriptor).TrimEnd('\n'));
 
+    private static async Task WriteCatalogAsync(
+        string path,
+        HandleScopeCompatibilityCatalog catalog) =>
+        await WriteCanonicalTextAsync(
+            path,
+            HandleScopeCompatibilityCatalogPolicy.Serialize(catalog)
+                .TrimEnd('\n'));
+
     private static async Task WriteCanonicalTextAsync(string path, string value)
     {
         var fullPath = Path.GetFullPath(path);
@@ -331,6 +558,24 @@ internal static class ReleaseSignerProgram
             .TrimEnd('=')
             .Replace('+', '-')
             .Replace('/', '_');
+
+    private static async Task<byte[]> ReadManagedSignatureAsync(string path)
+    {
+        var signatureText = (await File.ReadAllTextAsync(path)).Trim();
+        if (signatureText.Length is <= 0 or > 256 ||
+            signatureText.Any(char.IsWhiteSpace))
+        {
+            throw new ArgumentException(
+                "The managed signature must be one canonical base64url value.");
+        }
+        var signature = Base64UrlDecode(signatureText);
+        if (signature.Length != 64)
+        {
+            throw new ArgumentException(
+                "The managed signer must return one 64-byte P-256 ES256 signature.");
+        }
+        return signature;
+    }
 
     private static byte[] Base64UrlDecode(string value)
     {

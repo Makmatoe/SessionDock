@@ -208,4 +208,11 @@ internal sealed record HandleScopeConnection(
     string Token,
     string ApiVersion,
     int ApiProcessId,
-    DateTimeOffset StartedAtUtc);
+    DateTimeOffset StartedAtUtc)
+{
+    internal HandleScopeRuntimeIdentity? RuntimeIdentity { get; init; }
+
+    internal HandleScopeApiMetadata? RuntimeMetadata { get; init; }
+
+    internal HandleScopeProtocolAdapter? NegotiatedProtocol { get; init; }
+}

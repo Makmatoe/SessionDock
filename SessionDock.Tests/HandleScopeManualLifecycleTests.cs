@@ -50,7 +50,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void IntegrationPanel_OffersPinnedInstallAndOfficialGuide()
+    public void IntegrationPanel_OffersCatalogSelectionAndVersionedOfficialGuide()
     {
         var startInfo = HandleScopeIntegrationDialog.CreateOfficialSetupStartInfo();
 
@@ -60,6 +60,9 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.True(startInfo.UseShellExecute);
         Assert.Empty(startInfo.ArgumentList);
         Assert.True(string.IsNullOrEmpty(startInfo.Arguments));
+        Assert.Equal(
+            "https://github.com/Makmatoe/HandleScope/blob/v0.2.0/docs/INSTALL.md",
+            HandleScopeIntegrationDialog.CreateOfficialSetupUrl("0.2.0"));
 
         var xaml = ReadProductionFile("HandleScopeIntegrationDialog.xaml");
         Assert.Contains("InstallHandleScopeButton", xaml, StringComparison.Ordinal);
@@ -71,12 +74,32 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.Contains("DisableButton", xaml, StringComparison.Ordinal);
         Assert.Contains("TestConnectionButton", xaml, StringComparison.Ordinal);
         Assert.Contains("RepairButton", xaml, StringComparison.Ordinal);
+        Assert.Contains("RuntimeVersionComboBox", xaml, StringComparison.Ordinal);
+        Assert.Contains("ApiVersionComboBox", xaml, StringComparison.Ordinal);
+        Assert.Contains("CheckVersionsButton", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("InstallLatestHandleScopeButton", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("StartApiButton", xaml, StringComparison.Ordinal);
 
         var codeBehind = ReadProductionFile(
             "HandleScopeIntegrationDialog.xaml.cs");
-        Assert.Contains("InstallPinnedAsync", codeBehind, StringComparison.Ordinal);
+        Assert.Contains(".InstallAsync(", codeBehind, StringComparison.Ordinal);
+        Assert.Contains(
+            "Handle.VersionSummaryNoCompatible",
+            codeBehind,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "snapshot.CompatibleReleases.FirstOrDefault",
+            codeBehind,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ReloadVersionSnapshotAfterInstall();",
+            codeBehind,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_integrationService.InspectAsync(",
+            codeBehind,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("InstallPinnedAsync", codeBehind, StringComparison.Ordinal);
         Assert.DoesNotContain("StartAsync(", codeBehind, StringComparison.Ordinal);
 
         var testAvailabilityStart = codeBehind.IndexOf(
@@ -100,7 +123,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void ProductionBoundary_HasPinnedManagedInstallWithoutElevationOrOptIn()
+    public void ProductionBoundary_HasCatalogManagedInstallWithoutElevationOrOptIn()
     {
         var repositoryRoot = FindRepositoryRoot();
         var systemProcessesRoot = Path.Combine(
@@ -116,6 +139,8 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
 
         Assert.Contains("HandleScopeReleaseInstaller", source, StringComparison.Ordinal);
         Assert.Contains("HandleScopeReleasePolicy", source, StringComparison.Ordinal);
+        Assert.Contains("HandleScopeCatalogInstallPolicy", source, StringComparison.Ordinal);
+        Assert.Contains("HandleScopeCompatibilityCatalogPolicy", source, StringComparison.Ordinal);
         Assert.Contains("Install-HandleScopeApi.ps1", source, StringComparison.Ordinal);
         Assert.Contains("-StartNow", source, StringComparison.Ordinal);
         Assert.Contains("-EnableAutostart", source, StringComparison.Ordinal);
@@ -138,7 +163,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void AllLocales_ExposePinnedInstallAndKeepKeyParity()
+    public void AllLocales_ExposeVersionSelectionAndKeepKeyParity()
     {
         var localizationRoot = Path.Combine(
             FindRepositoryRoot(),
@@ -156,6 +181,15 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             ["es-ES"] = "reemplazar",
             ["fr-FR"] = "remplacer",
             ["nl-NL"] = "vervangen"
+        };
+        var sessionDockUpdateTerms = new Dictionary<string, string>(
+            StringComparer.Ordinal)
+        {
+            ["de-DE"] = "Aktualisieren",
+            ["en-US"] = "Update",
+            ["es-ES"] = "Actualiza",
+            ["fr-FR"] = "jour",
+            ["nl-NL"] = "Werk SessionDock bij"
         };
         foreach (var file in files)
         {
@@ -182,6 +216,14 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
             Assert.Contains("Handle.InstallConfirm", keys);
             Assert.Contains("Handle.InstallSucceeded", keys);
             Assert.Contains("Handle.ProgressDownloading", keys);
+            Assert.Contains("Handle.VersionAutomatic", keys);
+            Assert.Contains("Handle.VersionAutomaticUnavailable", keys);
+            Assert.Contains("Handle.VersionSummaryNoCompatible", keys);
+            Assert.Contains("Handle.VersionKeepInstalled", keys);
+            Assert.Contains("Handle.VersionExact", keys);
+            Assert.Contains("Handle.ApiVersionV1", keys);
+            Assert.Contains("Handle.ApiVersionV2", keys);
+            Assert.Contains("Handle.CheckVersions", keys);
             Assert.DoesNotContain("Handle.Start", keys);
             Assert.DoesNotContain("Handle.ActionStartChecked", keys);
             Assert.DoesNotContain("Handle.StateStartingTitle", keys);
@@ -193,15 +235,14 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
                     element => (string)element.Attribute(x + "Key")!,
                     element => element.Value,
                     StringComparer.Ordinal);
-            Assert.Contains(
-                HandleScopeReleaseInstaller.PinnedVersion,
-                strings["Handle.Install"],
-                StringComparison.Ordinal);
-            Assert.Contains(
-                HandleScopeReleaseInstaller.PinnedVersion,
-                strings["Handle.InstallConfirm"],
-                StringComparison.Ordinal);
+            Assert.Contains("{0}", strings["Handle.InstallVersion"], StringComparison.Ordinal);
+            Assert.Contains("{0}", strings["Handle.InstallConfirm"], StringComparison.Ordinal);
+            Assert.Contains("{0}", strings["Handle.VersionAutomatic"], StringComparison.Ordinal);
             var culture = Path.GetFileNameWithoutExtension(file)["Strings.".Length..];
+            Assert.Contains(
+                sessionDockUpdateTerms[culture],
+                strings["Handle.VersionSummaryNoCompatible"],
+                StringComparison.OrdinalIgnoreCase);
             Assert.Contains(
                 replacementDisclosureTerms[culture],
                 strings["Handle.InstallConfirm"],
@@ -233,7 +274,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void CurrentDocumentation_StatesPinnedManagedInstallBoundary()
+    public void CurrentDocumentation_StatesSignedCatalogManagedInstallBoundary()
     {
         var repositoryRoot = FindRepositoryRoot();
         var paths = new[]
@@ -252,43 +293,19 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
                 repositoryRoot,
                 path))));
 
-        Assert.Contains("v0.1.4", documentation, StringComparison.Ordinal);
-        Assert.Contains(
-            HandleScopeInstalledRuntimeVerifier.ExpectedExecutableSha256,
-            documentation,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
-            HandleScopeIntegrationDialog.OfficialSetupUrl,
-            documentation,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Install HandleScope v0.1.4",
-            documentation,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            HandleScopeReleaseInstaller.PinnedPackageSha256,
-            documentation,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
-            HandleScopeReleaseInstaller.PinnedChecksumsSha256,
-            documentation,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
-            "624dfc3abb6991b4f8eab8c8895ea11936f24919",
-            documentation,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains(
-            "bff70ad4909d28f247453be84b7a024b230dab79d97dc49773bafe2f4bb12711",
-            documentation,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("100,841,616", documentation, StringComparison.Ordinal);
+        Assert.Contains("signed", documentation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("compatibility catalog", documentation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("handlescope-preferences.json", documentation, StringComparison.Ordinal);
+        Assert.Contains("/v1/metadata", documentation, StringComparison.Ordinal);
+        Assert.Contains("v2", documentation, StringComparison.Ordinal);
+        Assert.Contains("Check versions", documentation, StringComparison.Ordinal);
         Assert.Contains("standard-user", documentation, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "API running - integration disabled",
             documentation,
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains(
-            "%LOCALAPPDATA%\\SessionDock\\HandleScopeAuthorization",
+            "%LOCALAPPDATA%\\SessionDock\\handlescope.json",
             documentation,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -311,7 +328,8 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.All(currentNotes, path =>
         {
             var notes = File.ReadAllText(path);
-            Assert.Contains("v0.1.4", notes, StringComparison.Ordinal);
+            Assert.Contains("0.2.2", notes, StringComparison.Ordinal);
+            Assert.Contains("catalog", notes, StringComparison.OrdinalIgnoreCase);
         });
     }
 

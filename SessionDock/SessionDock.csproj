@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\SessionDock.ico</ApplicationIcon>
     <StartupObject>SessionDock.Program</StartupObject>
-    <Version>2.7.6</Version>
+    <Version>2.8.0</Version>
     <Product>SessionDock</Product>
     <Authors>Makmatoe</Authors>
     <Copyright>Copyright (c) 2026 Makmatoe</Copyright>
@@ -72,6 +72,8 @@
           CopyToPublishDirectory="PreserveNewest" />
     <EmbeddedResource Include="Resources\update-public-key.pem"
                       LogicalName="SessionDock.Embedded.ReleasePublicKey.pem" />
+    <EmbeddedResource Include="Resources\handlescope-compatibility-bootstrap.json"
+                      LogicalName="SessionDock.Embedded.HandleScopeCompatibilityBootstrap.json" />
     <EmbeddedResource Include="ReleaseNotes\*.md"
                       WithCulture="false"
                       LogicalName="SessionDock.Embedded.ReleaseNotes.%(Filename)%(Extension)" />

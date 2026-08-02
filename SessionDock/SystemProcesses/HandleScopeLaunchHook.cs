@@ -317,9 +317,13 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
     {
         try
         {
-            var endpoint = new Uri(
-                connection.BaseUrl,
-                "/v1/handles/close");
+            var endpoint = CreateNegotiatedCloseEndpoint(connection);
+            if (endpoint is null)
+            {
+                Trace.WriteLine(
+                    "HandleScope request rejected an uncompiled protocol adapter.");
+                return CloseOutcome.Failure;
+            }
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
             {
                 Content = JsonContent.Create(
@@ -355,6 +359,17 @@ public sealed class HandleScopeLaunchHook : ILaunchHook
                 $"HandleScope request failed: {ex.GetType().Name}.");
             return CloseOutcome.Failure;
         }
+    }
+
+    internal static Uri? CreateNegotiatedCloseEndpoint(
+        HandleScopeConnection connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        var protocol = connection.NegotiatedProtocol;
+        return protocol is not null &&
+               HandleScopeProtocolNegotiator.IsCompiledAdapter(protocol)
+            ? new Uri(connection.BaseUrl, protocol.CloseEndpoint)
+            : null;
     }
 
     private static async Task<CloseOutcome> ParseResponseAsync(

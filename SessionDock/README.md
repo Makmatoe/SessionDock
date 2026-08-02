@@ -78,18 +78,23 @@ Roblox pages and are not read or stored by SessionDock.
 SessionDock can notify a user-configured loopback endpoint after a successful
 launch. It can also use the optional HandleScope local API when the user
 explicitly enables the fixed Roblox policy. SessionDock never bundles or
-elevates HandleScope. After explicit confirmation, its integration panel can
-download and install only the pinned immutable v0.1.4 Windows x64 release. It
-checks fixed asset hashes and sizes, the matching checksum, safe ZIP layout,
-and the complete internal inventory, then runs the standard-user installer with
-`RemoteSigned` scoped only to the verified child process. It never uses
-`Bypass` or `Unrestricted`, changes saved policy, or overrides Group Policy.
-Installation starts the API and enables HandleScope's limited per-user
-autostart, but does not enable the
-SessionDock integration. The panel accepts only the exact published v0.1.4 API
-executable at the expected per-user path, then can refresh local state,
-explicitly enable or disable the SessionDock opt-in, and test the checked
-loopback API. The pinned official guide remains available for manual setup. See
+elevates HandleScope. The panel loads a bundled compatibility bootstrap and
+makes a network request only when the user explicitly selects **Check
+versions** or confirms an installation. A signed, rollback-resistant catalog
+authorizes compatible releases, exact package/executable identities, and only
+the `v1`/`v2` adapters already compiled into SessionDock. Users can select
+Automatic, Keep installed, or an exact reviewed release and API contract;
+checking or changing that preference never installs, replaces, or downgrades
+software.
+
+After a separate confirmation, SessionDock verifies the selected package,
+checksum, optional release manifest, executable, ZIP layout, and internal
+inventory, then runs the standard-user installer with `RemoteSigned` scoped
+only to that verified child process. It refuses downgrades and never uses
+`Bypass` or `Unrestricted`, changes saved policy, overrides Group Policy,
+elevates, or enables the integration automatically. The existing minimal
+`handlescope.json` opt-in and exact five-field `connection.json` discovery
+contract remain compatible. See
 [SystemProcesses/README.md](SystemProcesses/README.md).
 
 ## Updates

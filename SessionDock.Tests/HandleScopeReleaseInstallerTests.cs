@@ -271,7 +271,7 @@ public sealed class HandleScopeReleaseInstallerTests
     }
 
     [Fact]
-    public void IntegrationDialog_UsesLocalizedPinnedInstallAction()
+    public void IntegrationDialog_UsesLocalizedCatalogInstallAction()
     {
         var repositoryRoot = FindRepositoryRoot();
         var xaml = File.ReadAllText(Path.Combine(
@@ -298,9 +298,11 @@ public sealed class HandleScopeReleaseInstallerTests
             StringComparison.Ordinal);
         Assert.DoesNotContain("GetHandleScopeButton", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "LocalizeInstallFailureReason(exception.FailureKind),\n                    OfficialSetupUrl",
+            "LocalizeInstallFailureReason(exception.FailureKind)",
             normalizedCodeBehind,
             StringComparison.Ordinal);
+        Assert.Contains("CurrentSetupUrl", normalizedCodeBehind, StringComparison.Ordinal);
+        Assert.Contains("_releaseInstaller.InstallAsync(", normalizedCodeBehind, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -778,6 +780,130 @@ public sealed class HandleScopeReleaseInstallerTests
 
             Assert.IsType<Win32Exception>(exception.InnerException);
             Assert.Contains("could not be installed safely", exception.Message);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task InstallPinnedAsync_KeepsArchiveAndVerifiedBundleLockedThroughBothProcesses()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var packageBytes = CreateValidBundle();
+            var packageHash = SHA256.HashData(packageBytes);
+            var checksumBytes = Encoding.UTF8.GetBytes(
+                $"{Hex(packageHash)}  {PackageName}\n");
+            var checksumHash = SHA256.HashData(checksumBytes);
+            using var handler = new FakeReleaseHandler(
+                packageBytes,
+                checksumBytes);
+            var invocationCount = 0;
+            Task<HandleScopeInstallerProcessResult> ProbeLockedInputs(
+                ProcessStartInfo startInfo,
+                CancellationToken cancellationToken)
+            {
+                invocationCount++;
+                var installerPath = startInfo.ArgumentList[6];
+                var apiRoot = Path.GetDirectoryName(installerPath)!;
+                var bundleRoot = Path.GetDirectoryName(apiRoot)!;
+                var extractionRoot = Path.GetDirectoryName(bundleRoot)!;
+                var operationRoot = Path.GetDirectoryName(extractionRoot)!;
+                var archivePath = Path.Combine(operationRoot, PackageName);
+                var manifestPath = Path.Combine(bundleRoot, "CONTENTS.sha256");
+                var executablePath = Path.Combine(
+                    apiRoot,
+                    "HandleScope.Api.exe");
+
+                Assert.Throws<IOException>(() => File.Open(
+                    archivePath,
+                    FileMode.Open,
+                    FileAccess.ReadWrite,
+                    FileShare.None));
+                Assert.Throws<IOException>(() =>
+                    File.WriteAllText(installerPath, "swapped installer"));
+                Assert.Throws<IOException>(() =>
+                    File.WriteAllText(manifestPath, "swapped manifest"));
+                Assert.Throws<IOException>(() =>
+                    File.WriteAllText(executablePath, "swapped executable"));
+                Assert.Throws<IOException>(() => Directory.Move(
+                    bundleRoot,
+                    bundleRoot + ".swapped"));
+                return Task.FromResult(
+                    new HandleScopeInstallerProcessResult(0, null));
+            }
+
+            using var installer = new HandleScopeReleaseInstaller(
+                handler,
+                root,
+                ProbeLockedInputs,
+                CreateIdentity(
+                    packageHash,
+                    packageBytes.LongLength,
+                    checksumHash,
+                    checksumBytes.LongLength));
+
+            await installer.InstallPinnedAsync(
+                progress: null,
+                TestContext.Current.CancellationToken);
+
+            Assert.Equal(2, invocationCount);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(root));
+        }
+        finally
+        {
+            DeleteDirectory(root);
+        }
+    }
+
+    [Fact]
+    public async Task InstallPinnedAsync_DetectsInventoryAdditionBetweenProcessPhases()
+    {
+        var root = CreateTemporaryRoot();
+        try
+        {
+            var packageBytes = CreateValidBundle();
+            var packageHash = SHA256.HashData(packageBytes);
+            var checksumBytes = Encoding.UTF8.GetBytes(
+                $"{Hex(packageHash)}  {PackageName}\n");
+            var checksumHash = SHA256.HashData(checksumBytes);
+            using var handler = new FakeReleaseHandler(
+                packageBytes,
+                checksumBytes);
+            var invocationCount = 0;
+            Task<HandleScopeInstallerProcessResult> AddUnverifiedFile(
+                ProcessStartInfo startInfo,
+                CancellationToken cancellationToken)
+            {
+                invocationCount++;
+                File.WriteAllText(
+                    Path.Combine(startInfo.WorkingDirectory, "unverified.ps1"),
+                    "unverified");
+                return Task.FromResult(
+                    new HandleScopeInstallerProcessResult(0, null));
+            }
+
+            using var installer = new HandleScopeReleaseInstaller(
+                handler,
+                root,
+                AddUnverifiedFile,
+                CreateIdentity(
+                    packageHash,
+                    packageBytes.LongLength,
+                    checksumHash,
+                    checksumBytes.LongLength));
+
+            var exception = await Assert.ThrowsAsync<HandleScopeInstallException>(
+                () => installer.InstallPinnedAsync(
+                    progress: null,
+                    TestContext.Current.CancellationToken));
+
+            Assert.Contains("changed", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(1, invocationCount);
             Assert.Empty(Directory.EnumerateFileSystemEntries(root));
         }
         finally
