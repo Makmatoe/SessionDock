@@ -16,7 +16,7 @@ namespace SessionDock;
 public partial class HandleScopeIntegrationDialog : Window
 {
     internal const string OfficialSetupUrl =
-        "https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/INSTALL.md";
+        "https://github.com/Makmatoe/HandleScope/blob/v0.3.0/docs/INSTALL.md";
 
     private readonly HandleScopeIntegrationService _integrationService = new();
     private readonly HandleScopeReleaseInstaller _releaseInstaller = new();

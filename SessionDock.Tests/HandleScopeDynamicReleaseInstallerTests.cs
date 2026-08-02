@@ -112,6 +112,227 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
         Assert.Equal(2, processCount);
     }
 
+    [Fact]
+    public async Task InstallAsync_NativeSetupUsesOnlyManifestBoundDirectPhases()
+    {
+        var fixture = CreateFixture(
+            version: "0.3.0",
+            nativeSetup: true);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var catalogService = CreateCatalogService(
+            fixture,
+            new RejectingHandler(),
+            key.ExportSubjectPublicKeyInfoPem());
+        using var assetHandler = new AssetHandler(fixture.CreateAssets());
+        var invocations = new List<ProcessStartInfo>();
+        Task<HandleScopeInstallerProcessResult> RunProcess(
+            ProcessStartInfo startInfo,
+            CancellationToken cancellationToken)
+        {
+            invocations.Add(startInfo);
+            Assert.EndsWith(
+                Path.Combine("api", "HandleScope.Setup.exe"),
+                startInfo.FileName,
+                StringComparison.OrdinalIgnoreCase);
+            var apiRoot = startInfo.WorkingDirectory;
+            var bundleRoot = Path.GetDirectoryName(apiRoot)!;
+            var extractionRoot = Path.GetDirectoryName(bundleRoot)!;
+            var operationRoot = Path.GetDirectoryName(extractionRoot)!;
+            var archivePath = Path.Combine(
+                operationRoot,
+                fixture.Release.Package.Name);
+            Assert.ThrowsAny<IOException>(() => File.Open(
+                startInfo.FileName,
+                FileMode.Open,
+                FileAccess.Write,
+                FileShare.None));
+            Assert.Throws<IOException>(() => File.Open(
+                archivePath,
+                FileMode.Open,
+                FileAccess.ReadWrite,
+                FileShare.None));
+            Assert.Throws<IOException>(() => File.WriteAllText(
+                Path.Combine(bundleRoot, "CONTENTS.sha256"),
+                "swapped manifest"));
+            Assert.Throws<IOException>(() => File.WriteAllText(
+                Path.Combine(apiRoot, "HandleScope.Api.exe"),
+                "swapped runtime"));
+            Assert.Throws<IOException>(() => Directory.Move(
+                bundleRoot,
+                bundleRoot + ".swapped"));
+            return Task.FromResult(new HandleScopeInstallerProcessResult(0, null));
+        }
+        using var installer = new HandleScopeReleaseInstaller(
+            assetHandler,
+            Path.Combine(fixture.Root, "downloads"),
+            RunProcess,
+            release: null,
+            catalogService,
+            Path.Combine(fixture.Root, "local"));
+
+        await installer.InstallAsync(
+            fixture.Release,
+            fixture.Catalog,
+            progress: null,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, invocations.Count);
+        Assert.Equal(["verify"], invocations[0].ArgumentList);
+        Assert.Equal(
+            ["install", "--start-now", "--enable-autostart"],
+            invocations[1].ArgumentList);
+        Assert.All(invocations, invocation =>
+        {
+            Assert.False(invocation.UseShellExecute);
+            Assert.DoesNotContain(
+                invocation.ArgumentList,
+                argument => argument.Contains(
+                    "ExecutionPolicy",
+                    StringComparison.OrdinalIgnoreCase));
+        });
+    }
+
+    [Theory]
+    [InlineData("schema", 2)]
+    [InlineData("setup-missing", 2)]
+    [InlineData("setup-path", 2)]
+    [InlineData("setup-size", 3)]
+    [InlineData("setup-hash", 3)]
+    [InlineData("setup-extra", 2)]
+    [InlineData("setup-inventory", 3)]
+    [InlineData("bundle-missing", 3)]
+    public async Task InstallAsync_NativeSetupRequiresStrictV2ManifestIdentity(
+        string mutation,
+        int expectedAssetRequests)
+    {
+        var fixture = CreateFixture(
+            version: "0.3.0",
+            nativeSetup: true,
+            setupMutation: mutation);
+
+        var rejected = await RejectInstallAsync(
+            fixture,
+            fixture.Release,
+            fixture.Catalog);
+
+        Assert.Equal(expectedAssetRequests, rejected.AssetRequestCount);
+        Assert.Equal(0, rejected.ProcessCount);
+        Assert.Equal(
+            HandleScopeInstallFailureKind.ReleaseIntegrity,
+            rejected.Exception.FailureKind);
+    }
+
+    [Fact]
+    public async Task InstallAsync_LegacyManifestRejectsNativeSetupIdentity()
+    {
+        var fixture = CreateFixture(setupMutation: "legacy-extra");
+
+        var rejected = await RejectInstallAsync(
+            fixture,
+            fixture.Release,
+            fixture.Catalog);
+
+        Assert.Equal(0, rejected.ProcessCount);
+        Assert.Equal(
+            HandleScopeInstallFailureKind.ReleaseIntegrity,
+            rejected.Exception.FailureKind);
+    }
+
+    [Fact]
+    public async Task InstallAsync_NativeDetectsInventoryAdditionBetweenPhases()
+    {
+        var fixture = CreateFixture(
+            version: "0.3.0",
+            nativeSetup: true);
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var catalogService = CreateCatalogService(
+            fixture,
+            new RejectingHandler(),
+            key.ExportSubjectPublicKeyInfoPem());
+        using var assetHandler = new AssetHandler(fixture.CreateAssets());
+        var processCount = 0;
+        Task<HandleScopeInstallerProcessResult> RunProcess(
+            ProcessStartInfo startInfo,
+            CancellationToken cancellationToken)
+        {
+            processCount++;
+            File.WriteAllText(
+                Path.Combine(
+                    Path.GetDirectoryName(startInfo.WorkingDirectory)!,
+                    "unexpected-after-verify.txt"),
+                "untrusted addition");
+            return Task.FromResult(new HandleScopeInstallerProcessResult(0, null));
+        }
+        using var installer = new HandleScopeReleaseInstaller(
+            assetHandler,
+            Path.Combine(fixture.Root, "downloads"),
+            RunProcess,
+            release: null,
+            catalogService,
+            Path.Combine(fixture.Root, "local"));
+
+        var exception = await Assert.ThrowsAsync<HandleScopeInstallException>(
+            () => installer.InstallAsync(
+                fixture.Release,
+                fixture.Catalog,
+                progress: null,
+                TestContext.Current.CancellationToken));
+
+        Assert.Equal(1, processCount);
+        Assert.Equal(
+            HandleScopeInstallFailureKind.ReleaseIntegrity,
+            exception.FailureKind);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("unknown")]
+    [InlineData("contradictory")]
+    public async Task InstallAsync_RejectsUnsupportedSetupAdapterBeforeNetwork(
+        string mutation)
+    {
+        var fixture = CreateFixture(
+            version: "0.3.0",
+            nativeSetup: true);
+        var capabilities = fixture.Release.Capabilities
+            .Where(capability => capability !=
+                HandleScopeCatalogInstallPolicy.NativeSetupCapability)
+            .ToList();
+        if (mutation is "unknown" or "contradictory")
+            capabilities.Add("handlescope.setup.future.v2");
+        if (mutation == "contradictory")
+        {
+            capabilities.Add(
+                HandleScopeCatalogInstallPolicy.NativeSetupCapability);
+        }
+        var unauthorized = fixture.Release with
+        {
+            Capabilities = capabilities.Order(StringComparer.Ordinal).ToArray()
+        };
+        var catalog = CreateVerifiedCatalog(
+            [unauthorized],
+            unauthorized.Version,
+            sessionDockVersion: "2.9.0");
+        fixture = fixture with
+        {
+            Release = unauthorized,
+            Catalog = catalog,
+            CatalogJson = HandleScopeCompatibilityCatalogPolicy.Serialize(
+                catalog.Catalog)
+        };
+
+        var rejected = await RejectInstallAsync(
+            fixture,
+            unauthorized,
+            catalog);
+
+        Assert.Equal(0, rejected.AssetRequestCount);
+        Assert.Equal(0, rejected.ProcessCount);
+        Assert.Equal(
+            HandleScopeInstallFailureKind.ReleaseIntegrity,
+            rejected.Exception.FailureKind);
+    }
+
     [Theory]
     [InlineData("checksum")]
     [InlineData("identity")]
@@ -451,12 +672,17 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
     }
 
     [Theory]
-    [InlineData("revoked")]
-    [InlineData("identity")]
+    [InlineData("revoked", false)]
+    [InlineData("identity", false)]
+    [InlineData("revoked", true)]
+    [InlineData("identity", true)]
     public async Task InstallAsync_RechecksCurrentCatalogImmediatelyBeforeExecution(
-        string change)
+        string change,
+        bool nativeSetup)
     {
-        var fixture = CreateFixture();
+        var fixture = nativeSetup
+            ? CreateFixture(version: "0.3.0", nativeSetup: true)
+            : CreateFixture();
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         HandleScopeCompatibleRelease changedRelease;
         IReadOnlyList<HandleScopeCompatibleRelease> updatedReleases;
@@ -465,7 +691,7 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
         {
             changedRelease = fixture.Release with { Status = "revoked" };
             var fallback = HandleScopeCompatibilityCatalogTestData.CreateRelease(
-                version: "0.2.3");
+                version: nativeSetup ? "0.3.1" : "0.2.3");
             updatedReleases = [changedRelease, fallback];
             recommended = fallback.Version;
         }
@@ -543,12 +769,17 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
     public async Task InstallAsync_RechecksCatalogExpiryBeforeEachChildProcess(
-        bool expiresAfterVerifyOnly)
+        bool expiresAfterVerifyOnly,
+        bool nativeSetup)
     {
-        var fixture = CreateFixture();
+        var fixture = nativeSetup
+            ? CreateFixture(version: "0.3.0", nativeSetup: true)
+            : CreateFixture();
         using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         var catalogService = CreateCatalogService(
             fixture,
@@ -564,7 +795,10 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
             CancellationToken cancellationToken)
         {
             processCount++;
-            Assert.Contains("-VerifyOnly", startInfo.ArgumentList);
+            if (nativeSetup)
+                Assert.Equal(["verify"], startInfo.ArgumentList);
+            else
+                Assert.Contains("-VerifyOnly", startInfo.ArgumentList);
             if (expiresAfterVerifyOnly)
                 now = fixture.Catalog.ExpiresAt;
             return Task.FromResult(new HandleScopeInstallerProcessResult(0, null));
@@ -621,7 +855,9 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
         IReadOnlyList<string>? apiContracts = null,
         string preferredApiVersion = "v2",
         string? manifestMutation = null,
-        bool includeManifestChecksum = true)
+        bool includeManifestChecksum = true,
+        bool nativeSetup = false,
+        string? setupMutation = null)
     {
         var root = Path.Combine(_root, Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -633,10 +869,23 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
                 "handlescope.plan.single-use.v1",
                 "handlescope.policy.roblox-singleton-event.v1"
             ])
+            .Concat(nativeSetup
+                ? [HandleScopeCatalogInstallPolicy.NativeSetupCapability]
+                : [])
             .Order(StringComparer.Ordinal)
             .ToArray();
         var executable = Encoding.UTF8.GetBytes($"runtime-{version}");
-        var package = CreateBundle(version, executable);
+        var setupExecutable = Encoding.UTF8.GetBytes($"native-setup-{version}");
+        var package = CreateBundle(
+            version,
+            executable,
+            nativeSetup,
+            setupMutation switch
+            {
+                "setup-inventory" => [.. setupExecutable, (byte)0x00],
+                "bundle-missing" => [],
+                _ => setupExecutable
+            });
         var packageAsset = new HandleScopeCatalogAsset(
             $"HandleScope-{version}-win-x64.zip",
             package.LongLength,
@@ -648,7 +897,7 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
         var tag = $"v{version}";
         var manifestNode = new JsonObject
         {
-            ["schemaVersion"] = 1,
+            ["schemaVersion"] = nativeSetup ? 2 : 1,
             ["product"] = "HandleScope",
             ["repository"] = "Makmatoe/HandleScope",
             ["version"] = version,
@@ -671,6 +920,28 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
             },
             ["apiExecutable"] = RuntimeNode(runtime)
         };
+        if (nativeSetup || setupMutation == "legacy-extra")
+        {
+            var setupRuntime = new HandleScopeCatalogRuntime(
+                setupMutation == "setup-path"
+                    ? "api/Evil.Setup.exe"
+                    : "api/HandleScope.Setup.exe",
+                setupExecutable.LongLength +
+                    (setupMutation == "setup-size" ? 1 : 0),
+                setupMutation == "setup-hash"
+                    ? new string('f', 64)
+                    : Hex(SHA256.HashData(setupExecutable)));
+            manifestNode["setupExecutable"] = RuntimeNode(setupRuntime);
+            if (setupMutation == "setup-extra")
+            {
+                ((JsonObject)manifestNode["setupExecutable"]!)["arguments"] =
+                    "install --unsafe";
+            }
+        }
+        if (setupMutation == "schema")
+            manifestNode["schemaVersion"] = 1;
+        if (setupMutation == "setup-missing")
+            manifestNode.Remove("setupExecutable");
         if (manifestMutation == "identity")
             manifestNode["version"] = "9.9.9";
         else if (manifestMutation == "api")
@@ -705,7 +976,10 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
             runtime,
             $"https://github.com/Makmatoe/HandleScope/blob/{tag}/" +
             "docs/integrations/sessiondock.md");
-        var catalog = CreateVerifiedCatalog([release], version);
+        var catalog = CreateVerifiedCatalog(
+            [release],
+            version,
+            sessionDockVersion: nativeSetup ? "2.9.0" : "2.8.0");
         return new(
             root,
             release,
@@ -810,7 +1084,8 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
         IReadOnlyList<HandleScopeCompatibleRelease> releases,
         string recommendedVersion,
         long sequence = 1,
-        DateTimeOffset? generatedAt = null)
+        DateTimeOffset? generatedAt = null,
+        string sessionDockVersion = "2.8.0")
     {
         var generated = generatedAt ?? DateTimeOffset.UtcNow.AddMinutes(-5);
         var catalog = HandleScopeCompatibilityCatalogTestData.CreateCatalog(
@@ -818,7 +1093,8 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
             recommendedVersion,
             sequence,
             generated,
-            DateTimeOffset.UtcNow.AddDays(30));
+            DateTimeOffset.UtcNow.AddDays(30),
+            sessionDockVersion);
         return HandleScopeCompatibilityCatalogPolicy.VerifyEmbedded(
             HandleScopeCompatibilityCatalogPolicy.Serialize(catalog));
     }
@@ -837,14 +1113,22 @@ public sealed class HandleScopeDynamicReleaseInstallerTests : IDisposable
         ["sha256"] = runtime.Sha256
     };
 
-    private static byte[] CreateBundle(string version, byte[] executable)
+    private static byte[] CreateBundle(
+        string version,
+        byte[] executable,
+        bool nativeSetup,
+        byte[] setupExecutable)
     {
-        var files = new (string Path, byte[] Contents)[]
+        var files = new List<(string Path, byte[] Contents)>
         {
             ("api/Install-HandleScopeApi.ps1", "synthetic installer"u8.ToArray()),
             ("api/HandleScope.Api.exe", executable),
             ("README.txt", "synthetic readme"u8.ToArray())
         };
+        if (nativeSetup && setupExecutable.Length > 0)
+        {
+            files.Add(("api/HandleScope.Setup.exe", setupExecutable));
+        }
         var manifest = string.Concat(files.Select(file =>
             $"{Hex(SHA256.HashData(file.Contents))}  {file.Path}\n"));
         using var output = new MemoryStream();

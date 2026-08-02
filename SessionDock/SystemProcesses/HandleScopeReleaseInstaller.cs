@@ -109,7 +109,8 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             new HandleScopeCatalogInstallSelection(
                 _release,
                 Manifest: null,
-                CatalogRelease: null),
+                CatalogRelease: null,
+                HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned),
             catalogFloor: null,
             progress,
             cancellationToken);
@@ -174,6 +175,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         string? operationRoot = null;
         try
         {
+            HandleScopeSetupExecutableIdentity? setupExecutableIdentity = null;
             var checksumBytes = await DownloadSmallAssetAsync(
                 release.Checksums,
                 HandleScopeReleasePolicy.MaximumChecksumBytes,
@@ -203,9 +205,19 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
                 HandleScopeCatalogInstallPolicy.VerifyManifestChecksumEntry(
                     checksumBytes,
                     manifest);
-                HandleScopeCatalogInstallPolicy.VerifyExternalManifest(
+                setupExecutableIdentity =
+                    HandleScopeCatalogInstallPolicy.VerifyExternalManifest(
                     manifestBytes,
-                    catalogRelease);
+                    catalogRelease,
+                    selection.SetupAdapter);
+            }
+
+            if (selection.SetupAdapter == HandleScopeSetupAdapter.NativeV1 &&
+                setupExecutableIdentity is null)
+            {
+                throw new HandleScopeInstallException(
+                    HandleScopeInstallFailureKind.ReleaseIntegrity,
+                    "The native HandleScope setup identity is unavailable.");
             }
 
             cancellationToken.ThrowIfCancellationRequested();
@@ -230,11 +242,13 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             var extractionRoot = Path.Combine(operationRoot, "extracted");
             using var bundle = await HandleScopeReleasePolicy
                 .ExtractAndVerifyLockedAsync(
-                archiveStream,
-                extractionRoot,
-                _temporaryRoot,
-                release.Version,
-                cancellationToken);
+                    archiveStream,
+                    extractionRoot,
+                    _temporaryRoot,
+                    release.Version,
+                    selection.SetupAdapter,
+                    setupExecutableIdentity,
+                    cancellationToken);
 
             HandleScopeCatalogReadLease? executionCatalogLease = null;
             try
@@ -265,6 +279,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
 
                 var verificationStartInfo = CreateInstallerStartInfo(
                     bundle.InstallerPath,
+                    selection.SetupAdapter,
                     verifyOnly: true);
                 await bundle.RevalidateForExecutionAsync(cancellationToken);
                 EnsureExecutionCatalogUnexpired(executionCatalogLease);
@@ -289,6 +304,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
                 await bundle.RevalidateForExecutionAsync(cancellationToken);
                 var installStartInfo = CreateInstallerStartInfo(
                     bundle.InstallerPath,
+                    selection.SetupAdapter,
                     verifyOnly: false);
                 EnsureExecutionCatalogUnexpired(executionCatalogLease);
 
@@ -385,22 +401,41 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
 
     internal static ProcessStartInfo CreateInstallerStartInfo(
         string installerPath,
+        bool verifyOnly) => CreateInstallerStartInfo(
+            installerPath,
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned,
+            verifyOnly);
+
+    internal static ProcessStartInfo CreateInstallerStartInfo(
+        string installerPath,
+        HandleScopeSetupAdapter setupAdapter,
         bool verifyOnly)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(installerPath);
         var fullInstallerPath = Path.GetFullPath(installerPath);
+        var expectedSuffix = Path.DirectorySeparatorChar +
+            HandleScopeCatalogInstallPolicy.GetSetupRelativePath(setupAdapter);
+        if (!fullInstallerPath.EndsWith(
+                expectedSuffix,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException(
+                "The HandleScope setup path does not match its compiled adapter.",
+                nameof(installerPath));
+        }
         var workingDirectory = Path.GetDirectoryName(fullInstallerPath)
             ?? throw new ArgumentException(
                 "The HandleScope installer path has no parent directory.",
                 nameof(installerPath));
-        var powershellPath = Path.Combine(
-            Environment.SystemDirectory,
-            "WindowsPowerShell",
-            "v1.0",
-            "powershell.exe");
         var startInfo = new ProcessStartInfo
         {
-            FileName = powershellPath,
+            FileName = setupAdapter == HandleScopeSetupAdapter.NativeV1
+                ? fullInstallerPath
+                : Path.Combine(
+                    Environment.SystemDirectory,
+                    "WindowsPowerShell",
+                    "v1.0",
+                    "powershell.exe"),
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -409,21 +444,33 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
             RedirectStandardOutput = true,
             WindowStyle = ProcessWindowStyle.Hidden
         };
-        startInfo.ArgumentList.Add("-NoLogo");
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-ExecutionPolicy");
-        startInfo.ArgumentList.Add("RemoteSigned");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(fullInstallerPath);
-        if (verifyOnly)
+        if (setupAdapter == HandleScopeSetupAdapter.NativeV1)
         {
-            startInfo.ArgumentList.Add("-VerifyOnly");
+            startInfo.ArgumentList.Add(verifyOnly ? "verify" : "install");
+            if (!verifyOnly)
+            {
+                startInfo.ArgumentList.Add("--start-now");
+                startInfo.ArgumentList.Add("--enable-autostart");
+            }
         }
         else
         {
-            startInfo.ArgumentList.Add("-StartNow");
-            startInfo.ArgumentList.Add("-EnableAutostart");
+            startInfo.ArgumentList.Add("-NoLogo");
+            startInfo.ArgumentList.Add("-NoProfile");
+            startInfo.ArgumentList.Add("-NonInteractive");
+            startInfo.ArgumentList.Add("-ExecutionPolicy");
+            startInfo.ArgumentList.Add("RemoteSigned");
+            startInfo.ArgumentList.Add("-File");
+            startInfo.ArgumentList.Add(fullInstallerPath);
+            if (verifyOnly)
+            {
+                startInfo.ArgumentList.Add("-VerifyOnly");
+            }
+            else
+            {
+                startInfo.ArgumentList.Add("-StartNow");
+                startInfo.ArgumentList.Add("-EnableAutostart");
+            }
         }
         LocalApiLaunchHook.RemoveConfigurationFromChildEnvironment(startInfo);
         return startInfo;
@@ -754,7 +801,7 @@ internal sealed class HandleScopeReleaseInstaller : IDisposable
         {
             throw new HandleScopeInstallException(
                 HandleScopeInstallFailureKind.LocalEnvironment,
-                "Windows PowerShell could not start the HandleScope installer.");
+                "Windows could not start the verified HandleScope setup program.");
         }
         var standardErrorTask = ReadBoundedProcessOutputAsync(
             process.StandardError,

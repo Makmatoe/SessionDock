@@ -84,7 +84,13 @@ internal sealed class HandleScopeCompatibilityCatalogService : IDisposable
         {
             Timeout = TimeSpan.FromSeconds(20)
         };
-        _client.DefaultRequestHeaders.UserAgent.ParseAdd("SessionDock/2.8");
+        var applicationVersion = typeof(HandleScopeCompatibilityCatalogService)
+            .Assembly
+            .GetName()
+            .Version?
+            .ToString(3) ?? "0.0.0";
+        _client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            $"SessionDock/{applicationVersion}");
         _client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     }
 

@@ -42,6 +42,7 @@ internal sealed class HandleScopeVersionManager : IDisposable
     private readonly HandleScopeSelectionStore _selectionStore;
     private readonly IHandleScopeRuntimeIdentityResolver _runtimeResolver;
     private readonly string _installedExecutablePath;
+    private readonly Version _sessionDockVersion;
     private bool _disposed;
 
     internal HandleScopeVersionManager()
@@ -51,7 +52,8 @@ internal sealed class HandleScopeVersionManager : IDisposable
             new HandleScopeInstalledRuntimeVerifier(),
             HandleScopeProcessVerifier.GetExpectedExecutablePath(
                 Environment.GetFolderPath(
-                    Environment.SpecialFolder.LocalApplicationData)))
+                    Environment.SpecialFolder.LocalApplicationData)),
+            HandleScopeCompatibilityRequirements.SessionDockVersion)
     {
     }
 
@@ -59,7 +61,8 @@ internal sealed class HandleScopeVersionManager : IDisposable
         HandleScopeCompatibilityCatalogService catalogService,
         HandleScopeSelectionStore selectionStore,
         IHandleScopeRuntimeIdentityResolver runtimeResolver,
-        string installedExecutablePath)
+        string installedExecutablePath,
+        Version? sessionDockVersion = null)
     {
         ArgumentNullException.ThrowIfNull(catalogService);
         ArgumentNullException.ThrowIfNull(selectionStore);
@@ -69,6 +72,8 @@ internal sealed class HandleScopeVersionManager : IDisposable
         _selectionStore = selectionStore;
         _runtimeResolver = runtimeResolver;
         _installedExecutablePath = Path.GetFullPath(installedExecutablePath);
+        _sessionDockVersion = sessionDockVersion ??
+            HandleScopeCompatibilityRequirements.SessionDockVersion;
     }
 
     internal HandleScopeVersionSnapshot Load() =>
@@ -150,11 +155,11 @@ internal sealed class HandleScopeVersionManager : IDisposable
             selected);
     }
 
-    private static IReadOnlyList<HandleScopeCompatibleRelease>
+    private IReadOnlyList<HandleScopeCompatibleRelease>
         GetCompatibleReleases(VerifiedHandleScopeCompatibilityCatalog catalog) =>
         HandleScopeCompatibilityCatalogService.GetCompatibleReleases(
             catalog,
-            HandleScopeCompatibilityRequirements.SessionDockVersion,
+            _sessionDockVersion,
             HandleScopeCompatibilityRequirements.CompiledApiContracts,
             HandleScopeCompatibilityRequirements.RequiredCapabilities);
 

@@ -11,6 +11,122 @@ public sealed class HandleScopeCatalogInstallPolicyTests : IDisposable
         $"SessionDock.HandleScope.InstallPolicy.{Guid.NewGuid():N}");
 
     [Fact]
+    public void Select_UsesOnlyClosedReviewedSetupAdapters()
+    {
+        var legacy014 = CreateRelease(
+            "0.1.4",
+            "supported",
+            "legacy-014"u8.ToArray());
+        var legacy022 = CreateRelease(
+            "0.2.2",
+            "supported",
+            "legacy-022"u8.ToArray());
+        var native = CreateRelease(
+            "0.3.0",
+            "supported",
+            "native-030"u8.ToArray());
+        var catalog = VerifyCatalog(
+            [legacy014, legacy022, native],
+            native.Version,
+            sessionDockVersion: "2.9.0");
+
+        Assert.Equal(
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned,
+            HandleScopeCatalogInstallPolicy.Select(
+                legacy014,
+                catalog,
+                new Version(2, 9, 0)).SetupAdapter);
+        Assert.Equal(
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned,
+            HandleScopeCatalogInstallPolicy.Select(
+                legacy022,
+                catalog,
+                new Version(2, 9, 0)).SetupAdapter);
+        Assert.Equal(
+            HandleScopeSetupAdapter.NativeV1,
+            HandleScopeCatalogInstallPolicy.Select(
+                native,
+                catalog,
+                new Version(2, 9, 0)).SetupAdapter);
+    }
+
+    [Theory]
+    [InlineData("0.1.4", "handlescope.setup.native.v1")]
+    [InlineData("0.2.2", "handlescope.setup.native.v1")]
+    [InlineData("0.3.0", null)]
+    [InlineData("0.3.0", "handlescope.setup.future.v2")]
+    [InlineData("0.3.0", "handlescope.setup.native.v1,handlescope.setup.future.v2")]
+    public void Select_RejectsMissingUnknownOrContradictorySetupCapabilities(
+        string version,
+        string? setupCapabilitiesText)
+    {
+        var release = HandleScopeCompatibilityCatalogTestData.CreateRelease(
+            version: version);
+        var setupCapabilities = setupCapabilitiesText?.Split(',') ?? [];
+        release = release with
+        {
+            Capabilities = release.Capabilities
+                .Where(capability => !capability.StartsWith(
+                    "handlescope.setup.",
+                    StringComparison.Ordinal))
+                .Concat(setupCapabilities)
+                .Order(StringComparer.Ordinal)
+                .ToArray()
+        };
+        var catalog = VerifyCatalog(
+            [release],
+            release.Version,
+            sessionDockVersion: "2.9.0");
+
+        var exception = Assert.Throws<HandleScopeInstallException>(() =>
+            HandleScopeCatalogInstallPolicy.Select(
+                release,
+                catalog,
+                new Version(2, 9, 0)));
+
+        Assert.Equal(
+            HandleScopeInstallFailureKind.ReleaseIntegrity,
+            exception.FailureKind);
+        Assert.Contains("adapter", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Select_IgnoresCallerControlledSetupCapability()
+    {
+        var authorized = CreateRelease(
+            "0.3.0",
+            "supported",
+            "native-runtime"u8.ToArray());
+        var catalog = VerifyCatalog(
+            [authorized],
+            authorized.Version,
+            sessionDockVersion: "2.9.0");
+        var callerControlled = authorized with
+        {
+            Capabilities = authorized.Capabilities
+                .Where(capability => capability !=
+                    HandleScopeCatalogInstallPolicy.NativeSetupCapability)
+                .Append("handlescope.setup.future.v2")
+                .Order(StringComparer.Ordinal)
+                .ToArray()
+        };
+
+        var selection = HandleScopeCatalogInstallPolicy.Select(
+            callerControlled,
+            catalog,
+            new Version(2, 9, 0));
+
+        Assert.Equal(HandleScopeSetupAdapter.NativeV1, selection.SetupAdapter);
+        Assert.Equal(authorized.Version, selection.CatalogRelease?.Version);
+        Assert.Equal(
+            authorized.Capabilities,
+            selection.CatalogRelease?.Capabilities);
+        Assert.DoesNotContain(
+            "handlescope.setup.future.v2",
+            selection.CatalogRelease!.Capabilities);
+    }
+
+    [Fact]
     public void RefuseKnownDowngrade_AllowsExactRevokedOlderRuntimeRemediation()
     {
         var revokedBytes = "revoked-runtime"u8.ToArray();
@@ -147,22 +263,38 @@ public sealed class HandleScopeCatalogInstallPolicyTests : IDisposable
     private static HandleScopeCompatibleRelease CreateRelease(
         string version,
         string status,
-        byte[] executable) =>
-        HandleScopeCompatibilityCatalogTestData.CreateRelease(
+        byte[] executable)
+    {
+        var release = HandleScopeCompatibilityCatalogTestData.CreateRelease(
             version: version,
             status: status,
             executableSize: executable.LongLength,
             executableSha256: Convert.ToHexString(
                     SHA256.HashData(executable))
                 .ToLowerInvariant());
+        if (version is not ("0.1.4" or "0.2.2"))
+        {
+            release = release with
+            {
+                Capabilities = release.Capabilities
+                    .Append(
+                        HandleScopeCatalogInstallPolicy.NativeSetupCapability)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray()
+            };
+        }
+        return release;
+    }
 
     private static VerifiedHandleScopeCompatibilityCatalog VerifyCatalog(
         IReadOnlyList<HandleScopeCompatibleRelease> releases,
-        string recommendedVersion)
+        string recommendedVersion,
+        string sessionDockVersion = "2.8.0")
     {
         var catalog = HandleScopeCompatibilityCatalogTestData.CreateCatalog(
             releases.OrderBy(release => new Version(release.Version)).ToArray(),
-            recommendedVersion);
+            recommendedVersion,
+            sessionDockVersion: sessionDockVersion);
         return HandleScopeCompatibilityCatalogPolicy.VerifyEmbedded(
             HandleScopeCompatibilityCatalogPolicy.Serialize(catalog),
             HandleScopeCompatibilityCatalogTestData.TestNow);

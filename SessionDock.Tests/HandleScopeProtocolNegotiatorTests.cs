@@ -22,6 +22,14 @@ public sealed class HandleScopeProtocolNegotiatorTests
         "handlescope.plan.single-use.v1",
         "handlescope.policy.roblox-singleton-event.v1"
     ];
+    private static readonly string[] NativeV2Capabilities =
+    [
+        "handlescope.http.v1",
+        "handlescope.http.v2",
+        "handlescope.plan.single-use.v1",
+        "handlescope.policy.roblox-singleton-event.v1",
+        "handlescope.setup.native.v1"
+    ];
 
     [Fact]
     public void MetadataParser_RequiresTheExactCanonicalSevenFieldContract()
@@ -84,6 +92,31 @@ public sealed class HandleScopeProtocolNegotiatorTests
             out var adapter));
         Assert.Equal("v1", adapter!.ApiVersion);
         Assert.Equal("/v1/handles/close", adapter.CloseEndpoint);
+    }
+
+    [Fact]
+    public void Negotiation_RequiresExactNativeSetupCapabilityMetadata()
+    {
+        var identity = Identity(
+            "0.3.0",
+            ["v1", "v2"],
+            NativeV2Capabilities);
+
+        Assert.True(HandleScopeProtocolNegotiator.TryNegotiate(
+            Metadata(
+                "0.3.0",
+                ["v1", "v2"],
+                "v2",
+                NativeV2Capabilities),
+            identity,
+            HandleScopeSelection.Default,
+            out var adapter));
+        Assert.Equal("v2", adapter!.ApiVersion);
+        Assert.False(HandleScopeProtocolNegotiator.TryNegotiate(
+            Metadata("0.3.0", ["v1", "v2"], "v2", V2Capabilities),
+            identity,
+            HandleScopeSelection.Default,
+            out _));
     }
 
     [Fact]

@@ -12,14 +12,37 @@ namespace SessionDock.SystemProcesses;
 internal sealed record HandleScopeCatalogInstallSelection(
     HandleScopeReleaseIdentity Release,
     HandleScopeReleaseAsset? Manifest,
-    HandleScopeCompatibleRelease? CatalogRelease);
+    HandleScopeCompatibleRelease? CatalogRelease,
+    HandleScopeSetupAdapter SetupAdapter);
+
+internal enum HandleScopeSetupAdapter
+{
+    LegacyPowerShellRemoteSigned,
+    NativeV1
+}
+
+internal sealed record HandleScopeSetupExecutableIdentity(
+    string Path,
+    long Size,
+    string Sha256);
 
 internal static partial class HandleScopeCatalogInstallPolicy
 {
+    internal const string NativeSetupCapability =
+        "handlescope.setup.native.v1";
+    internal static readonly string LegacySetupRelativePath = Path.Combine(
+        "api",
+        "Install-HandleScopeApi.ps1");
+    internal static readonly string NativeSetupRelativePath = Path.Combine(
+        "api",
+        "HandleScope.Setup.exe");
+
     private const string Repository = "Makmatoe/HandleScope";
     private const string Runtime = "win-x64";
     private const string DiscoveryApiVersion = "v1";
     private const string RequiredPolicy = "roblox-singleton-event-v1";
+    private static readonly Version LegacyV014 = new(0, 1, 4);
+    private static readonly Version LegacyV022 = new(0, 2, 2);
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -70,8 +93,31 @@ internal static partial class HandleScopeCatalogInstallPolicy
         var manifest = authorized.Manifest is null
             ? null
             : CreateAsset(authorized.Tag, authorized.Manifest);
-        return new(release, manifest, authorized);
+        var setupAdapter = SelectSetupAdapter(
+            selectedVersion,
+            authorized.Capabilities);
+        if (setupAdapter == HandleScopeSetupAdapter.NativeV1 &&
+            manifest is null)
+        {
+            throw new HandleScopeInstallException(
+                HandleScopeInstallFailureKind.ReleaseIntegrity,
+                "The native HandleScope setup release has no catalog-authorized release manifest.");
+        }
+        return new(
+            release,
+            manifest,
+            authorized,
+            setupAdapter);
     }
+
+    internal static string GetSetupRelativePath(
+        HandleScopeSetupAdapter adapter) => adapter switch
+        {
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned =>
+                LegacySetupRelativePath,
+            HandleScopeSetupAdapter.NativeV1 => NativeSetupRelativePath,
+            _ => throw UnsupportedSetupAdapter()
+        };
 
     internal static Uri CreateCanonicalAssetUri(string tag, string assetName)
     {
@@ -148,9 +194,10 @@ internal static partial class HandleScopeCatalogInstallPolicy
         }
     }
 
-    internal static void VerifyExternalManifest(
+    internal static HandleScopeSetupExecutableIdentity? VerifyExternalManifest(
         ReadOnlySpan<byte> contents,
-        HandleScopeCompatibleRelease catalogRelease)
+        HandleScopeCompatibleRelease catalogRelease,
+        HandleScopeSetupAdapter setupAdapter)
     {
         ArgumentNullException.ThrowIfNull(catalogRelease);
         string json;
@@ -188,7 +235,10 @@ internal static partial class HandleScopeCatalogInstallPolicy
             throw InvalidManifest(exception);
         }
 
-        if (manifest.SchemaVersion != 1 ||
+        var setupExecutable = ValidateSetupExecutable(
+            manifest,
+            setupAdapter);
+        if (manifest.SchemaVersion != ExpectedManifestSchema(setupAdapter) ||
             manifest.Product != "HandleScope" ||
             manifest.Repository != Repository ||
             manifest.Version != catalogRelease.Version ||
@@ -220,6 +270,7 @@ internal static partial class HandleScopeCatalogInstallPolicy
         {
             throw InvalidManifest();
         }
+        return setupExecutable;
     }
 
     internal static bool HasSameAuthorizedIdentity(
@@ -228,7 +279,8 @@ internal static partial class HandleScopeCatalogInstallPolicy
     {
         ArgumentNullException.ThrowIfNull(expected);
         ArgumentNullException.ThrowIfNull(current);
-        return SameReleaseIdentity(expected.Release, current.Release) &&
+        return expected.SetupAdapter == current.SetupAdapter &&
+            SameReleaseIdentity(expected.Release, current.Release) &&
             SameAsset(expected.Manifest, current.Manifest) &&
             SameCatalogRelease(expected.CatalogRelease, current.CatalogRelease);
     }
@@ -344,6 +396,34 @@ internal static partial class HandleScopeCatalogInstallPolicy
     private static HandleScopeInstallException UnauthorizedSelectedRuntime() => new(
         HandleScopeInstallFailureKind.ReleaseIntegrity,
         "The selected HandleScope runtime is revoked or is not an authorized supported catalog release.");
+
+    private static HandleScopeSetupAdapter SelectSetupAdapter(
+        Version version,
+        IReadOnlyList<string> capabilities)
+    {
+        var setupCapabilities = capabilities
+            .Where(capability => capability.StartsWith(
+                "handlescope.setup.",
+                StringComparison.Ordinal))
+            .ToArray();
+        if (version == LegacyV014 || version == LegacyV022)
+        {
+            if (setupCapabilities.Length == 0)
+                return HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned;
+            throw UnsupportedSetupAdapter();
+        }
+
+        if (setupCapabilities.Length == 1 &&
+            setupCapabilities[0] == NativeSetupCapability)
+        {
+            return HandleScopeSetupAdapter.NativeV1;
+        }
+        throw UnsupportedSetupAdapter();
+    }
+
+    private static HandleScopeInstallException UnsupportedSetupAdapter() => new(
+        HandleScopeInstallFailureKind.ReleaseIntegrity,
+        "The selected HandleScope release does not use a setup adapter compiled into this SessionDock version.");
 
     private static bool SameReleaseIdentity(
         HandleScopeReleaseIdentity expected,
@@ -462,6 +542,37 @@ internal static partial class HandleScopeCatalogInstallPolicy
         manifest.Size == catalog.Size &&
         manifest.Sha256 == catalog.Sha256;
 
+    private static int ExpectedManifestSchema(
+        HandleScopeSetupAdapter setupAdapter) => setupAdapter switch
+        {
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned => 1,
+            HandleScopeSetupAdapter.NativeV1 => 2,
+            _ => throw UnsupportedSetupAdapter()
+        };
+
+    private static HandleScopeSetupExecutableIdentity? ValidateSetupExecutable(
+        ExternalReleaseManifest manifest,
+        HandleScopeSetupAdapter setupAdapter)
+    {
+        if (setupAdapter ==
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned)
+        {
+            if (manifest.SetupExecutable is not null)
+                throw InvalidManifest();
+            return null;
+        }
+        if (setupAdapter != HandleScopeSetupAdapter.NativeV1 ||
+            manifest.SetupExecutable is not { } setup ||
+            setup.Path != "api/HandleScope.Setup.exe" ||
+            setup.Size is <= 0 or >
+                HandleScopeCompatibilityCatalogPolicy.MaximumExecutableBytes ||
+            !Sha256Pattern().IsMatch(setup.Sha256 ?? string.Empty))
+        {
+            throw InvalidManifest();
+        }
+        return new(setup.Path, setup.Size, setup.Sha256!);
+    }
+
     private static bool IsValidSbom(ManifestAsset? sbom, string version) =>
         sbom is not null &&
         sbom.Name == $"HandleScope-{version}-win-x64.spdx.json" &&
@@ -526,6 +637,7 @@ internal static partial class HandleScopeCatalogInstallPolicy
         public ManifestAsset? Package { get; set; }
         public ManifestAsset? Sbom { get; set; }
         public ManifestRuntime? ApiExecutable { get; set; }
+        public ManifestRuntime? SetupExecutable { get; set; }
     }
 
     private sealed class ManifestAsset

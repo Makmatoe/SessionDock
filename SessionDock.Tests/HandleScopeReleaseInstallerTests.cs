@@ -166,13 +166,70 @@ public sealed class HandleScopeReleaseInstallerTests
         Assert.DoesNotContain(startInfo.ArgumentList, IsForbiddenInstallerArgument);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void CreateInstallerStartInfo_NativeUsesNoShellOrPowerShellPolicy(
+        bool verifyOnly)
+    {
+        var installerPath = Path.Combine(
+            Path.GetTempPath(),
+            "HandleScopeReleaseTests",
+            "api",
+            "HandleScope.Setup.exe");
+        var fullInstallerPath = Path.GetFullPath(installerPath);
+
+        var startInfo = HandleScopeReleaseInstaller.CreateInstallerStartInfo(
+            installerPath,
+            HandleScopeSetupAdapter.NativeV1,
+            verifyOnly);
+
+        Assert.Equal(fullInstallerPath, startInfo.FileName);
+        Assert.Equal(
+            verifyOnly
+                ? ["verify"]
+                : new[] { "install", "--start-now", "--enable-autostart" },
+            startInfo.ArgumentList);
+        Assert.False(startInfo.UseShellExecute);
+        Assert.True(startInfo.CreateNoWindow);
+        Assert.True(startInfo.RedirectStandardError);
+        Assert.True(startInfo.RedirectStandardOutput);
+        Assert.Equal(Path.GetDirectoryName(fullInstallerPath), startInfo.WorkingDirectory);
+        Assert.DoesNotContain(
+            startInfo.ArgumentList,
+            argument => argument.Contains(
+                "ExecutionPolicy",
+                StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(startInfo.ArgumentList, IsForbiddenInstallerArgument);
+    }
+
+    [Theory]
+    [InlineData("Install-HandleScopeApi.ps1", 1)]
+    [InlineData("HandleScope.Setup.exe", 0)]
+    public void CreateInstallerStartInfo_RejectsPathAdapterMismatch(
+        string fileName,
+        int adapterValue)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "api", fileName);
+
+        Assert.Throws<ArgumentException>(() =>
+            HandleScopeReleaseInstaller.CreateInstallerStartInfo(
+                path,
+                (HandleScopeSetupAdapter)adapterValue,
+                verifyOnly: true));
+    }
+
     [Fact]
     public async Task CreateInstallerStartInfo_RunsVerifiedScriptFromRestrictedProcessPolicy()
     {
         var root = CreateTemporaryRoot();
         try
         {
-            var installerPath = Path.Combine(root, "verified-installer.ps1");
+            var installerPath = Path.Combine(
+                root,
+                "api",
+                "Install-HandleScopeApi.ps1");
+            Directory.CreateDirectory(Path.GetDirectoryName(installerPath)!);
             await File.WriteAllTextAsync(
                 installerPath,
                 "param([switch]$VerifyOnly)\nif (-not $VerifyOnly) { exit 9 }\nexit 0\n",
@@ -200,7 +257,11 @@ public sealed class HandleScopeReleaseInstallerTests
         var root = CreateTemporaryRoot();
         try
         {
-            var installerPath = Path.Combine(root, "failing-installer.ps1");
+            var installerPath = Path.Combine(
+                root,
+                "api",
+                "Install-HandleScopeApi.ps1");
+            Directory.CreateDirectory(Path.GetDirectoryName(installerPath)!);
             await File.WriteAllTextAsync(
                 installerPath,
                 "param([switch]$VerifyOnly)\nthrow 'reviewed installer failure'\n",
@@ -247,7 +308,11 @@ public sealed class HandleScopeReleaseInstallerTests
         var root = CreateTemporaryRoot();
         try
         {
-            var installerPath = Path.Combine(root, "noisy-installer.ps1");
+            var installerPath = Path.Combine(
+                root,
+                "api",
+                "Install-HandleScopeApi.ps1");
+            Directory.CreateDirectory(Path.GetDirectoryName(installerPath)!);
             await File.WriteAllTextAsync(
                 installerPath,
                 "param([switch]$VerifyOnly)\n[Console]::Error.WriteLine('bounded failure')\n$chunk = 'x' * 1024\n1..128 | ForEach-Object { [Console]::Out.WriteLine($chunk); [Console]::Error.WriteLine($chunk) }\nexit 23\n",
