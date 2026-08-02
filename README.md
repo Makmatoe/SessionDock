@@ -168,14 +168,19 @@ HandleScope release, plus automatic, `v1`, or `v2` API negotiation. Checking or
 selecting versions never installs, replaces, starts, stops, upgrades, or
 downgrades software. **Install** requires a separate confirmation for the exact
 selected release. SessionDock then verifies the catalog-authorized package,
-checksum, optional immutable release manifest, API executable identity, safe
-ZIP layout, and internal inventory before running HandleScope's standard-user
-installer. Downgrades are refused. `RemoteSigned` is scoped only to that
-verified child process; SessionDock never uses `Bypass` or `Unrestricted`,
-changes saved policy, overrides Group Policy, elevates, or automatically enables
-the integration. The installer may start HandleScope and enable its limited
-per-user autostart only after confirmation; SessionDock opt-in remains a
-separate explicit choice.
+checksum, any cataloged immutable release manifest, executable identities, safe
+ZIP layout, and internal inventory before running one of its locally compiled
+standard-user setup adapters. A release declaring the signed
+`handlescope.setup.native.v1` capability must provide a catalog-pinned v2
+release manifest whose exact `api/HandleScope.Setup.exe` size and SHA-256 match
+the locked extracted inventory. SessionDock invokes that fixed executable
+directly for only `verify` and `install --start-now --enable-autostart`.
+Reviewed 0.1.4 and 0.2.2 releases retain their fixed Windows PowerShell
+`RemoteSigned` adapter for backwards compatibility. Downgrades are refused.
+Neither adapter uses `Bypass` or `Unrestricted`, changes saved policy, overrides
+Group Policy, elevates, or automatically enables the integration. Setup may
+start HandleScope and enable its limited per-user autostart only after
+confirmation; SessionDock opt-in remains a separate explicit choice.
 
 To use the optional connector, select **Integrations** in the SessionDock
 sidebar. That panel also manages the separate **Open with SessionDock** link

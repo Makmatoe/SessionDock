@@ -153,12 +153,12 @@ public sealed class HandleScopeVersionManagerTests : IDisposable
     {
         var future = HandleScopeCompatibilityCatalogTestData.CreateRelease(
             version: "0.2.1",
-            minimumSessionDockVersion: "2.9.0");
+            minimumSessionDockVersion: "3.0.0");
         using var manager = CreateManager(
             HandleScopeCompatibilityCatalogTestData.CreateCatalog(
                 [future],
                 recommendedVersion: "0.2.1",
-                sessionDockVersion: "2.9.0"),
+                sessionDockVersion: "3.0.0"),
             Path.Combine(_root, "future-selection.json"),
             "future-only.json");
 
@@ -168,6 +168,49 @@ public sealed class HandleScopeVersionManagerTests : IDisposable
         Assert.False(snapshot.SelectionIsValid);
         Assert.Null(snapshot.SelectedRelease);
         Assert.Equal("0.2.1", snapshot.RecommendedRelease.Version);
+    }
+
+    [Fact]
+    public void Load_OlderSessionDockFallsBackToNewestCompatibleRecommendation()
+    {
+        var legacy = HandleScopeCompatibilityCatalogTestData.CreateRelease(
+            version: "0.2.2",
+            minimumSessionDockVersion: "2.8.0");
+        var native = HandleScopeCompatibilityCatalogTestData.CreateRelease(
+            version: "0.3.0",
+            minimumSessionDockVersion: "2.9.0");
+        native = native with
+        {
+            Capabilities = native.Capabilities
+                .Append(HandleScopeCatalogInstallPolicy.NativeSetupCapability)
+                .Order(StringComparer.Ordinal)
+                .ToArray()
+        };
+        var catalog = HandleScopeCompatibilityCatalogTestData.CreateCatalog(
+            [legacy, native],
+            recommendedVersion: "0.3.0",
+            sessionDockVersion: "2.9.0");
+        var selectionPath = Path.Combine(_root, "older-selection.json");
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var service = new HandleScopeCompatibilityCatalogService(
+            new NoNetworkHandler(),
+            Path.Combine(_root, "older-catalog.json"),
+            HandleScopeCompatibilityCatalogPolicy.Serialize(catalog),
+            key.ExportSubjectPublicKeyInfoPem());
+        using var manager = new HandleScopeVersionManager(
+            service,
+            new HandleScopeSelectionStore(selectionPath),
+            new MissingRuntimeResolver(),
+            Path.Combine(_root, "missing.exe"),
+            new Version(2, 8, 0));
+
+        var snapshot = manager.Load();
+
+        Assert.Equal(["0.2.2"], snapshot.CompatibleReleases
+            .Select(release => release.Version));
+        Assert.Equal("0.2.2", snapshot.RecommendedRelease.Version);
+        Assert.Equal("0.2.2", snapshot.SelectedRelease?.Version);
+        Assert.True(snapshot.SelectionIsValid);
     }
 
     public void Dispose()

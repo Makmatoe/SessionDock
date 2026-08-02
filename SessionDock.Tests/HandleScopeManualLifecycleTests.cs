@@ -55,7 +55,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         var startInfo = HandleScopeIntegrationDialog.CreateOfficialSetupStartInfo();
 
         Assert.Equal(
-            "https://github.com/Makmatoe/HandleScope/blob/v0.1.4/docs/INSTALL.md",
+            "https://github.com/Makmatoe/HandleScope/blob/v0.3.0/docs/INSTALL.md",
             startInfo.FileName);
         Assert.True(startInfo.UseShellExecute);
         Assert.Empty(startInfo.ArgumentList);
@@ -142,6 +142,10 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.Contains("HandleScopeCatalogInstallPolicy", source, StringComparison.Ordinal);
         Assert.Contains("HandleScopeCompatibilityCatalogPolicy", source, StringComparison.Ordinal);
         Assert.Contains("Install-HandleScopeApi.ps1", source, StringComparison.Ordinal);
+        Assert.Contains("HandleScope.Setup.exe", source, StringComparison.Ordinal);
+        Assert.Contains("handlescope.setup.native.v1", source, StringComparison.Ordinal);
+        Assert.Contains("--start-now", source, StringComparison.Ordinal);
+        Assert.Contains("--enable-autostart", source, StringComparison.Ordinal);
         Assert.Contains("-StartNow", source, StringComparison.Ordinal);
         Assert.Contains("-EnableAutostart", source, StringComparison.Ordinal);
         Assert.Contains("-ExecutionPolicy", source, StringComparison.Ordinal);
@@ -300,6 +304,18 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         Assert.Contains("v2", documentation, StringComparison.Ordinal);
         Assert.Contains("Check versions", documentation, StringComparison.Ordinal);
         Assert.Contains("standard-user", documentation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "handlescope.setup.native.v1",
+            documentation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "api/HandleScope.Setup.exe",
+            documentation,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "release-manifest schema v2",
+            documentation,
+            StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
             "API running - integration disabled",
             documentation,
@@ -329,6 +345,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
         {
             var notes = File.ReadAllText(path);
             Assert.Contains("0.2.2", notes, StringComparison.Ordinal);
+            Assert.Contains("0.3.0", notes, StringComparison.Ordinal);
             Assert.Contains("catalog", notes, StringComparison.OrdinalIgnoreCase);
         });
     }

@@ -100,6 +100,21 @@ internal static partial class HandleScopeReleasePolicy
         string extractionRoot,
         string version,
         CancellationToken cancellationToken)
+        => await ExtractAndVerifyAsync(
+            archivePath,
+            extractionRoot,
+            version,
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned,
+            expectedSetupExecutable: null,
+            cancellationToken);
+
+    internal static async Task<string> ExtractAndVerifyAsync(
+        string archivePath,
+        string extractionRoot,
+        string version,
+        HandleScopeSetupAdapter setupAdapter,
+        HandleScopeSetupExecutableIdentity? expectedSetupExecutable,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(archivePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(extractionRoot);
@@ -118,6 +133,8 @@ internal static partial class HandleScopeReleasePolicy
             Path.GetDirectoryName(Path.GetFullPath(extractionRoot))
                 ?? extractionRoot,
             version,
+            setupAdapter,
+            expectedSetupExecutable,
             cancellationToken);
         return bundle.InstallerPath;
     }
@@ -128,12 +145,35 @@ internal static partial class HandleScopeReleasePolicy
             string extractionRoot,
             string protectionRoot,
             string version,
+            CancellationToken cancellationToken) =>
+        await ExtractAndVerifyLockedAsync(
+            archiveStream,
+            extractionRoot,
+            protectionRoot,
+            version,
+            HandleScopeSetupAdapter.LegacyPowerShellRemoteSigned,
+            expectedSetupExecutable: null,
+            cancellationToken);
+
+    internal static async Task<HandleScopeVerifiedBundle>
+        ExtractAndVerifyLockedAsync(
+            FileStream archiveStream,
+            string extractionRoot,
+            string protectionRoot,
+            string version,
+            HandleScopeSetupAdapter setupAdapter,
+            HandleScopeSetupExecutableIdentity? expectedSetupExecutable,
             CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(archiveStream);
         ArgumentException.ThrowIfNullOrWhiteSpace(extractionRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(protectionRoot);
         ArgumentException.ThrowIfNullOrWhiteSpace(version);
+        if ((setupAdapter == HandleScopeSetupAdapter.NativeV1) !=
+            (expectedSetupExecutable is not null))
+        {
+            throw InvalidArchive();
+        }
         if (!archiveStream.CanRead || !archiveStream.CanSeek)
             throw new ArgumentException(
                 "The verified HandleScope archive stream must be readable and seekable.",
@@ -189,8 +229,7 @@ internal static partial class HandleScopeReleasePolicy
         var manifestPath = Path.Combine(bundleRoot, "CONTENTS.sha256");
         var installerPath = Path.Combine(
             bundleRoot,
-            "api",
-            "Install-HandleScopeApi.ps1");
+            HandleScopeCatalogInstallPolicy.GetSetupRelativePath(setupAdapter));
         var executablePath = Path.Combine(
             bundleRoot,
             "api",
@@ -256,6 +295,7 @@ internal static partial class HandleScopeReleasePolicy
             manifestBytes,
             expected,
             expectedDirectories,
+            expectedSetupExecutable,
             cancellationToken);
     }
 
@@ -504,6 +544,7 @@ internal sealed class HandleScopeVerifiedBundle : IDisposable
         ReadOnlyMemory<byte> trustedManifestBytes,
         IReadOnlyDictionary<string, byte[]> expectedInventory,
         IReadOnlySet<string> expectedDirectories,
+        HandleScopeSetupExecutableIdentity? expectedSetupExecutable,
         CancellationToken cancellationToken)
     {
         var normalizedProtectionRoot = Path.GetFullPath(protectionRoot)
@@ -571,6 +612,7 @@ internal sealed class HandleScopeVerifiedBundle : IDisposable
                 new HashSet<string>(expectedDirectories, StringComparer.Ordinal),
                 fileLocks,
                 directoryLocks);
+            bundle.ValidateSetupExecutableIdentity(expectedSetupExecutable);
             await bundle.RevalidateForExecutionAsync(cancellationToken);
             return bundle;
         }
@@ -636,6 +678,37 @@ internal sealed class HandleScopeVerifiedBundle : IDisposable
                 throw new HandleScopeInstallException(
                     "The HandleScope bundle changed after verification and was not executed.");
             }
+        }
+    }
+
+    private void ValidateSetupExecutableIdentity(
+        HandleScopeSetupExecutableIdentity? expectedSetupExecutable)
+    {
+        if (expectedSetupExecutable is null)
+            return;
+        const string setupPath = "api/HandleScope.Setup.exe";
+        if (expectedSetupExecutable.Path != setupPath ||
+            !_expectedFiles.TryGetValue(setupPath, out var inventoryHash) ||
+            !_fileLocks.TryGetValue(setupPath, out var setupLock) ||
+            setupLock.Length != expectedSetupExecutable.Size)
+        {
+            throw InvalidBundle();
+        }
+        byte[] expectedHash;
+        try
+        {
+            expectedHash = Convert.FromHexString(expectedSetupExecutable.Sha256);
+        }
+        catch (FormatException)
+        {
+            throw InvalidBundle();
+        }
+        if (expectedHash.Length != SHA256.HashSizeInBytes ||
+            !CryptographicOperations.FixedTimeEquals(
+                expectedHash,
+                inventoryHash))
+        {
+            throw InvalidBundle();
         }
     }
 

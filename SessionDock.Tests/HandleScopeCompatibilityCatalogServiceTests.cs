@@ -35,6 +35,26 @@ public sealed class HandleScopeCompatibilityCatalogServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Refresh_UsesAssemblyDerivedSessionDockUserAgent()
+    {
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        using var handler = new CountingHandler();
+        using var service = new HandleScopeCompatibilityCatalogService(
+            handler,
+            Path.Combine(_root, "user-agent.json"),
+            HandleScopeCompatibilityCatalogPolicy.Serialize(
+                HandleScopeCompatibilityCatalogTestData.CreateCatalog()),
+            key.ExportSubjectPublicKeyInfoPem());
+
+        await Assert.ThrowsAsync<HandleScopeCatalogException>(() =>
+            service.RefreshAsync(TestContext.Current.CancellationToken));
+
+        Assert.Equal(
+            $"SessionDock/{typeof(MainWindow).Assembly.GetName().Version!.ToString(3)}",
+            handler.UserAgent);
+    }
+
+    [Fact]
     public void Load_ExpiredEmbeddedCatalogWithoutAuthenticatedStateFailsClosed()
     {
         var now = DateTimeOffset.UtcNow;
@@ -694,12 +714,14 @@ public sealed class HandleScopeCompatibilityCatalogServiceTests : IDisposable
     private sealed class CountingHandler : HttpMessageHandler
     {
         internal int RequestCount { get; private set; }
+        internal string? UserAgent { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             RequestCount++;
+            UserAgent = request.Headers.UserAgent.ToString();
             return Task.FromResult(new HttpResponseMessage(
                 HttpStatusCode.InternalServerError));
         }

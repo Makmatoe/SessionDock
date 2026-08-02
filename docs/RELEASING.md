@@ -184,6 +184,20 @@ chooses the compiled `/v1/handles/close` or `/v2/handles/close` adapter. The
 v0.1.4 catalog entry intentionally retains its metadata-404 legacy `v1`
 fallback and exact historical package/executable identities.
 
+Setup selection is also a closed compiled contract. The reviewed 0.1.4 and
+0.2.2 entries contain no `handlescope.setup.*` capability and use only the fixed
+`api/Install-HandleScopeApi.ps1` Windows PowerShell adapter with process-scoped
+`RemoteSigned`. A newer release can select the native adapter only with the
+exact signed `handlescope.setup.native.v1` capability. It must use external
+release-manifest schema v2 with one exact `setupExecutable` identity at
+`api/HandleScope.Setup.exe`; SessionDock compares its size and SHA-256 with the
+locked extracted `CONTENTS.sha256` inventory before directly invoking only
+`verify` and `install --start-now --enable-autostart`. The catalog does not and
+must not gain a path, command, argument, or setup-executable field: its pinned
+package and release-manifest hashes bind those reviewed bytes while preserving
+catalog schema v1 and historical signatures. Missing, unknown, or contradictory
+setup capabilities are not installable.
+
 Before adding or recommending a HandleScope release, review the immutable
 public tag, commit, canonical assets, checksum contents, optional manifest,
 standard-user installer, versioned integration contract, discovery schema,
@@ -206,12 +220,12 @@ Checking the catalog or changing Automatic, Keep installed, Exact, `v1`, or
 `v2` preferences must never install or replace software. Installation stays a
 separate confirmation for the selected catalog release. Retain exact asset and
 executable verification, safe ZIP/inventory checks, the standard-user
-`RemoteSigned`-only child process, the downgrade refusal, and the separate
-integration opt-in. Never introduce `Bypass`, `Unrestricted`, elevation, silent
-installation, silent updating, or silent downgrading. Any compatibility change
-must update all five localized resources and current release notes and extend
-the focused catalog, installer, runtime, negotiation, and backwards-
-compatibility tests.
+closed native/legacy setup adapters, the downgrade refusal, and the separate
+integration opt-in. Never introduce catalog-defined commands or paths,
+`Bypass`, `Unrestricted`, elevation, silent installation, silent updating, or
+silent downgrading. Any compatibility change must update all five localized
+resources and current release notes and extend the focused catalog, installer,
+runtime, negotiation, and backwards-compatibility tests.
 
 ## Prepare and validate
 

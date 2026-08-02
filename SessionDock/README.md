@@ -88,13 +88,16 @@ checking or changing that preference never installs, replaces, or downgrades
 software.
 
 After a separate confirmation, SessionDock verifies the selected package,
-checksum, optional release manifest, executable, ZIP layout, and internal
-inventory, then runs the standard-user installer with `RemoteSigned` scoped
-only to that verified child process. It refuses downgrades and never uses
-`Bypass` or `Unrestricted`, changes saved policy, overrides Group Policy,
-elevates, or enables the integration automatically. The existing minimal
-`handlescope.json` opt-in and exact five-field `connection.json` discovery
-contract remain compatible. See
+checksum, any cataloged release manifest, executable identities, ZIP layout,
+and internal inventory, then uses one locally compiled setup adapter. Native
+releases require a v2 manifest and run only the fixed locked
+`api/HandleScope.Setup.exe` directly after its identity matches the inventory.
+Reviewed 0.1.4 and 0.2.2
+releases retain their fixed process-scoped `RemoteSigned` adapter. SessionDock
+refuses downgrades and never uses `Bypass` or `Unrestricted`, changes saved
+policy, overrides Group Policy, elevates, or enables the integration
+automatically. The existing minimal `handlescope.json` opt-in and exact
+five-field `connection.json` discovery contract remain compatible. See
 [SystemProcesses/README.md](SystemProcesses/README.md).
 
 ## Updates

@@ -92,11 +92,16 @@ commands, local paths, or API endpoints.
    preference is local-only and performs no lifecycle action.
 4. Select **Install** and review the separate confirmation for the selected
    version. SessionDock downloads only the canonical catalog-authorized package,
-   checksum, and optional immutable release manifest. It requires exact sizes
-   and SHA-256 hashes, matching checksum contents, API executable identity, safe
-   bounded ZIP layout, and complete internal inventory before it invokes
-   HandleScope's own verification and standard-user installer. It supplies only
-   process-scoped `-ExecutionPolicy RemoteSigned`; it never supplies `Bypass`,
+   checksum, and any cataloged immutable release manifest. It requires exact
+   sizes and SHA-256 hashes, matching checksum contents, executable identities,
+   safe bounded ZIP layout, and complete internal inventory before it invokes one
+   locally compiled setup adapter. The exact signed
+   `handlescope.setup.native.v1` capability requires release-manifest schema v2
+   and fixed `api/HandleScope.Setup.exe` identity. SessionDock matches that
+   identity to the locked extracted inventory and directly supplies only
+   `verify`, then `install --start-now --enable-autostart`. Reviewed 0.1.4 and
+   0.2.2 releases retain only their fixed PowerShell script with process-scoped
+   `-ExecutionPolicy RemoteSigned`. Neither adapter supplies `Bypass`,
    `Unrestricted`, `-AllowDowngrade`, `-EnableSessionDock`, or an elevation
    option. A supported older installation may be replaced only after the
    disclosed confirmation; every downgrade is refused.
@@ -124,6 +129,14 @@ Downloads are staged under a random non-reparse temporary directory and removed
 after completion or a pre-install failure. Once the verified installer begins
 its atomic file replacement, SessionDock lets it finish and keeps the integration
 window open instead of interrupting the swap.
+
+Catalog data never supplies the setup path or arguments. Releases 0.1.4 and
+0.2.2 are the only reviewed legacy adapters. Every other installable release
+must declare exactly `handlescope.setup.native.v1`; an unknown, missing, or
+contradictory `handlescope.setup.*` capability fails before any asset is
+downloaded or process is launched. The native setup executable, the archive,
+every inventory file, and the catalog lease stay locked and are revalidated
+before and after both child-process phases.
 
 The exact executable hash is only one part of the trust boundary. SessionDock
 also checks the standard per-user path and reparse points, process path,

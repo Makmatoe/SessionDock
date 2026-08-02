@@ -64,12 +64,19 @@ SessionDock is designed around these boundaries:
   `v2` preferences never install, replace, start, stop, upgrade, or downgrade
   HandleScope. Installation is a separate confirmed action for one selected
   compatible release. SessionDock requires the catalog-authorized package and
-  checksum identities, matching checksum contents, optional immutable release
-  manifest, API executable identity, safe bounded ZIP layout, and complete
-  internal inventory before running the standard-user installer. It refuses a
-  downgrade and uses `RemoteSigned` only for that verified child process; it
-  never uses `Bypass` or `Unrestricted`, changes saved policy, overrides Group
-  Policy, requests elevation, or automatically opts in the integration.
+  checksum identities, matching checksum contents, any cataloged immutable
+  release manifest, executable identities, safe bounded ZIP layout, and
+  complete internal inventory before running a standard-user setup adapter
+  compiled into SessionDock. The signed `handlescope.setup.native.v1`
+  capability selects only
+  the fixed locked `api/HandleScope.Setup.exe`; its catalog-pinned v2 manifest
+  identity must match the extracted file before the direct `verify` and
+  `install --start-now --enable-autostart` phases. Reviewed 0.1.4 and 0.2.2
+  releases retain only their fixed Windows PowerShell `RemoteSigned` adapter.
+  Unknown, missing, or contradictory setup capabilities fail before download or
+  launch. SessionDock refuses downgrades and never uses `Bypass` or
+  `Unrestricted`, changes saved policy, overrides Group Policy, requests
+  elevation, or automatically opts in the integration.
 - The legacy `%LOCALAPPDATA%\SessionDock\handlescope.json` policy file and exact
   five-field `%LOCALAPPDATA%\HandleScope\connection.json` discovery document
   remain unchanged. Discovery continues to report `apiVersion: "v1"`. After

@@ -159,16 +159,20 @@ ordinary network and privacy behavior.
 
 Only a separately confirmed **Install** action contacts the canonical
 Makmatoe/HandleScope release assets. It downloads the exact selected package,
-checksum, and optional immutable release manifest authorized by the signed
-catalog. Those requests expose ordinary connection metadata to GitHub and its
+checksum, and any immutable release manifest authorized by the signed catalog.
+Those requests expose ordinary connection metadata to GitHub and its
 asset hosts, but send no HandleScope token or Roblox account data. Files are
 staged in a random temporary directory and removed after completion or a
 pre-install failure when cleanup succeeds. The standard-user installer may
 replace an older supported per-user installation as disclosed, but SessionDock
-refuses downgrades. It uses `RemoteSigned` only for that verified child process,
-never `Bypass` or `Unrestricted`; saved policy is unchanged and Group Policy
-remains authoritative. The installer may start the API and enable its limited
-per-user autostart task, but it does not enable SessionDock's integration.
+refuses downgrades. A signed native-setup capability selects only the fixed
+locked `api/HandleScope.Setup.exe`, run directly with locally compiled verify
+and install arguments after its v2 release-manifest identity matches the
+extracted inventory. Reviewed 0.1.4 and 0.2.2 releases retain their fixed
+Windows PowerShell `RemoteSigned` adapter. Neither path uses `Bypass` or
+`Unrestricted`; saved policy is unchanged and Group Policy remains
+authoritative. Setup may start the API and enable its limited per-user autostart
+task, but it does not enable SessionDock's integration.
 
 Backwards compatibility does not expand the old local file formats.
 `%LOCALAPPDATA%\SessionDock\handlescope.json` remains the existing minimal

@@ -3,11 +3,11 @@
   "product": "SessionDock.HandleScopeCompatibility",
   "repository": "Makmatoe/SessionDock",
   "keyId": "sessiondock-release-2026-01",
-  "sequence": 1,
-  "generatedAt": "2026-08-02T00:00:00.0000000+00:00",
-  "expiresAt": "2027-08-02T00:00:00.0000000+00:00",
-  "sessionDockVersion": "2.8.0",
-  "recommendedVersion": "0.2.2",
+  "sequence": 2,
+  "generatedAt": "2026-08-02T19:26:22.0000000+00:00",
+  "expiresAt": "2027-08-02T19:26:22.0000000+00:00",
+  "sessionDockVersion": "2.9.0",
+  "recommendedVersion": "0.3.0",
   "releases": [
     {
       "version": "0.1.4",
@@ -78,6 +78,45 @@
         "sha256": "c59832edde22c177a7aa8b7f94541d2c5cbb42790a043a7ec893dcd975501ce5"
       },
       "contractUrl": "https://github.com/Makmatoe/HandleScope/blob/v0.2.2/docs/integrations/sessiondock.md"
+    },
+    {
+      "version": "0.3.0",
+      "tag": "v0.3.0",
+      "status": "supported",
+      "minimumSessionDockVersion": "2.9.0",
+      "maximumSessionDockVersionExclusive": null,
+      "apiContracts": [
+        "v1",
+        "v2"
+      ],
+      "capabilities": [
+        "handlescope.http.v1",
+        "handlescope.http.v2",
+        "handlescope.plan.single-use.v1",
+        "handlescope.policy.roblox-singleton-event.v1",
+        "handlescope.setup.native.v1"
+      ],
+      "package": {
+        "name": "HandleScope-0.3.0-win-x64.zip",
+        "size": 133865757,
+        "sha256": "c661b2910180480ec432a69036fbc0919a32600bb0391e7b35a4dc634475055c"
+      },
+      "checksums": {
+        "name": "SHA256SUMS.txt",
+        "size": 303,
+        "sha256": "24440b60e0596171b5413ad09aab58ccec3f675a1dbcfd0b51408cab8ad47b78"
+      },
+      "manifest": {
+        "name": "HandleScope-0.3.0-win-x64.release.json",
+        "size": 1372,
+        "sha256": "db6f8663b8fa513ce42be4713e1e77d35bcf88028a54f65bef8dbd21cfef448d"
+      },
+      "apiExecutable": {
+        "path": "api/HandleScope.Api.exe",
+        "size": 50282069,
+        "sha256": "a951687cad055b567869f8c20aad906689422eb4a87a8aea1cbcd102a70956c7"
+      },
+      "contractUrl": "https://github.com/Makmatoe/HandleScope/blob/v0.3.0/docs/integrations/sessiondock.md"
     }
   ],
   "signature": ""
