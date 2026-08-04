@@ -7,10 +7,10 @@ namespace SessionDock.Tests;
 public sealed class ExactWheelProvenanceTests
 {
     private const string SourceCommit =
-        "1e3b6bfbbc5a2335af6c863cdcc32e2b70c7ffc1";
+        "a290cdb9fb5d0c5047103a9985016cb573ea954f";
 
     private const string CanonicalInventorySha256 =
-        "83ef063c36a990a0322e867d67e9a0db151c88424af17b5bed1eada1901b6232";
+        "3530b06a88f363f2097ae646be70d468f70d7ada968cef983861b907e14bede0";
 
     private const string ProjectGitBlob =
         "07fe8f9ec14088750f6d2a0d835c86b678a0f76e";
@@ -19,7 +19,7 @@ public sealed class ExactWheelProvenanceTests
         "76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841";
 
     private const string ManifestSha256 =
-        "4cc1d743ab40619b4bb48d77995534e60b611aacc0153ab80a1f7e8502e88397";
+        "05cbe826bb17e55a7ed8fb9632dbb342fec76482bb30b228ca0e3b7422d73aa3";
 
     [Fact]
     public void EmbeddedProvenance_PinsRepositoryNativeMitSourceIdentity()
@@ -42,7 +42,7 @@ public sealed class ExactWheelProvenanceTests
         Assert.Equal(JsonValueKind.Null, root.GetProperty("sourceTag").ValueKind);
         Assert.Equal(SourceCommit, root.GetProperty("sourceCommit").GetString());
         Assert.Equal(14, root.GetProperty("sourceFileCount").GetInt32());
-        Assert.Equal(216_308, root.GetProperty("sourceBytes").GetInt32());
+        Assert.Equal(249_698, root.GetProperty("sourceBytes").GetInt32());
         Assert.Equal(
             CanonicalInventorySha256,
             root.GetProperty("canonicalManifestSha256").GetString());
