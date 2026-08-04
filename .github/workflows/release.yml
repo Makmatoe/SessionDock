@@ -269,6 +269,8 @@ jobs:
           # Do not pass Velopack --icon while strict legacy updaters remain
           # supported: Velopack 1.2 adds setup.ico to the full nupkg, which
           # those released clients correctly reject as an unexpected entry.
+          # Velopack 1.2 otherwise omits createdump.exe. The verified input
+          # allowlist makes disabling its built-in exclusions safe.
           & ./release-input/vpk-tool/vpk.exe pack `
             --packId SessionDockApp `
             --packVersion $env:RELEASE_VERSION `
@@ -279,6 +281,7 @@ jobs:
             --releaseNotes ./release-input/notes.md `
             --runtime win-x64 `
             --channel win-x64-sessiondock `
+            --noDefaultExclude true `
             --noInst true `
             --outputDir ./release-output
           if ($LASTEXITCODE -ne 0) { throw "Velopack packaging failed with exit code $LASTEXITCODE." }

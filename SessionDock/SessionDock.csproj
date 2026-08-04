@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\SessionDock.ico</ApplicationIcon>
     <StartupObject>SessionDock.Program</StartupObject>
-    <Version>3.1.1</Version>
+    <Version>3.1.2</Version>
     <Product>SessionDock</Product>
     <Authors>Makmatoe</Authors>
     <Copyright>Copyright (c) 2026 Makmatoe</Copyright>
