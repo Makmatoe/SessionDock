@@ -58,24 +58,90 @@ public static class ExactWheelDesktopCapture
         bool requireForeground = true)
     {
         ArgumentNullException.ThrowIfNull(display);
-        if (string.IsNullOrWhiteSpace(verifiedProcessBasename) ||
-            verifiedProcessBasename.Length >
-                ExactWheelLimits.MaximumProcessBasenameUtf16Units ||
-            !string.Equals(
-                Path.GetFileName(verifiedProcessBasename),
-                verifiedProcessBasename,
-                StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "A verified process basename is required.",
-                nameof(verifiedProcessBasename));
-        }
+        ValidateProcessBasename(verifiedProcessBasename);
 
         var root = ValidateTargetWindow(windowHandle, requireForeground);
         return new ExactWheelRecordingTarget(
             root,
             display,
             CaptureTargetMetadata(root, verifiedProcessBasename));
+    }
+
+    /// <summary>
+    /// Reads the immutable Win32 class of a currently validated playback
+    /// window. A per-run caller can cache it by exact retained process/HWND.
+    /// </summary>
+    public static string CapturePlaybackWindowClass(
+        nint windowHandle,
+        bool requireForeground = true)
+    {
+        var root = ValidateTargetWindow(windowHandle, requireForeground);
+        return CaptureWindowClass(root);
+    }
+
+    /// <summary>
+    /// Captures immutable target metadata while reusing geometry read from an
+    /// immediately preceding exact-process focus validation. Foreground,
+    /// visibility, HWND validity, and window class are still checked live.
+    /// </summary>
+    public static ExactWheelRecordingTarget CapturePlaybackTarget(
+        nint windowHandle,
+        ExactWheelDisplayTopology display,
+        string verifiedProcessBasename,
+        ExactWheelRect verifiedWindowRect,
+        ExactWheelRect verifiedClientRect,
+        bool requireForeground = true)
+    {
+        ArgumentNullException.ThrowIfNull(display);
+        ValidateProcessBasename(verifiedProcessBasename);
+        ValidateSnapshotRect(verifiedWindowRect, nameof(verifiedWindowRect));
+        ValidateSnapshotRect(verifiedClientRect, nameof(verifiedClientRect));
+
+        var root = ValidateTargetWindow(windowHandle, requireForeground);
+        return new ExactWheelRecordingTarget(
+            root,
+            display,
+            new ExactWheelTargetMetadata(
+                verifiedProcessBasename,
+                CaptureWindowClass(root),
+                verifiedWindowRect,
+                verifiedClientRect));
+    }
+
+    /// <summary>
+    /// Creates live-validated playback metadata from geometry returned by the
+    /// immediately preceding exact-target focus and a window class cached by
+    /// the same retained process/HWND lease. The focus snapshot's client rect
+    /// is screen-space because focus mapped both client corners before
+    /// returning the snapshot. Geometry is necessarily point-in-time; every
+    /// loop refreshes it before playback,
+    /// while dispatch guards still fail closed if focus or pointer ownership
+    /// changes afterward.
+    /// </summary>
+    public static ExactWheelRecordingTarget CapturePlaybackTarget(
+        nint windowHandle,
+        ExactWheelDisplayTopology display,
+        string verifiedProcessBasename,
+        string verifiedWindowClass,
+        ExactWheelRect verifiedWindowRect,
+        ExactWheelRect verifiedClientRect,
+        bool requireForeground = true)
+    {
+        ArgumentNullException.ThrowIfNull(display);
+        ValidateProcessBasename(verifiedProcessBasename);
+        ValidateWindowClass(verifiedWindowClass);
+        ValidateSnapshotRect(verifiedWindowRect, nameof(verifiedWindowRect));
+        ValidateSnapshotRect(verifiedClientRect, nameof(verifiedClientRect));
+
+        var root = ValidateTargetWindow(windowHandle, requireForeground);
+        return new ExactWheelRecordingTarget(
+            root,
+            display,
+            new ExactWheelTargetMetadata(
+                verifiedProcessBasename,
+                verifiedWindowClass,
+                verifiedWindowRect,
+                verifiedClientRect));
     }
 
     public static ExactWheelDisplayTopology CaptureDisplayTopology()
@@ -229,15 +295,6 @@ public static class ExactWheelDesktopCapture
         nint root,
         string processBasename)
     {
-        var classNameBuffer = new char[
-            ExactWheelLimits.MaximumWindowClassUtf16Units + 1];
-        var classLength = ExactWheelNativeMethods.GetClassName(
-            root,
-            classNameBuffer,
-            classNameBuffer.Length);
-        if (classLength <= 0)
-            throw LastWin32("The selected target window class could not be read.");
-
         if (!ExactWheelNativeMethods.GetWindowRect(
                 root,
                 out var nativeWindowRect) ||
@@ -267,13 +324,71 @@ public static class ExactWheelDesktopCapture
 
         return new ExactWheelTargetMetadata(
             processBasename,
-            new string(classNameBuffer, 0, classLength),
+            CaptureWindowClass(root),
             ToModel(nativeWindowRect),
             new ExactWheelRect(
                 clientTopLeft.X,
                 clientTopLeft.Y,
                 clientBottomRight.X,
                 clientBottomRight.Y));
+    }
+
+    private static string CaptureWindowClass(nint root)
+    {
+        var classNameBuffer = new char[
+            ExactWheelLimits.MaximumWindowClassUtf16Units + 1];
+        var classLength = ExactWheelNativeMethods.GetClassName(
+            root,
+            classNameBuffer,
+            classNameBuffer.Length);
+        if (classLength <= 0)
+            throw LastWin32("The selected target window class could not be read.");
+        return new string(classNameBuffer, 0, classLength);
+    }
+
+    private static void ValidateProcessBasename(string processBasename)
+    {
+        if (string.IsNullOrWhiteSpace(processBasename) ||
+            processBasename.Length >
+                ExactWheelLimits.MaximumProcessBasenameUtf16Units ||
+            !string.Equals(
+                Path.GetFileName(processBasename),
+                processBasename,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "A verified process basename is required.",
+                nameof(processBasename));
+        }
+    }
+
+    private static void ValidateWindowClass(string windowClass)
+    {
+        if (string.IsNullOrWhiteSpace(windowClass) ||
+            windowClass.Length > ExactWheelLimits.MaximumWindowClassUtf16Units)
+        {
+            throw new ArgumentException(
+                "A verified window class is required.",
+                nameof(windowClass));
+        }
+    }
+
+    private static void ValidateSnapshotRect(
+        ExactWheelRect rectangle,
+        string parameterName)
+    {
+        try
+        {
+            if (rectangle.Width <= 0 || rectangle.Height <= 0)
+                throw new ArgumentOutOfRangeException(parameterName);
+        }
+        catch (OverflowException exception)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                rectangle,
+                $"The verified target bounds are invalid: {exception.Message}");
+        }
     }
 
     private static ExactWheelRect ToModel(

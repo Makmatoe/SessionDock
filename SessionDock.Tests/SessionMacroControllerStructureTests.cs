@@ -93,7 +93,7 @@ public sealed class SessionMacroControllerStructureTests
             "MainWindow.Templates.cs"));
 
         Assert.Contains("PrepareRuntimeMacroPlan", controllerSource);
-        Assert.Contains("_exactWheelMacroStore.Load", controllerSource);
+        Assert.Contains("store.Load(candidate)", controllerSource);
         Assert.Contains("ExactWheelPlaybackRate.Parse", controllerSource);
         Assert.Contains("Rate = playbackRate", playbackSource);
         Assert.Equal(
@@ -191,12 +191,15 @@ public sealed class SessionMacroControllerStructureTests
         Assert.Contains(
             "exception is System.ComponentModel.Win32Exception",
             method);
+        Assert.Contains(
+            "playbackRetryTracker.ReportFailure(window.Key);",
+            method);
         Assert.Contains("skipped++;", method);
         Assert.Contains("continue;", method);
     }
 
     [Fact]
-    public void FloatingController_RechecksArtifactAndClientReadiness()
+    public void FloatingController_UsesAdvisoryReadinessAndAuthoritativePlay()
     {
         var controllerSource = File.ReadAllText(RepoFile(
             "SessionDock",
@@ -204,6 +207,18 @@ public sealed class SessionMacroControllerStructureTests
         var runtimeSource = File.ReadAllText(RepoFile(
             "SessionDock",
             "MainWindow.SessionMacros.cs"));
+        var leaseCacheSource = File.ReadAllText(RepoFile(
+            "SessionDock",
+            "Services",
+            "SessionMacroPlaybackLeaseCache.cs"));
+        var readinessStart = runtimeSource.IndexOf(
+            "private SessionMacroControllerReadiness PrepareMacroControllerReadiness(",
+            StringComparison.Ordinal);
+        var readinessEnd = runtimeSource.IndexOf(
+            "private void PersistMacroPlaybackSpeed(",
+            readinessStart,
+            StringComparison.Ordinal);
+        var readiness = runtimeSource[readinessStart..readinessEnd];
 
         Assert.Contains("_prepareReadiness", controllerSource);
         Assert.Contains("_readinessTimer", controllerSource);
@@ -212,8 +227,10 @@ public sealed class SessionMacroControllerStructureTests
             controllerSource);
         Assert.Contains(": _readiness.CanPlay;", controllerSource);
         Assert.Contains("PrepareMacroControllerReadiness", runtimeSource);
-        Assert.Contains("PrepareRuntimeMacroPlan(snapshot, catalog)", runtimeSource);
-        Assert.Contains("AcquirePlaybackTargetLease", runtimeSource);
+        Assert.Contains("PrepareRuntimeMacroPlan(", runtimeSource);
+        Assert.Contains("validateMacroArtifacts: false", readiness);
+        Assert.DoesNotContain("AcquirePlaybackTargetLease", readiness);
+        Assert.Contains("AcquirePlaybackTargetLease", leaseCacheSource);
     }
 
     [Fact]

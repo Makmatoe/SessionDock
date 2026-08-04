@@ -329,6 +329,57 @@ The previous bounded metadata JSON action remains available for account
 appearance, matched account order, and pinned public favorites. It is a legacy
 compatibility path, not a template or macro package.
 
+## Playback performance behavior
+
+One controller run owns one ExactWheel playback session. The high-resolution
+timer, cancellation and intervention wait handles, verified process leases,
+process basenames, and immutable window classes are reused while each focus and
+dispatch is still live-validated. The blocking timing loop stays on its
+dedicated worker, and SessionDock runs the surrounding playback orchestration
+off the WPF UI thread. Progress sent back to the interface is coalesced to at
+most four updates per second without repeated UI Automation announcements.
+
+One low-level physical-input intervention hook is retained and reused for one
+complete client cycle instead of being recreated for every client. A paused or
+long recording can keep that cycle, and therefore that hook, open. The hook
+takes one physical-input baseline when the cycle starts and then tracks key and
+button transitions, avoiding repeated full native key-state scans during
+playback. SessionDock fails closed if the monitor thread exits; Windows does not
+provide a direct liveness query for silent hook removal.
+
+Canonical recordings are validated once and then reused without another sort
+or copy. Input injection reuses its fixed one- and two-event native batches.
+Recording capture grows through small pooled segments instead of reserving the
+500,000-event safety ceiling at Start. The final immutable macro array is still
+created once when recording stops, and the pool is cleared before return.
+
+Controller readiness resolves catalog and assignment metadata only. Selecting
+**Play** performs the sole fresh, authoritative validation of macro payloads and
+exact Roblox targets. An uncached macro load deserializes its payload once;
+bounded structural source and transformed caches then reuse it for the duration
+of that controller run. The transformed cache retains a common eight-client
+working set of roughly 100,000 events per client, replaces stale geometry for
+the same exact HWND, and processes anything beyond its event budget once
+without evicting the admitted working set. Steady cache and target-lease hits
+allocate no managed memory.
+
+An unavailable client does not pay its complete focus and trust cost on every
+short cycle: retries back off exponentially from 250 milliseconds to five
+seconds and reset after success. The 10-millisecond loop floor is a minimum
+duration for the complete cycle, not a fixed delay added after successful
+playback. Exact path-and-process-token identity proof refreshes on a five-second
+per-target schedule when that target is used, while retained-process liveness,
+exact HWND ownership, foreground, and pointer-target checks remain adjacent to
+each dispatch.
+
+When no browser work is active, macro playback asks the hidden WebView2 to
+suspend. Playback waits at most one second for that request; on a slower laptop
+it then starts while the request continues in the background. A late success
+stays suspended until Stop, and every cancellation, failure, browser resume,
+or shutdown race releases the suspension gate exactly once. WebView2 disposal
+is not used as a shortcut because it would invalidate the account-session
+token and require a complete asynchronous sign-in/browser reconstruction.
+
 ## Versioning and compatibility
 
 - Template catalog schema: version 3; versions 1 and 2 are supported legacy

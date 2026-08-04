@@ -66,8 +66,11 @@ public static class ExactWheelCoordinateTransforms
         ArgumentNullException.ThrowIfNull(destinationTarget);
         ExactWheelRecordingValidator.Validate(recording);
 
-        var transformed = recording.Events
-            .Select(inputEvent => inputEvent.IsMouseEvent
+        var transformed = new ExactWheelInputEvent[recording.Events.Count];
+        for (var index = 0; index < transformed.Length; index++)
+        {
+            var inputEvent = recording.Events[index];
+            transformed[index] = inputEvent.IsMouseEvent
                 ? inputEvent with
                 {
                     X = MapAxis(
@@ -83,8 +86,8 @@ public static class ExactWheelCoordinateTransforms
                         destinationDisplay.VirtualTop,
                         destinationDisplay.VirtualHeight)
                 }
-                : inputEvent)
-            .ToArray();
+                : inputEvent;
+        }
 
         return CreateValidatedCopy(
             recording,
@@ -209,9 +212,9 @@ public static class ExactWheelCoordinateTransforms
         ExactWheelRecording source,
         ExactWheelDisplayTopology destinationDisplay,
         ExactWheelTargetMetadata destinationTarget,
-        IEnumerable<ExactWheelInputEvent> transformed)
+        ExactWheelInputEvent[] transformed)
     {
-        var result = new ExactWheelRecording(
+        var result = ExactWheelRecording.CreateFromOwnedEvents(
             source.DurationMicroseconds,
             destinationDisplay,
             destinationTarget,

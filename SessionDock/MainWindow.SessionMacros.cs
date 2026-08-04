@@ -15,6 +15,10 @@ public partial class MainWindow
     private SessionMacroControllerWindow? _macroController;
     private CancellationTokenSource? _macroPlaybackCancellation;
     private Task _macroPlaybackCompletion = Task.CompletedTask;
+    private readonly SessionMacroPlaybackProgressThrottle
+        _macroPlaybackProgressThrottle = new();
+    private MacroPlaybackProgressDispatchState?
+        _macroPlaybackProgressDispatch;
     private bool _macroPlaybackInProgress;
     private bool _macroAssignmentInProgress;
 
@@ -236,6 +240,8 @@ public partial class MainWindow
                 false,
                 Localize("Macro.CatalogUnavailable"));
         }
+        _exactWheelMacroStore ??=
+            new ExactWheelMacroStore(_sessionTemplateStore);
 
         ExactWheelPlaybackRate rate;
         try
@@ -249,15 +255,6 @@ public partial class MainWindow
             return new SessionMacroPlaybackOutcome(false, exception.Message);
         }
 
-        var prepared = PrepareRuntimeMacroPlan(snapshot, catalog);
-        if (!prepared.HasAssignments)
-        {
-            return new SessionMacroPlaybackOutcome(
-                false,
-                prepared.Warning ??
-                    Localize("Macro.ControllerNoValidAssignments"));
-        }
-
         CancelCurrentMacroPlayback();
         var playbackCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(
@@ -267,73 +264,64 @@ public partial class MainWindow
         var playbackCompletion = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         _macroPlaybackCompletion = playbackCompletion.Task;
+        _macroPlaybackProgressThrottle.Reset();
         _macroPlaybackInProgress = true;
         UpdateCurrentMacroActions();
-        SetStatus(
-            Localize("Macro.ControllerPlayingTitle"),
-            Localize("Macro.ControllerPlayingDetail", speed),
-            Localize("Macro.PlaybackBadge"),
-            StatusTone.Warning);
+        var playbackText = CaptureMacroPlaybackText();
+        var noValidAssignments = Localize(
+            "Macro.ControllerNoValidAssignments");
         var warnings = new HashSet<string>(StringComparer.Ordinal);
-        if (!string.IsNullOrWhiteSpace(prepared.Warning))
-            warnings.Add(prepared.Warning);
+        var progressDispatch = new MacroPlaybackProgressDispatchState();
         IDisposable? playbackPerformanceMode = null;
+        RuntimeMacroPlan? prepared = null;
         try
         {
             playbackPerformanceMode =
                 await TryEnterMacroPlaybackPerformanceModeAsync(
                     playbackCancellation.Token);
+            prepared = await Task.Run(
+                () => PrepareRuntimeMacroPlan(
+                    snapshot,
+                    catalog,
+                    playbackText,
+                    cancellationToken: playbackCancellation.Token),
+                CancellationToken.None);
+            if (!prepared.HasAssignments)
+            {
+                var preparationFailure = prepared.Warning ??
+                    noValidAssignments;
+                SetStatus(
+                    Localize("Macro.ControllerStoppedTitle"),
+                    preparationFailure,
+                    Localize("Main.BatchPartialBadge"),
+                    StatusTone.Warning);
+                return new SessionMacroPlaybackOutcome(
+                    false,
+                    preparationFailure);
+            }
+            if (!string.IsNullOrWhiteSpace(prepared.Warning))
+                warnings.Add(prepared.Warning);
 
-            await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
-                async cycleCancellationToken =>
-                {
-                    ExactWheelDisplayTopology destinationDisplay;
-                    try
-                    {
-                        destinationDisplay = prepared.PlaybackCache
-                            .GetDisplayTopology(
-                                ExactWheelDesktopCapture
-                                    .CaptureDisplayTopology);
-                    }
-                    catch (Exception exception) when (
-                        IsExpectedMacroArtifactFailure(exception) ||
-                        exception is System.ComponentModel.Win32Exception)
-                    {
-                        warnings.Add(Localize(
-                            "Macro.PlaybackFailure",
-                            exception.Message));
-                        return false;
-                    }
-
-                    var mayContinue = true;
-                    if (prepared.ClientTemplate is not null)
-                    {
-                        var result = await PlayTemplateMacrosAsync(
-                            prepared.ClientTemplate,
-                            prepared,
-                            destinationDisplay,
-                            rate,
-                            cycleCancellationToken);
-                        mayContinue = result.MayContinue;
-                        if (!string.IsNullOrWhiteSpace(result.Warning))
-                            warnings.Add(result.Warning);
-                    }
-                    if (mayContinue && prepared.WholeTemplate is not null)
-                    {
-                        var result = await PlayTemplateMacrosAsync(
-                            prepared.WholeTemplate,
-                            prepared,
-                            destinationDisplay,
-                            rate,
-                            cycleCancellationToken);
-                        mayContinue = result.MayContinue;
-                        if (!string.IsNullOrWhiteSpace(result.Warning))
-                            warnings.Add(result.Warning);
-                    }
-
-                    return mayContinue;
-                },
-                playbackCancellation.Token);
+            SetStatus(
+                Localize("Macro.ControllerPlayingTitle"),
+                Localize("Macro.ControllerPlayingDetail", speed),
+                Localize("Macro.PlaybackBadge"),
+                StatusTone.Warning);
+            Volatile.Write(
+                ref _macroPlaybackProgressDispatch,
+                progressDispatch);
+            await Task.Run(
+                () => RunMacroPlaybackCoreAsync(
+                    prepared,
+                    rate,
+                    playbackText,
+                    warnings,
+                    playbackCancellation.Token),
+                CancellationToken.None);
+            _ = Interlocked.CompareExchange(
+                ref _macroPlaybackProgressDispatch,
+                null,
+                progressDispatch);
 
             var message = string.Join(" ", warnings.Distinct());
             var externallyCancelled =
@@ -384,8 +372,13 @@ public partial class MainWindow
         }
         finally
         {
-            prepared.PlaybackLeases.Dispose();
+            _ = Interlocked.CompareExchange(
+                ref _macroPlaybackProgressDispatch,
+                null,
+                progressDispatch);
+            prepared?.PlaybackLeases.Dispose();
             playbackPerformanceMode?.Dispose();
+            _macroPlaybackProgressThrottle.Reset();
             _macroPlaybackInProgress = false;
             if (ReferenceEquals(
                     _macroPlaybackCancellation,
@@ -405,10 +398,93 @@ public partial class MainWindow
         }
     }
 
+    private async Task RunMacroPlaybackCoreAsync(
+        RuntimeMacroPlan prepared,
+        ExactWheelPlaybackRate rate,
+        MacroPlaybackText playbackText,
+        HashSet<string> warnings,
+        CancellationToken cancellationToken)
+    {
+        await using var playbackSession = new ExactWheelSession();
+        await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
+            async cycleCancellationToken =>
+            {
+                // Reuse the global intervention hook for one complete client
+                // cycle. This removes per-client setup/teardown churn while
+                // keeping its ownership aligned with the cycle boundary.
+                await using var playbackSequence =
+                    playbackSession.BeginPlaybackSequence();
+                ExactWheelDisplayTopology destinationDisplay;
+                try
+                {
+                    destinationDisplay = prepared.PlaybackCache
+                        .GetDisplayTopology(
+                            ExactWheelDesktopCapture.CaptureDisplayTopology);
+                }
+                catch (Exception exception) when (
+                    IsExpectedMacroArtifactFailure(exception) ||
+                    exception is System.ComponentModel.Win32Exception)
+                {
+                    warnings.Add(playbackText.PlaybackFailure(
+                        exception.Message));
+                    return false;
+                }
+
+                var mayContinue = true;
+                if (prepared.ClientTemplate is not null)
+                {
+                    var result = await PlayTemplateMacrosAsync(
+                        prepared.ClientTemplate,
+                        prepared,
+                        destinationDisplay,
+                        playbackSession,
+                        rate,
+                        playbackText,
+                        cycleCancellationToken);
+                    mayContinue = result.MayContinue;
+                    if (!string.IsNullOrWhiteSpace(result.Warning))
+                        warnings.Add(result.Warning);
+                }
+                if (mayContinue && prepared.WholeTemplate is not null)
+                {
+                    var result = await PlayTemplateMacrosAsync(
+                        prepared.WholeTemplate,
+                        prepared,
+                        destinationDisplay,
+                        playbackSession,
+                        rate,
+                        playbackText,
+                        cycleCancellationToken);
+                    mayContinue = result.MayContinue;
+                    if (!string.IsNullOrWhiteSpace(result.Warning))
+                        warnings.Add(result.Warning);
+                }
+
+                return mayContinue;
+            },
+            cancellationToken);
+    }
+
+    private MacroPlaybackText CaptureMacroPlaybackText()
+    {
+        Dispatcher.VerifyAccess();
+        return new MacroPlaybackText(
+            Localization.EffectiveCulture,
+            Localize("Macro.InvalidAssignment"),
+            Localize("Macro.PlaybackFailure"),
+            Localize("Macro.ControllerSkippedInvalid"),
+            Localize("Macro.FocusDenied"),
+            Localize("Macro.StoppedByPhysicalInput"));
+    }
+
     private RuntimeMacroPlan PrepareRuntimeMacroPlan(
         SessionMacroLaunchSnapshot snapshot,
-        SessionTemplateCatalog catalog)
+        SessionTemplateCatalog catalog,
+        MacroPlaybackText playbackText,
+        bool validateMacroArtifacts = true,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         _exactWheelMacroStore ??=
             new ExactWheelMacroStore(_sessionTemplateStore);
         var playbackCache = new SessionMacroPlaybackCache();
@@ -456,9 +532,11 @@ public partial class MainWindow
             invalidCount += resolution.InvalidAssignments.Count;
             foreach (var assignment in resolution.ValidAssignments)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (assignment.AccountKey is null ||
                     !clientByKey.ContainsKey(assignment.AccountKey) ||
-                    !IsMacroFileUsable(assignment.Definition))
+                    (validateMacroArtifacts &&
+                        !IsMacroFileUsable(assignment.Definition)))
                 {
                     invalidCount++;
                     continue;
@@ -470,6 +548,7 @@ public partial class MainWindow
         }
 
         string? validWholeMacroId = null;
+        cancellationToken.ThrowIfCancellationRequested();
         if (!string.IsNullOrWhiteSpace(snapshot.WholeSessionMacroId))
         {
             var wholePolicyTemplate = new SessionTemplate
@@ -486,7 +565,8 @@ public partial class MainWindow
             invalidCount += resolution.InvalidAssignments.Count;
             var assignment = resolution.ValidAssignments.SingleOrDefault();
             if (assignment is not null &&
-                IsMacroFileUsable(assignment.Definition))
+                (!validateMacroArtifacts ||
+                    IsMacroFileUsable(assignment.Definition)))
             {
                 validWholeMacroId = assignment.Definition.ContentId;
             }
@@ -500,6 +580,7 @@ public partial class MainWindow
                 client.Identity,
                 client.WindowHandle))
             .ToArray();
+        cancellationToken.ThrowIfCancellationRequested();
         var windowsByKey = windows
             .GroupBy(
                 window => window.Key,
@@ -518,6 +599,11 @@ public partial class MainWindow
                 group => group.Key,
                 group => group.Single(),
                 StringComparer.OrdinalIgnoreCase);
+        var processBasenamesByKey = windowsByKey.ToDictionary(
+            pair => pair.Key,
+            pair => Path.GetFileName(pair.Value.Identity.ExecutablePath) ??
+                string.Empty,
+            StringComparer.OrdinalIgnoreCase);
         SessionTemplate? clientTemplate = null;
         if (validClientAssignments.Count > 0)
         {
@@ -558,21 +644,31 @@ public partial class MainWindow
                     .ToList()
             };
         }
+        IReadOnlyList<SessionTemplateClientSlot> clientPlaybackSlots =
+            clientTemplate is null
+                ? []
+                : clientTemplate.ClientSlots
+                    .OrderBy(slot => slot.Order)
+                    .ToArray();
 
         return new RuntimeMacroPlan(
             windows,
             windowsByKey,
             definitionsById,
+            processBasenamesByKey,
             playbackCache,
             playbackLeases,
+            new SessionMacroPlaybackRetryTracker(),
+            clientPlaybackSlots,
             clientTemplate,
             wholeTemplate,
             invalidCount == 0
                 ? null
-                : Localize("Macro.ControllerSkippedInvalid", invalidCount));
+                : playbackText.SkippedInvalid(invalidCount));
 
         bool IsMacroFileUsable(MacroDefinition definition)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var cacheKey = string.Concat(
                 definition.ContentId,
                 "|",
@@ -587,7 +683,9 @@ public partial class MainWindow
             {
                 _ = playbackCache.GetOrLoad(
                     definition,
-                    _exactWheelMacroStore.Load);
+                    _exactWheelMacroStore!,
+                    static (store, candidate) => store.Load(candidate));
+                cancellationToken.ThrowIfCancellationRequested();
                 fileValidity[cacheKey] = true;
                 return true;
             }
@@ -614,9 +712,18 @@ public partial class MainWindow
                 Localize("Macro.CatalogUnavailable"));
         }
 
-        var prepared = PrepareRuntimeMacroPlan(snapshot, catalog);
+        // Controller readiness is advisory only. It resolves the current
+        // catalog and assignment metadata without parsing macro payloads or
+        // acquiring authorization leases. Play performs the sole fresh,
+        // authoritative artifact and exact-target validation.
+        var prepared = PrepareRuntimeMacroPlan(
+            snapshot,
+            catalog,
+            CaptureMacroPlaybackText(),
+            validateMacroArtifacts: false);
         if (!prepared.HasAssignments)
         {
+            prepared.PlaybackLeases.Dispose();
             return new SessionMacroControllerReadiness(
                 false,
                 0,
@@ -640,39 +747,16 @@ public partial class MainWindow
                     continue;
                 }
 
-                var leaseResult = _robloxWindowService
-                    .AcquirePlaybackTargetLease(
-                        window.Identity,
-                        window.Handle);
-                if (!leaseResult.Success || leaseResult.Lease is null)
-                {
-                    unavailableTargetCount++;
-                    continue;
-                }
-
-                using (leaseResult.Lease)
-                    validAssignmentCount++;
+                validAssignmentCount++;
             }
         }
 
         if (prepared.WholeTemplate is not null)
         {
-            var targets = prepared.Windows
-                .Select(window => new RobloxPlaybackTarget(
-                    window.Identity,
-                    window.Handle))
-                .ToArray();
-            var leaseResult = _robloxWindowService
-                .AcquirePlaybackTargetLease(targets);
-            if (leaseResult.Success && leaseResult.Lease is not null)
-            {
-                using (leaseResult.Lease)
-                    validAssignmentCount++;
-            }
+            if (prepared.Windows.Count > 0)
+                validAssignmentCount++;
             else
-            {
                 unavailableTargetCount++;
-            }
         }
 
         var warnings = new List<string>();
@@ -687,6 +771,7 @@ public partial class MainWindow
         var warning = warnings.Count == 0
             ? null
             : string.Join(" ", warnings.Distinct());
+        prepared.PlaybackLeases.Dispose();
         return new SessionMacroControllerReadiness(
             validAssignmentCount > 0,
             validAssignmentCount,
@@ -789,13 +874,43 @@ public partial class MainWindow
         IReadOnlyList<RobloxSessionLayoutWindow> Windows,
         IReadOnlyDictionary<string, RobloxSessionLayoutWindow> WindowsByKey,
         IReadOnlyDictionary<string, MacroDefinition> DefinitionsById,
+        IReadOnlyDictionary<string, string> ProcessBasenamesByKey,
         SessionMacroPlaybackCache PlaybackCache,
         SessionMacroPlaybackLeaseCache PlaybackLeases,
+        SessionMacroPlaybackRetryTracker PlaybackRetryTracker,
+        IReadOnlyList<SessionTemplateClientSlot> ClientPlaybackSlots,
         SessionTemplate? ClientTemplate,
         SessionTemplate? WholeTemplate,
         string? Warning)
     {
         internal bool HasAssignments =>
             ClientTemplate is not null || WholeTemplate is not null;
+    }
+
+    private sealed record MacroPlaybackText(
+        CultureInfo Culture,
+        string InvalidAssignment,
+        string PlaybackFailureFormat,
+        string SkippedInvalidFormat,
+        string FocusDenied,
+        string StoppedByPhysicalInput)
+    {
+        internal string PlaybackFailure(string? message) =>
+            LocalizationCulture.Format(
+                Culture,
+                PlaybackFailureFormat,
+                message);
+
+        internal string SkippedInvalid(int count) =>
+            LocalizationCulture.Format(
+                Culture,
+                SkippedInvalidFormat,
+                count);
+    }
+
+    private sealed class MacroPlaybackProgressDispatchState
+    {
+        internal int LatestClientNumber;
+        internal int PostPending;
     }
 }

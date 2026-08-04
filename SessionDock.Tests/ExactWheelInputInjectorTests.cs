@@ -114,6 +114,72 @@ public sealed class ExactWheelInputInjectorTests
         injector.Dispose();
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(65_536)]
+    public void Inject_InvalidKeyboardCode_FailsWithoutThrowing(int code)
+    {
+        var backend = new NonRetainingInputBackend();
+        var injector = new ExactWheelInputInjector(backend);
+        var inputEvent = new ExactWheelInputEvent(
+            1,
+            1,
+            ExactWheelInputEventType.KeyDown,
+            0,
+            0,
+            code,
+            0);
+
+        var attempt = injector.Inject(
+            inputEvent,
+            ExactWheelTestData.Display());
+
+        Assert.False(attempt.Succeeded);
+        Assert.Equal(0U, attempt.Submitted);
+        Assert.Equal(0U, attempt.Expected);
+        Assert.Equal(13, attempt.Win32Error);
+        Assert.Equal(0, backend.SendCount);
+        injector.Dispose();
+    }
+
+    [Fact]
+    public void Inject_MouseMoveAndCleanCompletion_AreAllocationFree()
+    {
+        var backend = new NonRetainingInputBackend();
+        var injector = new ExactWheelInputInjector(backend);
+        var topology = ExactWheelTestData.Display();
+        var inputEvent = new ExactWheelInputEvent(
+            1,
+            1,
+            ExactWheelInputEventType.MouseMove,
+            100,
+            80,
+            0,
+            0);
+        InjectionAttempt injection = default;
+        InjectionAttempt cleanup = default;
+        for (var index = 0; index < 1_000; index++)
+        {
+            injection = injector.Inject(inputEvent, topology);
+            cleanup = injector.ReleaseHeld();
+        }
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        for (var index = 0; index < 100_000; index++)
+        {
+            injection = injector.Inject(inputEvent, topology);
+            cleanup = injector.ReleaseHeld();
+        }
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.True(injection.Succeeded);
+        Assert.True(cleanup.Succeeded);
+        Assert.Equal(101_000, backend.SendCount);
+        Assert.InRange(allocated, 0, 256);
+        injector.Dispose();
+    }
+
     [Fact]
     public void ReleaseHeld_ReleasesOnlySuccessfullyInjectedHeldInputs()
     {
@@ -230,6 +296,20 @@ public sealed class ExactWheelInputInjectorTests
             var result = send(inputs, Batches.Count - 1);
             win32Error = result.Error;
             return result.Submitted;
+        }
+    }
+
+    private sealed class NonRetainingInputBackend : IExactWheelInputBackend
+    {
+        internal int SendCount { get; private set; }
+
+        public uint Send(
+            ExactWheelNativeMethods.NativeInput[] inputs,
+            out int win32Error)
+        {
+            SendCount++;
+            win32Error = 0;
+            return checked((uint)inputs.Length);
         }
     }
 }

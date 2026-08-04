@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -34,24 +35,253 @@ internal interface IExactWheelInputCapture : IDisposable
     void StopInterventionMonitor();
 }
 
-internal sealed class LowLevelInputCapture : IExactWheelInputCapture
+internal interface ITrackedPhysicalInputState
+{
+    bool AreReleased(IReadOnlyCollection<int> ignoredVirtualKeys);
+
+    bool AreKeysReleased(IReadOnlyCollection<int> virtualKeys);
+}
+
+internal sealed class TrackedPhysicalInputState : ITrackedPhysicalInputState
+{
+    private const int VirtualKeyCount = 256;
+    private const int BitsPerWord = 32;
+    private readonly int[] _held = new int[VirtualKeyCount / BitsPerWord];
+
+    internal void Reset() => Array.Clear(_held);
+
+    internal void Set(int virtualKey, bool isDown)
+    {
+        if (virtualKey is <= 0 or >= VirtualKeyCount)
+            return;
+        var wordIndex = virtualKey / BitsPerWord;
+        var mask = 1 << (virtualKey % BitsPerWord);
+        if (isDown)
+            _ = Interlocked.Or(ref _held[wordIndex], mask);
+        else
+            _ = Interlocked.And(ref _held[wordIndex], ~mask);
+    }
+
+    public bool AreReleased(
+        IReadOnlyCollection<int> ignoredVirtualKeys)
+    {
+        ArgumentNullException.ThrowIfNull(ignoredVirtualKeys);
+        if (ignoredVirtualKeys.Count == 0)
+        {
+            for (var index = 0; index < _held.Length; index++)
+            {
+                if (Volatile.Read(ref _held[index]) != 0)
+                    return false;
+            }
+            return true;
+        }
+
+        for (var virtualKey = 1;
+             virtualKey < VirtualKeyCount;
+             virtualKey++)
+        {
+            if (IsDown(virtualKey) &&
+                !PhysicalInputVirtualKeyFamilies.IsIgnored(
+                    virtualKey,
+                    ignoredVirtualKeys))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public bool AreKeysReleased(
+        IReadOnlyCollection<int> virtualKeys)
+    {
+        ArgumentNullException.ThrowIfNull(virtualKeys);
+        foreach (var virtualKey in virtualKeys)
+        {
+            if (IsDown(virtualKey))
+                return false;
+        }
+        return true;
+    }
+
+    private bool IsDown(int virtualKey)
+    {
+        if (virtualKey is <= 0 or >= VirtualKeyCount)
+            return false;
+        return virtualKey switch
+        {
+            PhysicalInputVirtualKeyFamilies.Shift =>
+                IsRawDown(PhysicalInputVirtualKeyFamilies.Shift) ||
+                IsRawDown(PhysicalInputVirtualKeyFamilies.LeftShift) ||
+                IsRawDown(PhysicalInputVirtualKeyFamilies.RightShift),
+            PhysicalInputVirtualKeyFamilies.Control =>
+                IsRawDown(PhysicalInputVirtualKeyFamilies.Control) ||
+                IsRawDown(PhysicalInputVirtualKeyFamilies.LeftControl) ||
+                IsRawDown(PhysicalInputVirtualKeyFamilies.RightControl),
+            PhysicalInputVirtualKeyFamilies.Menu =>
+                IsRawDown(PhysicalInputVirtualKeyFamilies.Menu) ||
+                IsRawDown(PhysicalInputVirtualKeyFamilies.LeftMenu) ||
+                IsRawDown(PhysicalInputVirtualKeyFamilies.RightMenu),
+            _ => IsRawDown(virtualKey)
+        };
+    }
+
+    private bool IsRawDown(int virtualKey)
+    {
+        var wordIndex = virtualKey / BitsPerWord;
+        var mask = 1 << (virtualKey % BitsPerWord);
+        return (Volatile.Read(ref _held[wordIndex]) & mask) != 0;
+    }
+}
+
+/// <summary>
+/// Stores captured events in small pooled segments instead of reserving the
+/// complete 500,000-event safety ceiling for every recording. Hook callbacks
+/// never resize or copy previously captured input; they rent one additional
+/// bounded segment only when the current segment fills.
+/// </summary>
+internal sealed class PooledExactWheelEventBuffer : IDisposable
+{
+    internal const int SegmentEventCapacity = 4_096;
+
+    private readonly int _maximumEvents;
+    private readonly List<ExactWheelInputEvent[]> _segments;
+    private int _count;
+    private bool _disposed;
+
+    internal PooledExactWheelEventBuffer(int maximumEvents)
+    {
+        if (maximumEvents <= 0 ||
+            (ulong)maximumEvents > ExactWheelLimits.MaximumEventCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumEvents));
+        }
+
+        _maximumEvents = maximumEvents;
+        var maximumSegments = checked(
+            (maximumEvents + SegmentEventCapacity - 1) /
+            SegmentEventCapacity);
+        _segments = new List<ExactWheelInputEvent[]>(maximumSegments);
+        RentNextSegment();
+    }
+
+    internal int Count => _count;
+
+    internal int SegmentCount => _segments.Count;
+
+    internal int MaximumEvents => _maximumEvents;
+
+    internal int ReservedEventCapacity => Math.Min(
+        _maximumEvents,
+        checked(_segments.Count * SegmentEventCapacity));
+
+    internal bool TryAdd(ExactWheelInputEvent inputEvent)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_count >= _maximumEvents)
+            return false;
+
+        var segmentIndex = _count / SegmentEventCapacity;
+        if (segmentIndex == _segments.Count)
+        {
+            try
+            {
+                RentNextSegment();
+            }
+            catch (OutOfMemoryException)
+            {
+                // This method runs inside a native low-level hook callback.
+                // Exhaustion must stop capture safely rather than unwind into
+                // Windows through the unmanaged callback boundary.
+                return false;
+            }
+        }
+
+        var segmentOffset = _count % SegmentEventCapacity;
+        _segments[segmentIndex][segmentOffset] = inputEvent;
+        _count++;
+        return true;
+    }
+
+    internal ExactWheelInputEvent[] ToArray()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_count == 0)
+            return [];
+
+        var events = new ExactWheelInputEvent[_count];
+        var copied = 0;
+        for (var segmentIndex = 0;
+             segmentIndex < _segments.Count && copied < _count;
+             segmentIndex++)
+        {
+            var copyCount = Math.Min(
+                SegmentEventCapacity,
+                _count - copied);
+            Array.Copy(
+                _segments[segmentIndex],
+                0,
+                events,
+                copied,
+                copyCount);
+            copied += copyCount;
+        }
+
+        return events;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        foreach (var segment in _segments)
+        {
+            ArrayPool<ExactWheelInputEvent>.Shared.Return(
+                segment,
+                // Captured input coordinates and key identities should not
+                // remain observable in a shared pool after recording ends.
+                clearArray: true);
+        }
+
+        _segments.Clear();
+        _count = 0;
+        _disposed = true;
+    }
+
+    private void RentNextSegment()
+    {
+        var remaining = _maximumEvents -
+            checked(_segments.Count * SegmentEventCapacity);
+        if (remaining <= 0)
+            throw new InvalidOperationException(
+                "The bounded capture buffer cannot grow further.");
+
+        _segments.Add(ArrayPool<ExactWheelInputEvent>.Shared.Rent(
+            Math.Min(SegmentEventCapacity, remaining)));
+    }
+}
+
+internal sealed class LowLevelInputCapture :
+    IExactWheelInputCapture,
+    ITrackedPhysicalInputState
 {
     private static int ActiveCapture;
 
     private readonly object _gate = new();
     private readonly ExactWheelNativeMethods.HookProcedure _mouseProcedure;
     private readonly ExactWheelNativeMethods.HookProcedure _keyboardProcedure;
+    private readonly TrackedPhysicalInputState _trackedPhysicalInput = new();
     private Thread? _thread;
     private ManualResetEventSlim? _ready;
-    private ExactWheelInputEvent[]? _buffer;
+    private PooledExactWheelEventBuffer? _eventBuffer;
     private int[] _waitForReleaseKeys = [];
     private Func<ExactWheelInputEvent, bool>? _eventAdmission;
     private EventWaitHandle? _interventionEvent;
     private Exception? _startException;
     private int _mode;
+    private int _requestedMode;
     private int _stopRequested;
     private int _callbacksInFlight;
-    private int _eventCount;
     private int _overflowed;
     private int _threadError;
     private uint _threadId;
@@ -67,6 +297,14 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
 
     public InputCaptureMode Mode =>
         (InputCaptureMode)Volatile.Read(ref _mode);
+
+    public bool AreReleased(
+        IReadOnlyCollection<int> ignoredVirtualKeys) =>
+        _trackedPhysicalInput.AreReleased(ignoredVirtualKeys);
+
+    public bool AreKeysReleased(
+        IReadOnlyCollection<int> virtualKeys) =>
+        _trackedPhysicalInput.AreKeysReleased(virtualKeys);
 
     public void StartRecording(
         int maximumEvents,
@@ -84,7 +322,7 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
         {
             ThrowIfDisposed();
             EnsureIdle();
-            _buffer = new ExactWheelInputEvent[maximumEvents];
+            _eventBuffer = new PooledExactWheelEventBuffer(maximumEvents);
             _waitForReleaseKeys = waitForReleaseVirtualKeys
                 .Distinct()
                 .ToArray();
@@ -123,12 +361,7 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
         thread.Join();
         lock (_gate)
         {
-            var count = Math.Min(
-                Volatile.Read(ref _eventCount),
-                _buffer?.Length ?? 0);
-            var events = new ExactWheelInputEvent[count];
-            if (count > 0)
-                Array.Copy(_buffer!, events, count);
+            var events = _eventBuffer?.ToArray() ?? [];
             var duration = _originTicks <= 0
                 ? 0
                 : ExactWheelTiming.TimestampOffsetMicroseconds(
@@ -165,12 +398,17 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
         {
             if (_thread is null)
                 return;
-            if (Mode != InputCaptureMode.Intervention)
+            if ((InputCaptureMode)Volatile.Read(ref _requestedMode) !=
+                InputCaptureMode.Intervention)
             {
                 throw new InvalidOperationException(
                     "The active hook is not an intervention monitor.");
             }
 
+            // An unexpected intervention-thread exit publishes Idle before
+            // signalling playback. It still belongs to this monitor and must
+            // be joined/reset cleanly instead of masking the fail-closed
+            // playback result with a teardown exception.
             Volatile.Write(ref _mode, (int)InputCaptureMode.Idle);
             RequestThreadStop();
             thread = _thread;
@@ -337,8 +575,8 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
 
     private void StartThread(InputCaptureMode requestedMode)
     {
+        Volatile.Write(ref _requestedMode, (int)requestedMode);
         _startException = null;
-        _eventCount = 0;
         _overflowed = 0;
         _threadError = ExactWheelNativeMethods.ErrorSuccess;
         _originTicks = 0;
@@ -408,6 +646,8 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
             if (keyboardHook.IsInvalid)
                 throw LastWin32("Installing the keyboard hook failed.");
 
+            if (requestedMode == InputCaptureMode.Intervention)
+                CapturePhysicalInputBaseline();
             if (requestedMode == InputCaptureMode.Recording)
                 _originTicks = Stopwatch.GetTimestamp();
             Volatile.Write(ref _mode, (int)requestedMode);
@@ -471,7 +711,17 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
         }
         finally
         {
+            var interventionStoppedUnexpectedly =
+                requestedMode == InputCaptureMode.Intervention &&
+                Mode == InputCaptureMode.Intervention;
             Volatile.Write(ref _mode, (int)InputCaptureMode.Idle);
+            if (interventionStoppedUnexpectedly)
+            {
+                // A retained monitor that exits without an explicit stop
+                // must fail closed. Publish Idle before waking playback so
+                // the waiter reliably observes the lost protection.
+                TrySignalIntervention();
+            }
             _threadId = 0;
             Volatile.Write(ref ActiveCapture, 0);
             _ready?.Set();
@@ -491,7 +741,10 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
                 {
                     if (Mode == InputCaptureMode.Intervention)
                     {
-                        _interventionEvent?.Set();
+                        TrackMouseButton(
+                            checked((uint)message),
+                            data.MouseData);
+                        TrySignalIntervention();
                     }
                     else if (Mode == InputCaptureMode.Recording)
                     {
@@ -537,7 +790,10 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
                 {
                     if (Mode == InputCaptureMode.Intervention)
                     {
-                        _interventionEvent?.Set();
+                        TrackKeyboardKey(
+                            checked((uint)message),
+                            checked((int)data.VirtualKey));
+                        TrySignalIntervention();
                     }
                     else if (Mode == InputCaptureMode.Recording)
                     {
@@ -572,8 +828,7 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
 
     private void Store(ExactWheelInputEvent inputEvent)
     {
-        var index = Volatile.Read(ref _eventCount);
-        if (_buffer is null || index >= _buffer.Length)
+        if (_eventBuffer is null || !_eventBuffer.TryAdd(inputEvent))
         {
             Volatile.Write(ref _overflowed, 1);
             _threadError = ExactWheelNativeMethods.ErrorBufferOverflow;
@@ -581,9 +836,6 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
             Volatile.Write(ref _stopRequested, 1);
             return;
         }
-
-        _buffer[index] = inputEvent;
-        Volatile.Write(ref _eventCount, index + 1);
     }
 
     internal static bool IsEventAdmitted(
@@ -629,6 +881,77 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
         }
     }
 
+    private void CapturePhysicalInputBaseline()
+    {
+        _trackedPhysicalInput.Reset();
+        for (var virtualKey = 1; virtualKey < 256; virtualKey++)
+        {
+            // Left/right modifier keys are tracked separately. Omitting the
+            // aggregate aliases prevents a released side-specific key from
+            // leaving a stale generic Shift/Ctrl/Alt bit in the snapshot.
+            if (virtualKey is 0x10 or 0x11 or 0x12)
+                continue;
+            _trackedPhysicalInput.Set(
+                virtualKey,
+                (ExactWheelNativeMethods.GetAsyncKeyState(virtualKey) &
+                    0x8000) != 0);
+        }
+    }
+
+    private void TrackMouseButton(uint message, uint mouseData)
+    {
+        var virtualKey = message switch
+        {
+            ExactWheelNativeMethods.WmLeftButtonDown or
+                ExactWheelNativeMethods.WmLeftButtonUp => 0x01,
+            ExactWheelNativeMethods.WmRightButtonDown or
+                ExactWheelNativeMethods.WmRightButtonUp => 0x02,
+            ExactWheelNativeMethods.WmMiddleButtonDown or
+                ExactWheelNativeMethods.WmMiddleButtonUp => 0x04,
+            ExactWheelNativeMethods.WmXButtonDown or
+                ExactWheelNativeMethods.WmXButtonUp
+                when mouseData >> 16 ==
+                    ExactWheelNativeMethods.XButton1 => 0x05,
+            ExactWheelNativeMethods.WmXButtonDown or
+                ExactWheelNativeMethods.WmXButtonUp
+                when mouseData >> 16 ==
+                    ExactWheelNativeMethods.XButton2 => 0x06,
+            _ => 0
+        };
+        if (virtualKey == 0)
+            return;
+        var isDown = message is
+            ExactWheelNativeMethods.WmLeftButtonDown or
+            ExactWheelNativeMethods.WmRightButtonDown or
+            ExactWheelNativeMethods.WmMiddleButtonDown or
+            ExactWheelNativeMethods.WmXButtonDown;
+        _trackedPhysicalInput.Set(virtualKey, isDown);
+    }
+
+    private void TrackKeyboardKey(uint message, int virtualKey)
+    {
+        var isDown = message is ExactWheelNativeMethods.WmKeyDown or
+            ExactWheelNativeMethods.WmSysKeyDown;
+        var isUp = message is ExactWheelNativeMethods.WmKeyUp or
+            ExactWheelNativeMethods.WmSysKeyUp;
+        if (isDown || isUp)
+            _trackedPhysicalInput.Set(virtualKey, isDown);
+    }
+
+    private void TrySignalIntervention()
+    {
+        try
+        {
+            _interventionEvent?.Set();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Teardown owns the event lifecycle. Never unwind through a
+            // native low-level hook callback if a defensive caller violates
+            // that ownership contract.
+        }
+    }
+
     private void EnsureIdle()
     {
         if (_thread is not null)
@@ -640,18 +963,20 @@ internal sealed class LowLevelInputCapture : IExactWheelInputCapture
         _ready?.Dispose();
         _ready = null;
         _thread = null;
-        _buffer = null;
+        _eventBuffer?.Dispose();
+        _eventBuffer = null;
         _waitForReleaseKeys = [];
         _eventAdmission = null;
         _interventionEvent = null;
+        _trackedPhysicalInput.Reset();
         _startException = null;
         _threadId = 0;
         _originTicks = 0;
         _nextSequence = 0;
-        _eventCount = 0;
         _overflowed = 0;
         _threadError = 0;
         _stopRequested = 0;
+        Volatile.Write(ref _requestedMode, (int)InputCaptureMode.Idle);
         Volatile.Write(ref _mode, (int)InputCaptureMode.Idle);
     }
 

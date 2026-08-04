@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Runtime.ExceptionServices;
 using SessionDock.ExactWheel.Windows;
 
 namespace SessionDock.ExactWheel;
@@ -18,6 +19,7 @@ public sealed class ExactWheelSession : IAsyncDisposable
     private readonly ExactWheelPlaybackEngine _playback;
     private readonly Func<nint, bool> _isForeground;
     private ExactWheelRecordingTarget? _recordingTarget;
+    private PlaybackSequenceLease? _playbackSequence;
     private ExactWheelSessionState _state;
 
     public ExactWheelSession()
@@ -72,6 +74,11 @@ public sealed class ExactWheelSession : IAsyncDisposable
         lock (_gate)
         {
             EnsureIdle();
+            if (_playbackSequence is not null)
+            {
+                throw new InvalidOperationException(
+                    "Finish the retained playback sequence before recording.");
+            }
             _recordingCapture.StartRecording(
                 options.MaximumEvents,
                 options.ArmUntilReleasedVirtualKeys,
@@ -112,11 +119,17 @@ public sealed class ExactWheelSession : IAsyncDisposable
                 "The ExactWheel input hook stopped with an error.");
         }
 
-        return ExactWheelRecordingValidator.Finalize(
-            target.Display,
-            target.Metadata,
-            captured.Events,
-            captured.DurationMicroseconds);
+        return captured.Events is ExactWheelInputEvent[] ownedEvents
+            ? ExactWheelRecordingValidator.FinalizeOwned(
+                target.Display,
+                target.Metadata,
+                ownedEvents,
+                captured.DurationMicroseconds)
+            : ExactWheelRecordingValidator.Finalize(
+                target.Display,
+                target.Metadata,
+                captured.Events,
+                captured.DurationMicroseconds);
     }
 
     public async Task<ExactWheelPlaybackResult> PlayAsync(
@@ -150,20 +163,79 @@ public sealed class ExactWheelSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Retains one physical-input intervention monitor across a serial group
+    /// of PlayAsync calls. Dispose the returned lease after the group ends.
+    /// One-off playback does not need this optimization.
+    /// When physical-input intervention monitoring is enabled, playback in a
+    /// retained sequence must use an empty WaitForReleaseVirtualKeys
+    /// collection. Release those control keys before beginning the sequence
+    /// or use one-off playback for arming behavior.
+    /// </summary>
+    public IAsyncDisposable BeginPlaybackSequence()
+    {
+        lock (_gate)
+        {
+            EnsureIdle();
+            if (_playbackSequence is not null)
+            {
+                throw new InvalidOperationException(
+                    "A playback sequence is already active.");
+            }
+
+            var sequence = new PlaybackSequenceLease(
+                this,
+                _playback.BeginInterventionSequence());
+            _playbackSequence = sequence;
+            return sequence;
+        }
+    }
+
     public void EmergencyStop() => _playback.RequestStop();
 
     public async ValueTask DisposeAsync()
     {
+        PlaybackSequenceLease? playbackSequence;
         lock (_gate)
         {
             if (_state == ExactWheelSessionState.Disposed)
                 return;
             _state = ExactWheelSessionState.Disposed;
             _recordingTarget = null;
+            playbackSequence = _playbackSequence;
+            _playbackSequence = null;
         }
 
-        _recordingCapture.Dispose();
-        await _playback.DisposeAsync().ConfigureAwait(false);
+        Exception? disposalFailure = null;
+        if (playbackSequence is not null)
+        {
+            try
+            {
+                await playbackSequence.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                disposalFailure = exception;
+            }
+        }
+        try
+        {
+            _recordingCapture.Dispose();
+        }
+        catch (Exception exception)
+        {
+            disposalFailure ??= exception;
+        }
+        try
+        {
+            await _playback.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            disposalFailure ??= exception;
+        }
+        if (disposalFailure is not null)
+            ExceptionDispatchInfo.Capture(disposalFailure).Throw();
     }
 
     private void EnsureIdle()
@@ -174,6 +246,44 @@ public sealed class ExactWheelSession : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 "Finish the active ExactWheel operation first.");
+        }
+    }
+
+    private void ReleasePlaybackSequence(PlaybackSequenceLease sequence)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(_playbackSequence, sequence))
+                _playbackSequence = null;
+        }
+    }
+
+    private sealed class PlaybackSequenceLease(
+        ExactWheelSession owner,
+        IAsyncDisposable inner) : IAsyncDisposable
+    {
+        private readonly object _disposeGate = new();
+        private Task? _disposeTask;
+
+        public ValueTask DisposeAsync()
+        {
+            lock (_disposeGate)
+            {
+                _disposeTask ??= DisposeCoreAsync();
+                return new ValueTask(_disposeTask);
+            }
+        }
+
+        private async Task DisposeCoreAsync()
+        {
+            try
+            {
+                await inner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                owner.ReleasePlaybackSequence(this);
+            }
         }
     }
 }

@@ -461,7 +461,7 @@ public sealed class SessionTemplateMacroPreflightTests
             StringComparison.Ordinal);
         Assert.True(playEntry >= 0);
         var prepareCall = playbackSource.IndexOf(
-            "PrepareRuntimeMacroPlan(snapshot, catalog)",
+            "PrepareRuntimeMacroPlan(",
             playEntry,
             StringComparison.Ordinal);
         var playCall = playbackSource.IndexOf(
@@ -475,7 +475,7 @@ public sealed class SessionTemplateMacroPreflightTests
             playbackSource,
             StringComparison.Ordinal);
         Assert.Contains(
-            "_exactWheelMacroStore.Load",
+            "static (store, candidate) => store.Load(candidate)",
             playbackSource,
             StringComparison.Ordinal);
     }

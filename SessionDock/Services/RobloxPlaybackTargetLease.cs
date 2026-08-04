@@ -36,7 +36,7 @@ internal sealed record RobloxPlaybackTargetLeaseFailure(
     RobloxPlaybackTargetLeaseFailureKind Kind,
     string Error);
 
-internal sealed record RobloxPlaybackTargetLeaseAcquisitionResult(
+internal readonly record struct RobloxPlaybackTargetLeaseAcquisitionResult(
     RobloxPlaybackTargetLease? Lease,
     RobloxPlaybackTargetLeaseFailure? Failure)
 {
@@ -261,6 +261,7 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                 _lastObservedUtc = now;
                 if (clockRegressed)
                 {
+                    ResetIdentityRevalidationDeadlinesLocked(now);
                     foreach (var retainedTarget in _targetsByHandle.Values)
                     {
                         if (!retainedTarget.Pin.IsExitObservedAlive)
@@ -275,12 +276,9 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                     _nextLivenessSweepUtc =
                         now + _identityRevalidationInterval;
                 }
-                if (!target.Pin.IsRetainedProcessAlive)
-                {
-                    _ = RejectLocked(ProcessExitedFailure(), out var failure);
-                    return failure;
-                }
-                if (revalidateIdentityAndToken || clockRegressed)
+                if (revalidateIdentityAndToken ||
+                    clockRegressed ||
+                    now >= target.NextIdentityRevalidationUtc)
                 {
                     var verification = target.Pin
                         .RevalidateIdentityAndToken(
@@ -298,6 +296,11 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
 
                     target.NextIdentityRevalidationUtc =
                         now + _identityRevalidationInterval;
+                }
+                else if (!target.Pin.IsRetainedProcessAlive)
+                {
+                    _ = RejectLocked(ProcessExitedFailure(), out var failure);
+                    return failure;
                 }
                 if (_native.GetWindowProcessId(target.Handle) !=
                     target.Identity.ProcessId)
@@ -374,6 +377,8 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                 var now = _native.UtcNow;
                 var clockRegressed = now < _lastObservedUtc;
                 _lastObservedUtc = now;
+                if (clockRegressed)
+                    ResetIdentityRevalidationDeadlinesLocked(now);
                 if (clockRegressed || now >= _nextLivenessSweepUtc)
                 {
                     // Process-exit state is event-backed in production, so a
@@ -517,6 +522,17 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
 
         failure = null;
         return true;
+    }
+
+    private void ResetIdentityRevalidationDeadlinesLocked(
+        DateTimeOffset now)
+    {
+        // A wall-clock rollback invalidates every per-target deadline, not
+        // only the target that happened to expose the rollback. Otherwise an
+        // inactive client's old future deadline could suppress revalidation
+        // for the full rollback delta when that client becomes active later.
+        foreach (var target in _targetsByHandle.Values)
+            target.NextIdentityRevalidationUtc = now;
     }
 
     private static ExactWheelDispatchAuthorization ToDispatchAuthorization(

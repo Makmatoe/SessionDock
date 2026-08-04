@@ -1,7 +1,5 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
-using System.Text;
 using SessionDock.ExactWheel;
 using SessionDock.Models;
 
@@ -24,15 +22,18 @@ internal sealed class SessionMacroPlaybackCache
     internal const int MaximumSourceEntries = 64;
     internal const int MaximumTransformedEntries = 64;
     internal const int MaximumSourceEvents = 750_000;
-    internal const int MaximumTransformedEvents = 750_000;
-    internal const int MaximumEventsPerTransformedEntry = 100_000;
+    // Eight 100k-event client transforms fit together, matching the common
+    // multi-client workload without allowing the cache to grow unbounded.
+    internal const int MaximumTransformedEvents = 1_000_000;
+    internal const int MaximumEventsPerTransformedEntry =
+        (int)ExactWheelLimits.MaximumEventCount;
     internal static readonly TimeSpan DisplayRefreshInterval =
         TimeSpan.FromSeconds(2);
 
     private readonly Dictionary<MacroCacheKey, ExactWheelRecording> _sources =
         [];
-    private readonly Dictionary<TransformCacheKey, ExactWheelRecording>
-        _transformed = [];
+    private readonly Dictionary<TransformCacheKey, TransformedCacheEntry>
+        _transformed = new(TransformCacheKeyComparer.Instance);
     private int _sourceEventCount;
     private int _transformedEventCount;
     private ExactWheelDisplayTopology? _displayTopology;
@@ -78,7 +79,16 @@ internal sealed class SessionMacroPlaybackCache
 
     internal ExactWheelRecording GetOrLoad(
         MacroDefinition definition,
-        Func<MacroDefinition, ExactWheelRecording> loader)
+        Func<MacroDefinition, ExactWheelRecording> loader) =>
+        GetOrLoad(
+            definition,
+            loader,
+            static (callback, candidate) => callback(candidate));
+
+    internal ExactWheelRecording GetOrLoad<TState>(
+        MacroDefinition definition,
+        TState state,
+        Func<TState, MacroDefinition, ExactWheelRecording> loader)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(loader);
@@ -86,7 +96,7 @@ internal sealed class SessionMacroPlaybackCache
         if (_sources.TryGetValue(key, out var cached))
             return cached;
 
-        var recording = loader(definition) ??
+        var recording = loader(state, definition) ??
             throw new InvalidDataException("The macro loader returned no recording.");
         TryCacheSource(key, recording);
         return recording;
@@ -96,7 +106,20 @@ internal sealed class SessionMacroPlaybackCache
         MacroDefinition definition,
         SessionMacroTransformKind kind,
         ExactWheelRecordingTarget destination,
-        Func<ExactWheelRecording> transform)
+        Func<ExactWheelRecording> transform) =>
+        GetOrTransform(
+            definition,
+            kind,
+            destination,
+            transform,
+            static (callback, _) => callback());
+
+    internal ExactWheelRecording GetOrTransform<TState>(
+        MacroDefinition definition,
+        SessionMacroTransformKind kind,
+        ExactWheelRecordingTarget destination,
+        TState state,
+        Func<TState, ExactWheelRecordingTarget, ExactWheelRecording> transform)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(destination);
@@ -104,12 +127,44 @@ internal sealed class SessionMacroPlaybackCache
         var key = new TransformCacheKey(
             MacroCacheKey.Create(definition),
             kind,
-            CreateDestinationIdentity(destination));
+            DestinationCacheKey.Create(destination));
         if (_transformed.TryGetValue(key, out var cached))
-            return cached;
+            return cached.Recording;
 
-        var recording = transform() ??
+        var recording = transform(state, destination) ??
             throw new InvalidDataException("The macro transform returned no recording.");
+        TryCacheTransform(key, recording);
+        return recording;
+    }
+
+    internal ExactWheelRecording GetOrLoadAndTransform<TLoaderState>(
+        MacroDefinition definition,
+        SessionMacroTransformKind kind,
+        ExactWheelRecordingTarget destination,
+        TLoaderState loaderState,
+        Func<TLoaderState, MacroDefinition, ExactWheelRecording> loader,
+        Func<ExactWheelRecording, ExactWheelRecordingTarget,
+            ExactWheelRecording> transform)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(loader);
+        ArgumentNullException.ThrowIfNull(transform);
+        var key = new TransformCacheKey(
+            MacroCacheKey.Create(definition),
+            kind,
+            DestinationCacheKey.Create(destination));
+        if (_transformed.TryGetValue(key, out var cached))
+            return cached.Recording;
+
+        // Resolve the source only after the transformed lookup misses. The
+        // transformed working set is intentionally larger than the source
+        // cache, so doing this in the opposite order can re-read a large
+        // uncached source on every otherwise-cached client cycle.
+        var source = GetOrLoad(definition, loaderState, loader);
+        var recording = transform(source, destination) ??
+            throw new InvalidDataException(
+                "The macro transform returned no recording.");
         TryCacheTransform(key, recording);
         return recording;
     }
@@ -138,58 +193,43 @@ internal sealed class SessionMacroPlaybackCache
         ExactWheelRecording recording)
     {
         var eventCount = recording.Events.Count;
+        if (eventCount > MaximumEventsPerTransformedEntry)
+            return;
+
+        RemoveStaleTransformForSameTarget(key);
         if (_transformed.Count >= MaximumTransformedEntries ||
-            eventCount > MaximumEventsPerTransformedEntry ||
             eventCount > MaximumTransformedEvents - _transformedEventCount)
         {
+            // A repeating client scan must not evict the entry needed next and
+            // degrade into zero cache hits. Keep the admitted working set and
+            // let only this over-budget transform run one-shot.
             return;
         }
 
-        _transformed.Add(key, recording);
+        _transformed.Add(
+            key,
+            new TransformedCacheEntry(recording, eventCount));
         _transformedEventCount += eventCount;
     }
 
-    private static string CreateDestinationIdentity(
-        ExactWheelRecordingTarget destination)
+    private void RemoveStaleTransformForSameTarget(TransformCacheKey key)
     {
-        var display = destination.Display;
-        var metadata = destination.Metadata;
-        var identity = new StringBuilder(256);
-        AppendSigned(identity, destination.WindowHandle.ToInt64());
-        AppendSigned(identity, display.VirtualLeft);
-        AppendSigned(identity, display.VirtualTop);
-        AppendSigned(identity, display.VirtualWidth);
-        AppendSigned(identity, display.VirtualHeight);
-        AppendSigned(identity, display.Monitors.Count);
-        foreach (var monitor in display.Monitors)
+        TransformCacheKey? staleKey = null;
+        foreach (var existing in _transformed.Keys)
         {
-            AppendSigned(identity, monitor.Bounds.Left);
-            AppendSigned(identity, monitor.Bounds.Top);
-            AppendSigned(identity, monitor.Bounds.Right);
-            AppendSigned(identity, monitor.Bounds.Bottom);
-            AppendUnsigned(identity, monitor.DpiX);
-            AppendUnsigned(identity, monitor.DpiY);
+            if (existing.Macro == key.Macro &&
+                existing.Kind == key.Kind &&
+                existing.Destination.WindowHandle ==
+                    key.Destination.WindowHandle)
+            {
+                staleKey = existing;
+                break;
+            }
         }
-
-        identity.Append(metadata.ProcessBasename).Append('\u001f');
-        identity.Append(metadata.WindowClass).Append('\u001f');
-        AppendSigned(identity, metadata.WindowRect.Left);
-        AppendSigned(identity, metadata.WindowRect.Top);
-        AppendSigned(identity, metadata.WindowRect.Right);
-        AppendSigned(identity, metadata.WindowRect.Bottom);
-        AppendSigned(identity, metadata.ClientRect.Left);
-        AppendSigned(identity, metadata.ClientRect.Top);
-        AppendSigned(identity, metadata.ClientRect.Right);
-        AppendSigned(identity, metadata.ClientRect.Bottom);
-        return identity.ToString();
-
-        static void AppendSigned(StringBuilder builder, long value) =>
-            builder.Append(value.ToString(CultureInfo.InvariantCulture))
-                .Append('\u001f');
-
-        static void AppendUnsigned(StringBuilder builder, uint value) =>
-            builder.Append(value.ToString(CultureInfo.InvariantCulture))
-                .Append('\u001f');
+        if (staleKey is not { } stale)
+            return;
+        if (_transformed.Remove(stale, out var removed))
+            _transformedEventCount -= removed.EventCount;
     }
 
     private readonly record struct MacroCacheKey(
@@ -209,5 +249,112 @@ internal sealed class SessionMacroPlaybackCache
     private readonly record struct TransformCacheKey(
         MacroCacheKey Macro,
         SessionMacroTransformKind Kind,
-        string DestinationIdentity);
+        DestinationCacheKey Destination);
+
+    private readonly record struct DestinationCacheKey(
+        long WindowHandle,
+        ExactWheelDisplayTopology Display,
+        string ProcessBasename,
+        string WindowClass,
+        ExactWheelRect WindowRect,
+        ExactWheelRect ClientRect)
+    {
+        internal static DestinationCacheKey Create(
+            ExactWheelRecordingTarget destination)
+        {
+            var metadata = destination.Metadata;
+            return new DestinationCacheKey(
+                destination.WindowHandle.ToInt64(),
+                destination.Display,
+                metadata.ProcessBasename,
+                metadata.WindowClass,
+                metadata.WindowRect,
+                metadata.ClientRect);
+        }
+    }
+
+    private sealed class TransformCacheKeyComparer :
+        IEqualityComparer<TransformCacheKey>
+    {
+        internal static TransformCacheKeyComparer Instance { get; } = new();
+
+        public bool Equals(TransformCacheKey left, TransformCacheKey right) =>
+            left.Macro == right.Macro &&
+            left.Kind == right.Kind &&
+            DestinationsEqual(left.Destination, right.Destination);
+
+        public int GetHashCode(TransformCacheKey key)
+        {
+            var destination = key.Destination;
+            var display = destination.Display;
+            var hash = new HashCode();
+            hash.Add(key.Macro);
+            hash.Add(key.Kind);
+            hash.Add(destination.WindowHandle);
+            hash.Add(display.VirtualLeft);
+            hash.Add(display.VirtualTop);
+            hash.Add(display.VirtualWidth);
+            hash.Add(display.VirtualHeight);
+            hash.Add(display.Monitors.Count);
+            for (var index = 0; index < display.Monitors.Count; index++)
+            {
+                var monitor = display.Monitors[index];
+                hash.Add(monitor.Bounds);
+                hash.Add(monitor.DpiX);
+                hash.Add(monitor.DpiY);
+            }
+            hash.Add(destination.ProcessBasename, StringComparer.Ordinal);
+            hash.Add(destination.WindowClass, StringComparer.Ordinal);
+            hash.Add(destination.WindowRect);
+            hash.Add(destination.ClientRect);
+            return hash.ToHashCode();
+        }
+
+        private static bool DestinationsEqual(
+            DestinationCacheKey left,
+            DestinationCacheKey right)
+        {
+            if (left.WindowHandle != right.WindowHandle ||
+                !string.Equals(
+                    left.ProcessBasename,
+                    right.ProcessBasename,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    left.WindowClass,
+                    right.WindowClass,
+                    StringComparison.Ordinal) ||
+                left.WindowRect != right.WindowRect ||
+                left.ClientRect != right.ClientRect)
+            {
+                return false;
+            }
+
+            var leftDisplay = left.Display;
+            var rightDisplay = right.Display;
+            if (ReferenceEquals(leftDisplay, rightDisplay))
+                return true;
+            if (leftDisplay.VirtualLeft != rightDisplay.VirtualLeft ||
+                leftDisplay.VirtualTop != rightDisplay.VirtualTop ||
+                leftDisplay.VirtualWidth != rightDisplay.VirtualWidth ||
+                leftDisplay.VirtualHeight != rightDisplay.VirtualHeight ||
+                leftDisplay.Monitors.Count != rightDisplay.Monitors.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < leftDisplay.Monitors.Count; index++)
+            {
+                if (leftDisplay.Monitors[index] !=
+                    rightDisplay.Monitors[index])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private sealed record TransformedCacheEntry(
+        ExactWheelRecording Recording,
+        int EventCount);
 }

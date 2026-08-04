@@ -159,6 +159,7 @@ public sealed class ExactWheelTargetMetadata
 public sealed class ExactWheelRecording
 {
     private readonly ReadOnlyCollection<ExactWheelInputEvent> _events;
+    private int _validationState;
 
     public ExactWheelRecording(
         ulong durationMicroseconds,
@@ -182,6 +183,41 @@ public sealed class ExactWheelRecording
     public ExactWheelTargetMetadata Target { get; }
 
     public IReadOnlyList<ExactWheelInputEvent> Events => _events;
+
+    internal bool IsValidated => Volatile.Read(ref _validationState) != 0;
+
+    internal void MarkValidated() =>
+        Volatile.Write(ref _validationState, 1);
+
+    internal static ExactWheelRecording CreateFromOwnedEvents(
+        ulong durationMicroseconds,
+        ExactWheelDisplayTopology display,
+        ExactWheelTargetMetadata target,
+        ExactWheelInputEvent[] ownedEvents) =>
+        new(
+            durationMicroseconds,
+            display,
+            target,
+            ownedEvents,
+            takeOwnership: true);
+
+    private ExactWheelRecording(
+        ulong durationMicroseconds,
+        ExactWheelDisplayTopology display,
+        ExactWheelTargetMetadata target,
+        ExactWheelInputEvent[] ownedEvents,
+        bool takeOwnership)
+    {
+        ArgumentNullException.ThrowIfNull(display);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(ownedEvents);
+        if (!takeOwnership)
+            throw new ArgumentException("Event ownership is required.");
+        DurationMicroseconds = durationMicroseconds;
+        Display = display;
+        Target = target;
+        _events = Array.AsReadOnly(ownedEvents);
+    }
 }
 
 public sealed record ExactWheelRecordingTarget(

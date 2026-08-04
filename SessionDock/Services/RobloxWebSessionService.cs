@@ -25,7 +25,9 @@ public sealed class RobloxWebSessionService : IDisposable
     private bool _isReady;
     private WebSessionToken? _currentToken;
     private int _failedGeneration = -1;
+    private long _browserWorkGeneration;
     private readonly SemaphoreSlim _macroSuspensionGate = new(1, 1);
+    private PendingWebSessionSuspensionLease? _pendingMacroSuspension;
     private TaskCompletionSource<WebSessionUnavailableReason> _sessionEnded =
         CreateSessionEndedSignal();
 
@@ -66,6 +68,8 @@ public sealed class RobloxWebSessionService : IDisposable
             var core = browser.CoreWebView2;
             if (core.IsSuspended)
                 return null;
+            var browserWorkGeneration = Volatile.Read(
+                ref _browserWorkGeneration);
 
             var suspensionTask = core.TrySuspendAsync();
             bool suspended;
@@ -78,21 +82,28 @@ public sealed class RobloxWebSessionService : IDisposable
             catch (TimeoutException)
             {
                 releaseGate = false;
-                ObserveLateSuspension(
+                var pendingLease = CreatePendingSuspensionLease(
                     suspensionTask,
                     core,
-                    browser.Dispatcher);
+                    browser.Dispatcher,
+                    token,
+                    browser,
+                    browserWorkGeneration);
                 System.Diagnostics.Trace.WriteLine(
-                    "WebView2 performance suspension exceeded its time budget and playback continued without it.");
-                return null;
+                    "WebView2 performance suspension exceeded its start budget; playback continued while suspension completed in the background.");
+                return pendingLease;
             }
             catch (OperationCanceledException)
             {
                 releaseGate = false;
-                ObserveLateSuspension(
+                var pendingLease = CreatePendingSuspensionLease(
                     suspensionTask,
                     core,
-                    browser.Dispatcher);
+                    browser.Dispatcher,
+                    token,
+                    browser,
+                    browserWorkGeneration);
+                pendingLease.Dispose();
                 throw;
             }
 
@@ -102,7 +113,9 @@ public sealed class RobloxWebSessionService : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!IsCurrent(token) ||
-                !ReferenceEquals(browser, _browser))
+                !ReferenceEquals(browser, _browser) ||
+                Volatile.Read(ref _browserWorkGeneration) !=
+                    browserWorkGeneration)
             {
                 return null;
             }
@@ -168,6 +181,8 @@ public sealed class RobloxWebSessionService : IDisposable
 
     public void ReleaseBrowser()
     {
+        Interlocked.Increment(ref _browserWorkGeneration);
+        RevokePendingMacroSuspension();
         var browser = _browser;
         _sessionEnded.TrySetResult(WebSessionUnavailableReason.Closed);
         _generation++;
@@ -902,6 +917,8 @@ public sealed class RobloxWebSessionService : IDisposable
     private CoreWebView2 GetCore(WebSessionToken token)
     {
         EnsureUsable(token);
+        Interlocked.Increment(ref _browserWorkGeneration);
+        RevokePendingMacroSuspension();
         var core = _browser!.CoreWebView2;
         // Account and batch operations always take priority over the optional
         // playback optimization. If any work reaches the browser, resume it
@@ -930,47 +947,63 @@ public sealed class RobloxWebSessionService : IDisposable
         }
     }
 
-    private void ObserveLateSuspension(
-        Task<bool> suspensionTask,
-        CoreWebView2 core,
-        Dispatcher dispatcher)
-    {
-        _ = ObserveLateSuspensionAsync(
-            suspensionTask,
-            core,
-            dispatcher,
-            _macroSuspensionGate);
-    }
-
-    private static async Task ObserveLateSuspensionAsync(
+    private PendingWebSessionSuspensionLease CreatePendingSuspensionLease(
         Task<bool> suspensionTask,
         CoreWebView2 core,
         Dispatcher dispatcher,
-        SemaphoreSlim suspensionGate)
+        WebSessionToken token,
+        WebView2 browser,
+        long browserWorkGeneration)
     {
-        try
-        {
-            var suspended = await suspensionTask.ConfigureAwait(false);
-            if (!suspended)
-                return;
+        var pending = new PendingWebSessionSuspensionLease(
+            suspensionTask,
+            () => ResumeOnDispatcherAsync(core, dispatcher),
+            _macroSuspensionGate,
+            exception => System.Diagnostics.Trace.WriteLine(
+                $"Late WebView2 performance suspension settled safely: {exception.GetType().Name}."),
+            () => IsCurrent(token) &&
+                ReferenceEquals(browser, _browser) &&
+                Volatile.Read(ref _browserWorkGeneration) ==
+                    browserWorkGeneration);
+        var superseded = Interlocked.Exchange(
+            ref _pendingMacroSuspension,
+            pending);
+        superseded?.Dispose();
+        _ = ClearPendingSuspensionWhenCompleteAsync(pending);
+        return pending;
+    }
 
-            await dispatcher.InvokeAsync(
-                () => ResumeSafely(core),
-                DispatcherPriority.Send);
-        }
-        catch (Exception exception)
+    private async Task ClearPendingSuspensionWhenCompleteAsync(
+        PendingWebSessionSuspensionLease pending)
+    {
+        await pending.Completion.ConfigureAwait(false);
+        _ = Interlocked.CompareExchange(
+            ref _pendingMacroSuspension,
+            null,
+            pending);
+    }
+
+    private void RevokePendingMacroSuspension()
+    {
+        var pending = Interlocked.Exchange(
+            ref _pendingMacroSuspension,
+            null);
+        pending?.Dispose();
+    }
+
+    private static Task ResumeOnDispatcherAsync(
+        CoreWebView2 core,
+        Dispatcher dispatcher)
+    {
+        if (dispatcher.CheckAccess())
         {
-            // This detached observer must consume every late fault. Expected
-            // COM/lifecycle failures are normal during browser replacement or
-            // shutdown; unexpected failures are diagnostic-only because the
-            // optimization must never break macro cancellation.
-            System.Diagnostics.Trace.WriteLine(
-                $"Late WebView2 performance suspension settled safely: {exception.GetType().Name}.");
+            ResumeSafely(core);
+            return Task.CompletedTask;
         }
-        finally
-        {
-            suspensionGate.Release();
-        }
+
+        return dispatcher.InvokeAsync(
+            () => ResumeSafely(core),
+            DispatcherPriority.Send).Task;
     }
 
     private sealed class WebSessionSuspensionLease(

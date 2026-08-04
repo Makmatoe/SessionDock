@@ -273,7 +273,7 @@ public sealed class RobloxWindowServiceTests
     }
 
     [Fact]
-    public async Task FocusAsync_WithRetainedLease_ReusesTrustAndRevalidatesToken()
+    public async Task FocusAsync_WithRetainedLease_ReusesFreshIdentityProof()
     {
         var native = ReadyNative();
         native.SetForegroundResult = true;
@@ -286,6 +286,9 @@ public sealed class RobloxWindowServiceTests
             acquisition.Lease);
         var pin = Assert.Single(native.LifetimePins);
         native.ForceTrustRefreshCalls.Clear();
+        native.WindowProcessIdReads.Clear();
+        var livenessChecksBefore = pin.RetainedLivenessCheckCount;
+        var usabilityChecksBefore = native.UsableReadCount;
 
         var result = await service.FocusAsync(
             lease,
@@ -296,8 +299,15 @@ public sealed class RobloxWindowServiceTests
 
         Assert.True(result.Success, result.Error);
         Assert.Empty(native.ForceTrustRefreshCalls);
-        Assert.Equal([false], pin.ForceTrustRefreshCalls);
-        Assert.Equal(1, pin.VerificationCount);
+        Assert.Empty(pin.ForceTrustRefreshCalls);
+        Assert.Equal(0, pin.VerificationCount);
+        Assert.Equal(
+            3,
+            pin.RetainedLivenessCheckCount - livenessChecksBefore);
+        Assert.Equal(
+            [(nint)100, (nint)100, (nint)100, (nint)100],
+            native.WindowProcessIdReads);
+        Assert.Equal(3, native.UsableReadCount - usabilityChecksBefore);
     }
 
     [Fact]
@@ -339,6 +349,7 @@ public sealed class RobloxWindowServiceTests
             acquisition.Lease);
         Assert.Single(native.LifetimePins).VerificationStatus =
             RobloxProcessVerificationStatus.WrongUserOrSession;
+        native.Advance(TimeSpan.FromSeconds(6));
 
         var result = await service.FocusAsync(
             lease,
@@ -378,6 +389,119 @@ public sealed class RobloxWindowServiceTests
         cache.Dispose();
 
         Assert.Equal(1, pin.DisposeCount);
+    }
+
+    [Fact]
+    public void SessionMacroLeaseCache_CachedSingleTargetHitsAreAllocationFree()
+    {
+        var native = ReadyNative();
+        var service = CreateService(native);
+        var window = new RobloxSessionLayoutWindow(
+            "account-a",
+            Identity,
+            (nint)100);
+        using var cache = new SessionMacroPlaybackLeaseCache();
+        _ = cache.GetOrAcquire(service, window);
+        for (var index = 0; index < 100; index++)
+            _ = cache.GetOrAcquire(service, window);
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var aggregate = 0;
+
+        for (var index = 0; index < 10_000; index++)
+        {
+            aggregate += cache.GetOrAcquire(service, window)
+                .Lease?.AllowedTargetCount ?? 0;
+        }
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.Equal(10_000, aggregate);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void SessionMacroLeaseCache_EightTargetHitsAreAllocationFree()
+    {
+        var identities = Enumerable.Range(0, 8)
+            .Select(index => Identity with
+            {
+                ProcessId = Identity.ProcessId + index,
+                StartTimeUtc = Identity.StartTimeUtc.AddSeconds(index)
+            })
+            .ToArray();
+        var windows = identities
+            .Select((identity, index) => new RobloxSessionLayoutWindow(
+                $"account-{index}",
+                identity,
+                (nint)(100 + index)))
+            .ToArray();
+        var reversed = windows.Reverse().ToArray();
+        var native = ReadyNative();
+        native.AcceptedIdentities = identities;
+        foreach (var window in windows)
+            native.WindowProcessIds[window.Handle] = window.Identity.ProcessId;
+        var service = CreateService(native);
+        using var cache = new SessionMacroPlaybackLeaseCache();
+        var first = cache.GetOrAcquire(service, windows);
+        Assert.True(first.Success, first.Failure?.Error);
+        for (var index = 0; index < 100; index++)
+            _ = cache.GetOrAcquire(service, reversed);
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var aggregate = 0;
+
+        for (var index = 0; index < 10_000; index++)
+        {
+            aggregate += cache.GetOrAcquire(service, reversed)
+                .Lease?.AllowedTargetCount ?? 0;
+        }
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.Equal(80_000, aggregate);
+        Assert.Equal(8, native.PinAttemptCount);
+        Assert.Equal(0, allocated);
+    }
+
+    [Fact]
+    public void SessionMacroLeaseCache_CachesClassOnlyForExactRetainedTarget()
+    {
+        var captureCalls = 0;
+        using var cache = new SessionMacroPlaybackLeaseCache(windowHandle =>
+        {
+            captureCalls++;
+            Assert.Equal((nint)100, windowHandle);
+            return "WINDOWSCLIENT";
+        });
+        var native = ReadyNative();
+        var service = CreateService(native);
+        var window = new RobloxSessionLayoutWindow(
+            "account-a",
+            Identity,
+            (nint)100);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            cache.GetOrCaptureWindowClass(window));
+        var acquired = cache.GetOrAcquire(service, window);
+        Assert.True(acquired.Success, acquired.Failure?.Error);
+
+        var first = cache.GetOrCaptureWindowClass(window);
+        var repeated = cache.GetOrCaptureWindowClass(window);
+        for (var index = 0; index < 100; index++)
+            _ = cache.GetOrCaptureWindowClass(window);
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var aggregate = 0;
+
+        for (var index = 0; index < 10_000; index++)
+            aggregate += cache.GetOrCaptureWindowClass(window).Length;
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.Same(first, repeated);
+        Assert.Equal(13, first.Length);
+        Assert.Equal(130_000, aggregate);
+        Assert.Equal(1, captureCalls);
+        Assert.Equal(1, cache.CachedWindowClassCount);
+        Assert.Equal(0, allocated);
     }
 
     [Fact]
@@ -552,6 +676,12 @@ public sealed class RobloxWindowServiceTests
         Assert.Contains("process.Exited -= Process_Exited", source);
         Assert.Contains("WaitForSingleObject", source);
         Assert.Contains("IsRetainedProcessAlive", source);
+        Assert.Contains(
+            "ClientToScreen(windowHandle, ref topLeft)",
+            source);
+        Assert.Contains(
+            "ClientToScreen(windowHandle, ref bottomRight)",
+            source);
     }
 
     [Fact]
@@ -683,6 +813,42 @@ public sealed class RobloxWindowServiceTests
 
         Assert.True(lease.IsDispatchAuthorized());
         Assert.Equal([(nint)101], native.WindowProcessIdReads);
+    }
+
+    [Fact]
+    public void PlaybackTargetLease_ClockRollbackInvalidatesInactiveTargetDeadline()
+    {
+        var secondIdentity = Identity with
+        {
+            ProcessId = 43,
+            StartTimeUtc = Identity.StartTimeUtc.AddSeconds(1)
+        };
+        var native = ReadyNative();
+        native.AcceptedIdentities = [Identity, secondIdentity];
+        native.WindowProcessIds[(nint)100] = Identity.ProcessId;
+        native.WindowProcessIds[(nint)101] = secondIdentity.ProcessId;
+        native.ForegroundWindow = (nint)100;
+        var result = CreateService(native).AcquirePlaybackTargetLease(
+            [
+                new RobloxPlaybackTarget(Identity, (nint)100),
+                new RobloxPlaybackTarget(secondIdentity, (nint)101)
+            ],
+            TimeSpan.FromSeconds(5));
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(result.Lease);
+        var firstPin = native.LifetimePins[0];
+        var secondPin = native.LifetimePins[1];
+
+        native.Advance(TimeSpan.FromSeconds(-10));
+        Assert.Null(lease.ValidateExactTarget(
+            Identity,
+            (nint)100,
+            revalidateIdentityAndToken: false));
+        Assert.Equal(1, firstPin.VerificationCount);
+        Assert.Equal(0, secondPin.VerificationCount);
+
+        native.ForegroundWindow = (nint)101;
+        Assert.True(lease.IsDispatchAuthorized());
+        Assert.Equal(1, secondPin.VerificationCount);
     }
 
     [Fact]
@@ -1147,6 +1313,7 @@ public sealed class RobloxWindowServiceTests
         public RobloxPixelRect RealizedBoundsAfterSet { get; set; }
         public RobloxPixelRect RealizedClientAfterSet { get; set; }
         public bool Usable { get; set; } = true;
+        public int UsableReadCount { get; private set; }
         public bool Minimized { get; set; }
         public bool Maximized { get; set; }
         public bool Fullscreen { get; set; }
@@ -1213,7 +1380,11 @@ public sealed class RobloxWindowServiceTests
         public IReadOnlyList<nint> EnumerateTopLevelWindowsInZOrder() =>
             TopLevelZOrder.Count == 0 ? Windows : TopLevelZOrder;
 
-        public bool IsUsableTopLevelWindow(nint windowHandle) => Usable;
+        public bool IsUsableTopLevelWindow(nint windowHandle)
+        {
+            UsableReadCount++;
+            return Usable;
+        }
 
         public int GetWindowProcessId(nint windowHandle)
         {
@@ -1338,16 +1509,28 @@ public sealed class RobloxWindowServiceTests
     private sealed class FakeProcessLifetimePin(
         RobloxClientProcessIdentity identity) : IRobloxProcessLifetimePin
     {
+        private bool _isRetainedProcessAlive = true;
+
         public RobloxClientProcessIdentity Identity { get; } = identity;
 
         public bool IsExitObservedAlive { get; set; } = true;
 
-        public bool IsRetainedProcessAlive { get; set; } = true;
+        public bool IsRetainedProcessAlive
+        {
+            get
+            {
+                RetainedLivenessCheckCount++;
+                return _isRetainedProcessAlive;
+            }
+            set => _isRetainedProcessAlive = value;
+        }
 
         public RobloxProcessVerificationStatus VerificationStatus { get; set; } =
             RobloxProcessVerificationStatus.Verified;
 
         public int VerificationCount { get; private set; }
+
+        public int RetainedLivenessCheckCount { get; private set; }
 
         public int DisposeCount { get; private set; }
 
@@ -1358,7 +1541,9 @@ public sealed class RobloxWindowServiceTests
         {
             VerificationCount++;
             ForceTrustRefreshCalls.Add(refreshExecutableTrust);
-            return VerificationStatus;
+            return IsRetainedProcessAlive
+                ? VerificationStatus
+                : RobloxProcessVerificationStatus.Exited;
         }
 
         public void Dispose()

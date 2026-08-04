@@ -10,6 +10,8 @@ public static class ExactWheelRecordingValidator
     public static void Validate(ExactWheelRecording recording)
     {
         ArgumentNullException.ThrowIfNull(recording);
+        if (recording.IsValidated)
+            return;
         if (recording.DurationMicroseconds >
             ExactWheelLimits.MaximumDurationMicroseconds)
         {
@@ -65,6 +67,8 @@ public static class ExactWheelRecordingValidator
             previousSequence = inputEvent.Sequence;
             havePrevious = true;
         }
+
+        recording.MarkValidated();
     }
 
     public static void ValidatePlayable(ExactWheelRecording recording)
@@ -84,17 +88,59 @@ public static class ExactWheelRecordingValidator
         ulong actualStopOffsetMicroseconds)
     {
         ArgumentNullException.ThrowIfNull(events);
-        var ordered = events
-            .OrderBy(inputEvent => inputEvent.TimestampMicroseconds)
-            .ThenBy(inputEvent => inputEvent.Sequence)
-            .ToArray();
-        var recording = new ExactWheelRecording(
+        return FinalizeOwned(
+            display,
+            target,
+            events.ToArray(),
+            actualStopOffsetMicroseconds);
+    }
+
+    internal static ExactWheelRecording FinalizeOwned(
+        ExactWheelDisplayTopology display,
+        ExactWheelTargetMetadata target,
+        ExactWheelInputEvent[] ownedEvents,
+        ulong actualStopOffsetMicroseconds)
+    {
+        ArgumentNullException.ThrowIfNull(ownedEvents);
+        if (!IsInTimelineOrder(ownedEvents))
+            Array.Sort(ownedEvents, CompareTimelineEvents);
+        var recording = ExactWheelRecording.CreateFromOwnedEvents(
             actualStopOffsetMicroseconds,
             display,
             target,
-            ordered);
+            ownedEvents);
         Validate(recording);
         return recording;
+    }
+
+    internal static bool IsInTimelineOrder(
+        IReadOnlyList<ExactWheelInputEvent> events)
+    {
+        ArgumentNullException.ThrowIfNull(events);
+        if (events.Count < 2)
+            return true;
+
+        var previous = events[0];
+        for (var index = 1; index < events.Count; index++)
+        {
+            var current = events[index];
+            if (CompareTimelineEvents(previous, current) > 0)
+                return false;
+            previous = current;
+        }
+
+        return true;
+    }
+
+    private static int CompareTimelineEvents(
+        ExactWheelInputEvent left,
+        ExactWheelInputEvent right)
+    {
+        var timestampComparison = left.TimestampMicroseconds.CompareTo(
+            right.TimestampMicroseconds);
+        return timestampComparison != 0
+            ? timestampComparison
+            : left.Sequence.CompareTo(right.Sequence);
     }
 
     private static void ValidateDisplay(ExactWheelDisplayTopology display)
@@ -118,8 +164,9 @@ public static class ExactWheelRecordingValidator
                 "Virtual desktop topology is invalid.");
         }
 
-        foreach (var monitor in display.Monitors)
+        for (var index = 0; index < display.Monitors.Count; index++)
         {
+            var monitor = display.Monitors[index];
             var bounds = monitor.Bounds;
             if (bounds.Right <= bounds.Left ||
                 bounds.Bottom <= bounds.Top ||
@@ -143,7 +190,9 @@ public static class ExactWheelRecordingValidator
                 ExactWheelLimits.MaximumProcessBasenameUtf16Units ||
             target.WindowClass.Length >
                 ExactWheelLimits.MaximumWindowClassUtf16Units ||
-            target.ProcessBasename.IndexOfAny(['\\', '/', '\0']) >= 0 ||
+            target.ProcessBasename.Contains('\\') ||
+            target.ProcessBasename.Contains('/') ||
+            target.ProcessBasename.Contains('\0') ||
             target.WindowClass.Contains('\0', StringComparison.Ordinal) ||
             !HasValidUtf16(target.ProcessBasename) ||
             !HasValidUtf16(target.WindowClass) ||

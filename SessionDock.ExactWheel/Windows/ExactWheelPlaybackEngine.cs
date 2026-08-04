@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using Microsoft.Win32.SafeHandles;
 
@@ -203,8 +204,18 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
     private readonly IPlaybackWaiter _waiter;
     private readonly IPhysicalInputState _physicalInput;
     private readonly Func<IExactWheelInputCapture> _captureFactory;
+    private readonly AutoResetEvent _playbackRequested = new(false);
     private EventWaitHandle? _activeStopEvent;
+    private EventWaitHandle? _activeInterventionEvent;
     private Task<ExactWheelPlaybackResult>? _activeTask;
+    private PlaybackRequest? _pendingRequest;
+    private Task? _workerTask;
+    private Exception? _workerFailure;
+    private IExactWheelInputCapture? _retainedInterventionCapture;
+    private Task? _interventionSequenceEndTask;
+    private long _interventionSequenceGeneration;
+    private bool _interventionSequenceEnding;
+    private bool _workerShutdownRequested;
     private bool _disposed;
 
     internal ExactWheelPlaybackEngine()
@@ -242,36 +253,132 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(options);
         ValidateOptions(options);
 
-        var ordered = new ExactWheelRecording(
-            recording.DurationMicroseconds,
-            recording.Display,
-            recording.Target,
-            recording.Events
-                .OrderBy(inputEvent => inputEvent.TimestampMicroseconds)
-                .ThenBy(inputEvent => inputEvent.Sequence));
-        ExactWheelRecordingValidator.ValidatePlayable(ordered);
+        var ordered = PreparePlaybackRecording(recording);
 
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_interventionSequenceEnding)
+            {
+                throw new InvalidOperationException(
+                    "The retained intervention monitor is stopping.");
+            }
             if (_activeTask is { IsCompleted: false })
                 throw new InvalidOperationException("Playback is already running.");
-            _activeStopEvent?.Dispose();
-            _activeStopEvent = new EventWaitHandle(
+            if (_retainedInterventionCapture is not null &&
+                (options.StopOnPhysicalInput || options.PauseOnPhysicalInput) &&
+                options.WaitForReleaseVirtualKeys.Count != 0)
+            {
+                throw new InvalidOperationException(
+                    "A retained playback sequence cannot arm from held control keys. Release the keys before beginning the sequence or use one-off playback.");
+            }
+            if (_activeStopEvent is null)
+            {
+                _activeStopEvent = new EventWaitHandle(
+                    initialState: false,
+                    EventResetMode.ManualReset);
+            }
+            else
+            {
+                // A shared ExactWheel session plays each client serially.
+                // Reuse its cancellation kernel handle instead of creating
+                // and closing one for every client on every loop.
+                _activeStopEvent.Reset();
+            }
+            var stopEvent = _activeStopEvent;
+            EventWaitHandle? interventionEvent = null;
+            var interventionMonitorRetained = false;
+            if (options.StopOnPhysicalInput || options.PauseOnPhysicalInput)
+            {
+                if (_activeInterventionEvent is null)
+                {
+                    _activeInterventionEvent = new EventWaitHandle(
+                        initialState: false,
+                        EventResetMode.ManualReset);
+                }
+                else if (_retainedInterventionCapture is null)
+                {
+                    _activeInterventionEvent.Reset();
+                }
+                interventionMonitorRetained =
+                    _retainedInterventionCapture is not null;
+                if (interventionMonitorRetained &&
+                    _retainedInterventionCapture!.Mode !=
+                        InputCaptureMode.Intervention)
+                {
+                    throw new InvalidOperationException(
+                        "The retained intervention monitor is no longer active.");
+                }
+                interventionEvent = _activeInterventionEvent;
+            }
+            EnsureWorkerLocked();
+            if (_pendingRequest is not null)
+                throw new InvalidOperationException("Playback is already queued.");
+            var completion = new TaskCompletionSource<
+                ExactWheelPlaybackResult>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingRequest = new PlaybackRequest(
+                ordered,
+                options,
+                stopEvent,
+                interventionEvent,
+                interventionMonitorRetained,
+                cancellationToken,
+                completion);
+            _activeTask = completion.Task;
+            _playbackRequested.Set();
+            return _activeTask;
+        }
+    }
+
+    internal IAsyncDisposable BeginInterventionSequence()
+    {
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_workerFailure is not null)
+            {
+                throw new InvalidOperationException(
+                    "The ExactWheel playback worker stopped after an unexpected failure.",
+                    _workerFailure);
+            }
+            if (_activeTask is { IsCompleted: false } ||
+                _retainedInterventionCapture is not null ||
+                _interventionSequenceEnding)
+            {
+                throw new InvalidOperationException(
+                    "Finish the active playback sequence first.");
+            }
+
+            _activeInterventionEvent ??= new EventWaitHandle(
                 initialState: false,
                 EventResetMode.ManualReset);
-            var stopEvent = _activeStopEvent;
-            _activeTask = Task.Factory.StartNew(
-                    () => Run(
-                        ordered,
-                        options,
-                        stopEvent,
-                        cancellationToken),
-                    CancellationToken.None,
-                    TaskCreationOptions.LongRunning,
-                    TaskScheduler.Default)
-                .Unwrap();
-            return _activeTask;
+            _activeInterventionEvent.Reset();
+            var capture = _captureFactory();
+            try
+            {
+                capture.StartInterventionMonitor(_activeInterventionEvent);
+            }
+            catch
+            {
+                try
+                {
+                    capture.Dispose();
+                }
+                catch
+                {
+                    // Preserve the hook-installation failure as the primary
+                    // error. The capture was never published to the session.
+                }
+                throw;
+            }
+
+            _retainedInterventionCapture = capture;
+            _interventionSequenceGeneration = unchecked(
+                _interventionSequenceGeneration + 1);
+            return new InterventionSequenceLease(
+                this,
+                _interventionSequenceGeneration);
         }
     }
 
@@ -284,6 +391,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Task<ExactWheelPlaybackResult>? active;
+        Task? interventionSequenceEnd;
         lock (_gate)
         {
             if (_disposed)
@@ -291,8 +399,10 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             _disposed = true;
             _activeStopEvent?.Set();
             active = _activeTask;
+            interventionSequenceEnd = _interventionSequenceEndTask;
         }
 
+        Exception? disposalFailure = null;
         if (active is not null)
         {
             try
@@ -303,54 +413,190 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             {
                 // Disposal has already requested a safe stop.
             }
+            catch (Exception exception)
+            {
+                disposalFailure = exception;
+            }
+        }
+
+        if (interventionSequenceEnd is not null)
+        {
+            try
+            {
+                await interventionSequenceEnd.ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                disposalFailure ??= exception;
+            }
+        }
+
+        var retainedCapture = DetachRetainedInterventionCapture();
+        StopAndDisposeInterventionCapture(
+            retainedCapture,
+            ref disposalFailure);
+
+        Task? worker;
+        lock (_gate)
+        {
+            _workerShutdownRequested = true;
+            _playbackRequested.Set();
+            worker = _workerTask;
+        }
+        if (worker is not null)
+        {
+            try
+            {
+                await worker.ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                disposalFailure ??= exception;
+            }
         }
 
         lock (_gate)
         {
             _activeStopEvent?.Dispose();
             _activeStopEvent = null;
+            _activeInterventionEvent?.Dispose();
+            _activeInterventionEvent = null;
         }
 
+        _playbackRequested.Dispose();
         _waiter.Dispose();
         _injector.Dispose();
+        if (disposalFailure is not null)
+            ExceptionDispatchInfo.Capture(disposalFailure).Throw();
     }
 
-    private async Task<ExactWheelPlaybackResult> Run(
+    private void EnsureWorkerLocked()
+    {
+        if (_workerFailure is not null)
+        {
+            throw new InvalidOperationException(
+                "The ExactWheel playback worker stopped after an unexpected failure.",
+                _workerFailure);
+        }
+        if (_workerTask is { IsCompleted: false })
+            return;
+        if (_workerTask is not null)
+        {
+            throw new InvalidOperationException(
+                "The ExactWheel playback worker is no longer available.",
+                _workerTask.Exception?.GetBaseException());
+        }
+
+        _workerTask = Task.Factory.StartNew(
+            WorkerLoop,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
+    }
+
+    private void WorkerLoop()
+    {
+        if (Thread.CurrentThread.Name is null)
+            Thread.CurrentThread.Name = "SessionDock ExactWheel playback";
+        while (true)
+        {
+            _playbackRequested.WaitOne();
+            PlaybackRequest? request;
+            lock (_gate)
+            {
+                request = _pendingRequest;
+                _pendingRequest = null;
+                if (request is null && _workerShutdownRequested)
+                    return;
+            }
+            if (request is null)
+                continue;
+
+            try
+            {
+                var result = Run(
+                    request.Recording,
+                    request.Options,
+                    request.StopEvent,
+                    request.InterventionEvent,
+                    request.InterventionMonitorRetained,
+                    request.CancellationToken);
+                request.Completion.TrySetResult(result);
+            }
+            catch (Exception exception)
+            {
+                // Publish terminal failure while holding the same gate used by
+                // PlayAsync before waking the faulted request's continuations.
+                // Otherwise a retry could enqueue into the brief interval
+                // before this worker Task itself reaches IsCompleted.
+                lock (_gate)
+                    _workerFailure = exception;
+                request.Completion.TrySetException(exception);
+                throw;
+            }
+        }
+    }
+
+    private ExactWheelPlaybackResult Run(
         ExactWheelRecording recording,
         ExactWheelPlaybackOptions options,
         EventWaitHandle stopEvent,
+        EventWaitHandle? interventionEvent,
+        bool interventionMonitorRetained,
         CancellationToken cancellationToken)
     {
-        await Task.Yield();
+        IExactWheelInputCapture? retainedInterventionCapture = null;
+        if (interventionMonitorRetained)
+        {
+            lock (_gate)
+                retainedInterventionCapture = _retainedInterventionCapture;
+            if (!IsInterventionMonitorHealthy(
+                    retainedInterventionCapture))
+            {
+                return Result(
+                    ExactWheelPlaybackStopReason.PhysicalIntervention,
+                    message: "The physical-input intervention monitor stopped unexpectedly.");
+            }
+        }
         using var cancellationRegistration = cancellationToken.Register(
             static state => ((EventWaitHandle)state!).Set(),
             stopEvent);
-        using var interventionEvent = new EventWaitHandle(
-            initialState: false,
-            EventResetMode.ManualReset);
-        using var interventionCapture = options.StopOnPhysicalInput ||
-            options.PauseOnPhysicalInput
+        using var interventionCapture =
+            (options.StopOnPhysicalInput || options.PauseOnPhysicalInput) &&
+            !interventionMonitorRetained
             ? _captureFactory()
             : null;
+        var activeInterventionCapture =
+            retainedInterventionCapture ?? interventionCapture;
         try
         {
             if (options.EnforcePhysicalInputRelease &&
-                !_physicalInput.AreReleased(
-                    options.WaitForReleaseVirtualKeys))
+                activeInterventionCapture is not
+                    ITrackedPhysicalInputState)
             {
-                return Result(
-                    ExactWheelPlaybackStopReason.PhysicalInputHeld,
-                    message: "Release unrelated held keys and mouse buttons before playback.");
+                if (!_physicalInput.AreReleased(
+                        options.WaitForReleaseVirtualKeys))
+                {
+                    return Result(
+                        ExactWheelPlaybackStopReason.PhysicalInputHeld,
+                        message: "Release unrelated held keys and mouse buttons before playback.");
+                }
             }
 
-            interventionCapture?.StartInterventionMonitor(interventionEvent);
+            if (interventionEvent is not null &&
+                !interventionMonitorRetained)
+            {
+                interventionCapture?.StartInterventionMonitor(interventionEvent);
+            }
             return RunWorker(
                 recording,
                 options,
                 stopEvent,
                 options.StopOnPhysicalInput || options.PauseOnPhysicalInput
                     ? interventionEvent
-                    : null);
+                    : null,
+                activeInterventionCapture,
+                physicalInputPrevalidated: false);
         }
         catch (Win32Exception exception)
         {
@@ -371,25 +617,150 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         }
     }
 
+    private ValueTask EndInterventionSequenceAsync(long generation)
+    {
+        lock (_gate)
+        {
+            if (_disposed ||
+                _retainedInterventionCapture is null ||
+                generation != _interventionSequenceGeneration)
+            {
+                return ValueTask.CompletedTask;
+            }
+            if (_interventionSequenceEndTask is not null)
+                return new ValueTask(_interventionSequenceEndTask);
+
+            _interventionSequenceEnding = true;
+            _activeStopEvent?.Set();
+            _interventionSequenceEndTask =
+                EndInterventionSequenceCoreAsync(
+                    generation,
+                    _activeTask);
+            return new ValueTask(_interventionSequenceEndTask);
+        }
+    }
+
+    private async Task EndInterventionSequenceCoreAsync(
+        long generation,
+        Task<ExactWheelPlaybackResult>? active)
+    {
+        // Hook shutdown can join its message-pump thread. Always move that
+        // bounded teardown away from the WPF caller and publish this Task
+        // before any concurrent disposer can observe the sequence ending.
+        await Task.CompletedTask.ConfigureAwait(
+            ConfigureAwaitOptions.ForceYielding);
+        Exception? failure = null;
+        if (active is { IsCompleted: false })
+        {
+            try
+            {
+                _ = await active.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Sequence disposal requested the safe stop.
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+        }
+
+        IExactWheelInputCapture? capture;
+        lock (_gate)
+        {
+            capture = generation == _interventionSequenceGeneration
+                ? _retainedInterventionCapture
+                : null;
+            if (capture is not null)
+                _retainedInterventionCapture = null;
+        }
+        StopAndDisposeInterventionCapture(capture, ref failure);
+        lock (_gate)
+        {
+            if (generation == _interventionSequenceGeneration)
+            {
+                _interventionSequenceEnding = false;
+                _interventionSequenceEndTask = null;
+            }
+        }
+        if (failure is not null)
+            ExceptionDispatchInfo.Capture(failure).Throw();
+    }
+
+    private IExactWheelInputCapture? DetachRetainedInterventionCapture()
+    {
+        lock (_gate)
+        {
+            var capture = _retainedInterventionCapture;
+            _retainedInterventionCapture = null;
+            return capture;
+        }
+    }
+
+    private static void StopAndDisposeInterventionCapture(
+        IExactWheelInputCapture? capture,
+        ref Exception? failure)
+    {
+        if (capture is null)
+            return;
+        try
+        {
+            capture.StopInterventionMonitor();
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+        try
+        {
+            capture.Dispose();
+        }
+        catch (Exception exception)
+        {
+            failure ??= exception;
+        }
+    }
+
     private ExactWheelPlaybackResult RunWorker(
         ExactWheelRecording recording,
         ExactWheelPlaybackOptions options,
         EventWaitHandle stopEvent,
-        EventWaitHandle? interventionEvent)
+        EventWaitHandle? interventionEvent,
+        IExactWheelInputCapture? retainedInterventionCapture,
+        bool physicalInputPrevalidated)
     {
+        if (!IsInterventionMonitorHealthy(retainedInterventionCapture))
+        {
+            return Cleanup(Result(
+                ExactWheelPlaybackStopReason.PhysicalIntervention,
+                message: "The physical-input intervention monitor stopped unexpectedly."));
+        }
         if (!WaitForControlRelease(
                 options,
                 stopEvent,
-                interventionEvent))
+                interventionEvent,
+                retainedInterventionCapture))
         {
+            if (!IsInterventionMonitorHealthy(
+                    retainedInterventionCapture))
+            {
+                return Cleanup(Result(
+                    ExactWheelPlaybackStopReason.PhysicalIntervention,
+                    message: "The physical-input intervention monitor stopped unexpectedly."));
+            }
             return Cleanup(Result(
                 ExactWheelPlaybackStopReason.Cancelled,
                 message: "Playback was cancelled before input began."));
         }
 
-        interventionEvent?.Reset();
+        if (retainedInterventionCapture is null)
+            interventionEvent?.Reset();
         if (options.EnforcePhysicalInputRelease &&
-            !_physicalInput.AreReleased(Array.Empty<int>()))
+            !physicalInputPrevalidated &&
+            !ArePhysicalInputsReleased(
+                retainedInterventionCapture,
+                Array.Empty<int>()))
         {
             return Cleanup(Result(
                 ExactWheelPlaybackStopReason.PhysicalInputHeld,
@@ -457,6 +828,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                         options,
                         stopEvent,
                         interventionEvent,
+                        retainedInterventionCapture,
                         frequency,
                         out var dispatchWaitError,
                         out var playbackPauseTicks);
@@ -530,34 +902,6 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                         break;
                     }
 
-                    if (!TryBoundSchedulerLateness(
-                            options,
-                            frequency,
-                            ref origin,
-                            ref deadline,
-                            out var lateness,
-                            out var recoveryError))
-                    {
-                        result = Result(
-                            ExactWheelPlaybackStopReason.InvalidTimeline,
-                            loopIndex: loopIndex,
-                            eventIndex: eventIndex,
-                            message: recoveryError);
-                        break;
-                    }
-                    if (options.DangerouslyLateMicroseconds != 0 &&
-                        lateness > checked(
-                            (long)options.DangerouslyLateMicroseconds))
-                    {
-                        result = Result(
-                            ExactWheelPlaybackStopReason.DangerouslyLate,
-                            loopIndex: loopIndex,
-                            eventIndex: eventIndex,
-                            latenessMicroseconds: lateness,
-                            message: "Playback stopped rather than bursting stale input after a stall.");
-                        break;
-                    }
-
                     if (stopEvent.WaitOne(0))
                     {
                         result = Result(
@@ -587,6 +931,9 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                                 eventIndex: eventIndex);
                             break;
                         }
+                        ResetPhysicalPauseSignal(
+                            interventionEvent,
+                            retainedInterventionCapture);
                         continue;
                     }
 
@@ -626,6 +973,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             options,
                             stopEvent,
                             interventionEvent,
+                            retainedInterventionCapture,
                             frequency,
                             out var authorizationError,
                             out var authorizationPauseTicks);
@@ -688,8 +1036,8 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             frequency,
                             ref origin,
                             ref deadline,
-                            out lateness,
-                            out recoveryError))
+                            out var lateness,
+                            out var recoveryError))
                     {
                         result = Result(
                             ExactWheelPlaybackStopReason.InvalidTimeline,
@@ -708,6 +1056,56 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             eventIndex: eventIndex,
                             latenessMicroseconds: lateness,
                             message: "Playback stopped rather than bursting stale input after a stall.");
+                        break;
+                    }
+
+                    // Recheck only cheap signals after the potentially slow
+                    // final identity authorization. This closes its local
+                    // cancellation/intervention window without repeating the
+                    // expensive trust verification.
+                    if (stopEvent.WaitOne(0))
+                    {
+                        result = Result(
+                            ExactWheelPlaybackStopReason.Cancelled,
+                            loopIndex: loopIndex,
+                            eventIndex: eventIndex);
+                        break;
+                    }
+                    if (!IsInterventionMonitorHealthy(
+                            retainedInterventionCapture))
+                    {
+                        result = Result(
+                            ExactWheelPlaybackStopReason
+                                .PhysicalIntervention,
+                            loopIndex: loopIndex,
+                            eventIndex: eventIndex,
+                            message: "The physical-input intervention monitor stopped unexpectedly.");
+                        break;
+                    }
+                    if (interventionEvent?.WaitOne(0) == true)
+                    {
+                        if (_injector.HasHeldInputs &&
+                            options.PauseOnPhysicalInput)
+                        {
+                            result = Result(
+                                ExactWheelPlaybackStopReason.TargetLost,
+                                loopIndex: loopIndex,
+                                eventIndex: eventIndex,
+                                message: UnsafeHeldInputPauseMessage);
+                            break;
+                        }
+                        if (options.PauseOnPhysicalInput)
+                        {
+                            ResetPhysicalPauseSignal(
+                                interventionEvent,
+                                retainedInterventionCapture);
+                            continue;
+                        }
+                        result = Result(
+                            ExactWheelPlaybackStopReason
+                                .PhysicalIntervention,
+                            loopIndex: loopIndex,
+                            eventIndex: eventIndex);
                         break;
                     }
 
@@ -771,6 +1169,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 options,
                 stopEvent,
                 interventionEvent,
+                retainedInterventionCapture,
                 frequency,
                 out var endWaitError,
                 out var endPauseTicks);
@@ -847,6 +1246,30 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
 
         progress.Flush();
         return Cleanup(result);
+    }
+
+    internal static ExactWheelRecording PreparePlaybackRecording(
+        ExactWheelRecording recording)
+    {
+        ArgumentNullException.ThrowIfNull(recording);
+        if (recording.IsValidated)
+        {
+            ExactWheelRecordingValidator.ValidatePlayable(recording);
+            return recording;
+        }
+        if (ExactWheelRecordingValidator.IsInTimelineOrder(recording.Events))
+        {
+            ExactWheelRecordingValidator.ValidatePlayable(recording);
+            return recording;
+        }
+
+        var ordered = ExactWheelRecordingValidator.Finalize(
+            recording.Display,
+            recording.Target,
+            recording.Events,
+            recording.DurationMicroseconds);
+        ExactWheelRecordingValidator.ValidatePlayable(ordered);
+        return ordered;
     }
 
     private void CoalesceOverdueMouseMoves(
@@ -944,16 +1367,20 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
     private bool WaitForControlRelease(
         ExactWheelPlaybackOptions options,
         EventWaitHandle stopEvent,
-        EventWaitHandle? interventionEvent)
+        EventWaitHandle? interventionEvent,
+        IExactWheelInputCapture? interventionCapture)
     {
-        while (!_physicalInput.AreKeysReleased(
+        while (!AreControlKeysReleased(
+                   interventionCapture,
                    options.WaitForReleaseVirtualKeys))
         {
+            if (!IsInterventionMonitorHealthy(interventionCapture))
+                return false;
             if (stopEvent.WaitOne(5))
                 return false;
         }
 
-        return true;
+        return IsInterventionMonitorHealthy(interventionCapture);
     }
 
     private DispatchGuardWaitResult WaitUntilDispatchReady(
@@ -962,6 +1389,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         ExactWheelPlaybackOptions options,
         EventWaitHandle stopEvent,
         EventWaitHandle? interventionEvent,
+        IExactWheelInputCapture? retainedInterventionCapture,
         long frequency,
         out int win32Error,
         out long playbackPauseTicks)
@@ -970,6 +1398,11 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         playbackPauseTicks = 0;
         while (true)
         {
+            if (!IsInterventionMonitorHealthy(
+                    retainedInterventionCapture))
+            {
+                return DispatchGuardWaitResult.PhysicalIntervention;
+            }
             var waited = _waiter.WaitUntil(
                 deadline,
                 options.FinalSpinMicroseconds,
@@ -977,6 +1410,11 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 stopEvent,
                 interventionEvent,
                 out win32Error);
+            if (!IsInterventionMonitorHealthy(
+                    retainedInterventionCapture))
+            {
+                return DispatchGuardWaitResult.PhysicalIntervention;
+            }
             if (waited == DeadlineWaitResult.Cancelled)
                 return DispatchGuardWaitResult.Cancelled;
             if (waited == DeadlineWaitResult.Failed)
@@ -994,6 +1432,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 options,
                 stopEvent,
                 interventionEvent,
+                retainedInterventionCapture,
                 frequency,
                 out win32Error,
                 out var currentPauseTicks);
@@ -1023,6 +1462,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         ExactWheelPlaybackOptions options,
         EventWaitHandle stopEvent,
         EventWaitHandle? interventionEvent,
+        IExactWheelInputCapture? retainedInterventionCapture,
         long frequency,
         out int win32Error,
         out long playbackPauseTicks)
@@ -1032,6 +1472,11 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         long? pauseStarted = null;
         while (true)
         {
+            if (!IsInterventionMonitorHealthy(
+                    retainedInterventionCapture))
+            {
+                return DispatchGuardWaitResult.PhysicalIntervention;
+            }
             if (stopEvent.WaitOne(0))
                 return DispatchGuardWaitResult.Cancelled;
 
@@ -1048,7 +1493,9 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 // will set the manual-reset event again and survive the final
                 // signal check below instead of being accidentally erased.
                 interventionEvent!.Reset();
-                if (!_physicalInput.AreReleased(Array.Empty<int>()))
+                if (!ArePhysicalInputsReleased(
+                        retainedInterventionCapture,
+                        Array.Empty<int>()))
                     interventionEvent.Set();
             }
 
@@ -1068,7 +1515,9 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 interventionEvent?.WaitOne(0) == true;
             if (!interventionStillActive &&
                 options.PauseOnPhysicalInput &&
-                !_physicalInput.AreReleased(Array.Empty<int>()))
+                !ArePhysicalInputsReleased(
+                    retainedInterventionCapture,
+                    Array.Empty<int>()))
             {
                 interventionEvent!.Set();
                 interventionStillActive = true;
@@ -1192,6 +1641,37 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             _ => ExactWheelDispatchAuthorization.Denied
         };
 
+    private static bool IsInterventionMonitorHealthy(
+        IExactWheelInputCapture? capture) =>
+        capture is null || capture.Mode == InputCaptureMode.Intervention;
+
+    private bool ArePhysicalInputsReleased(
+        IExactWheelInputCapture? capture,
+        IReadOnlyCollection<int> ignoredVirtualKeys) =>
+        capture is ITrackedPhysicalInputState tracked
+            ? tracked.AreReleased(ignoredVirtualKeys)
+            : _physicalInput.AreReleased(ignoredVirtualKeys);
+
+    private bool AreControlKeysReleased(
+        IExactWheelInputCapture? capture,
+        IReadOnlyCollection<int> virtualKeys) =>
+        capture is ITrackedPhysicalInputState tracked
+            ? tracked.AreKeysReleased(virtualKeys)
+            : _physicalInput.AreKeysReleased(virtualKeys);
+
+    private void ResetPhysicalPauseSignal(
+        EventWaitHandle interventionEvent,
+        IExactWheelInputCapture? capture)
+    {
+        interventionEvent.Reset();
+        if (!ArePhysicalInputsReleased(
+                capture,
+                Array.Empty<int>()))
+        {
+            interventionEvent.Set();
+        }
+    }
+
     private static void ValidateOptions(ExactWheelPlaybackOptions options)
     {
         var dispatchGuardCount =
@@ -1306,6 +1786,38 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             {
                 _hasPending = false;
             }
+        }
+    }
+
+    private sealed record PlaybackRequest(
+        ExactWheelRecording Recording,
+        ExactWheelPlaybackOptions Options,
+        EventWaitHandle StopEvent,
+        EventWaitHandle? InterventionEvent,
+        bool InterventionMonitorRetained,
+        CancellationToken CancellationToken,
+        TaskCompletionSource<ExactWheelPlaybackResult> Completion);
+
+    private sealed class InterventionSequenceLease(
+        ExactWheelPlaybackEngine owner,
+        long generation) : IAsyncDisposable
+    {
+        private readonly object _disposeGate = new();
+        private Task? _disposeTask;
+
+        public ValueTask DisposeAsync()
+        {
+            lock (_disposeGate)
+            {
+                _disposeTask ??= DisposeCoreAsync();
+                return new ValueTask(_disposeTask);
+            }
+        }
+
+        private async Task DisposeCoreAsync()
+        {
+            await owner.EndInterventionSequenceAsync(generation)
+                .ConfigureAwait(false);
         }
     }
 

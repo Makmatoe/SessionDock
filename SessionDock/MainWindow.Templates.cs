@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Windows;
+using System.Windows.Threading;
 using SessionDock.ExactWheel;
 using SessionDock.Models;
 using SessionDock.Services;
@@ -876,7 +877,9 @@ public partial class MainWindow
         SessionTemplate template,
         RuntimeMacroPlan plan,
         ExactWheelDisplayTopology destinationDisplay,
+        ExactWheelSession playbackSession,
         ExactWheelPlaybackRate playbackRate,
+        MacroPlaybackText playbackText,
         CancellationToken cancellationToken)
     {
         if (template.MacroMode == SessionTemplateMacroMode.None)
@@ -888,38 +891,51 @@ public partial class MainWindow
             {
                 SessionTemplateMacroMode.PerClient =>
                     await PlayPerClientMacrosAsync(
-                        template,
+                        plan.ClientPlaybackSlots,
                         plan.WindowsByKey,
                         plan.DefinitionsById,
+                        plan.ProcessBasenamesByKey,
                         plan.PlaybackCache,
                         plan.PlaybackLeases,
+                        plan.PlaybackRetryTracker,
                         destinationDisplay,
+                        playbackSession,
                         sharedMacroId: null,
                         playbackRate,
+                        playbackText,
                         cancellationToken),
                 SessionTemplateMacroMode.Shared =>
                     await PlayPerClientMacrosAsync(
-                        template,
+                        SelectClientMacroPlaybackSlots(
+                            template,
+                            template.SharedMacroId),
                         plan.WindowsByKey,
                         plan.DefinitionsById,
+                        plan.ProcessBasenamesByKey,
                         plan.PlaybackCache,
                         plan.PlaybackLeases,
+                        plan.PlaybackRetryTracker,
                         destinationDisplay,
+                        playbackSession,
                         template.SharedMacroId,
                         playbackRate,
+                        playbackText,
                         cancellationToken),
                 SessionTemplateMacroMode.WholeLayout =>
                     await PlayWholeLayoutMacroAsync(
                         template,
                         plan.Windows,
                         plan.DefinitionsById,
+                        plan.ProcessBasenamesByKey,
                         plan.PlaybackCache,
                         plan.PlaybackLeases,
                         destinationDisplay,
+                        playbackSession,
                         playbackRate,
+                        playbackText,
                         cancellationToken),
                 _ => TemplateMacroPlaybackResult.Stopped(
-                    Localize("Macro.InvalidAssignment"))
+                    playbackText.InvalidAssignment)
             };
         }
         catch (Exception exception) when (
@@ -928,29 +944,30 @@ public partial class MainWindow
             Trace.WriteLine(
                 $"ExactWheel template playback stopped safely: {exception.GetType().Name}.");
             return TemplateMacroPlaybackResult.Stopped(
-                Localize("Macro.PlaybackFailure", exception.Message));
+                playbackText.PlaybackFailure(exception.Message));
         }
     }
 
     private async Task<TemplateMacroPlaybackResult>
         PlayPerClientMacrosAsync(
-        SessionTemplate template,
+        IReadOnlyList<SessionTemplateClientSlot> targetSlots,
         IReadOnlyDictionary<string, RobloxSessionLayoutWindow> windowsByKey,
         IReadOnlyDictionary<string, MacroDefinition> definitionsById,
+        IReadOnlyDictionary<string, string> processBasenamesByKey,
         SessionMacroPlaybackCache playbackCache,
         SessionMacroPlaybackLeaseCache playbackLeases,
+        SessionMacroPlaybackRetryTracker playbackRetryTracker,
         ExactWheelDisplayTopology destinationDisplay,
+        ExactWheelSession playbackSession,
         string? sharedMacroId,
         ExactWheelPlaybackRate playbackRate,
+        MacroPlaybackText playbackText,
         CancellationToken cancellationToken)
     {
-        var targetSlots = SelectClientMacroPlaybackSlots(
-            template,
-            sharedMacroId);
         if (sharedMacroId is not null && targetSlots.Count == 0)
         {
             return TemplateMacroPlaybackResult.Stopped(
-                Localize("Macro.InvalidAssignment"));
+                playbackText.InvalidAssignment);
         }
 
         var assigned = 0;
@@ -969,12 +986,13 @@ public partial class MainWindow
                 skipped++;
                 continue;
             }
+            if (!playbackRetryTracker.CanAttempt(window.Key))
+            {
+                skipped++;
+                continue;
+            }
 
-            SetStatus(
-                Localize("Macro.FocusingClientTitle"),
-                Localize("Macro.FocusingClientDetail", slot.Order + 1),
-                Localize("Macro.PlaybackBadge"),
-                StatusTone.Neutral);
+            ReportMacroPlaybackProgress(slot.Order + 1);
 
             string? warning;
             try
@@ -986,6 +1004,7 @@ public partial class MainWindow
                 {
                     Trace.WriteLine(
                         $"One client macro target lease was rejected: {leaseResult.Failure?.Kind}.");
+                    playbackRetryTracker.ReportFailure(window.Key);
                     skipped++;
                     continue;
                 }
@@ -998,37 +1017,44 @@ public partial class MainWindow
                     cancellationToken);
                 if (!focused.Success)
                 {
+                    playbackRetryTracker.ReportFailure(window.Key);
                     skipped++;
                     continue;
                 }
                 if (!playbackLease.IsDispatchAuthorized())
                 {
+                    playbackRetryTracker.ReportFailure(window.Key);
                     skipped++;
                     continue;
                 }
+                var windowClass = playbackLeases
+                    .GetOrCaptureWindowClass(window);
                 var destination =
                     ExactWheelDesktopCapture.CapturePlaybackTarget(
                         window.Handle,
                         destinationDisplay,
-                        Path.GetFileName(window.Identity.ExecutablePath) ??
-                            string.Empty,
+                        processBasenamesByKey[window.Key],
+                        windowClass,
+                        ToExactWheelRect(focused.Window!.OuterBounds),
+                        ToExactWheelRect(focused.Window.ClientBounds),
                         requireForeground: true);
-                var source = playbackCache.GetOrLoad(
-                    definition,
-                    _exactWheelMacroStore!.Load);
-                var transformed = playbackCache.GetOrTransform(
+                var transformed = playbackCache.GetOrLoadAndTransform(
                     definition,
                     SessionMacroTransformKind.ClientRelative,
                     destination,
-                    () => ExactWheelCoordinateTransforms
+                    _exactWheelMacroStore!,
+                    static (store, candidate) => store.Load(candidate),
+                    static (recording, target) => ExactWheelCoordinateTransforms
                         .TransformClientRelative(
-                            source,
-                            destination.Display,
-                            destination.Metadata));
+                            recording,
+                            target.Display,
+                            target.Metadata));
                 warning = await PlayRecordingAsync(
                     transformed,
                     playbackLease,
+                    playbackSession,
                     playbackRate,
+                    playbackText,
                     cancellationToken,
                     pauseOnFocusLoss: true);
             }
@@ -1038,28 +1064,30 @@ public partial class MainWindow
             {
                 Trace.WriteLine(
                     $"One client macro assignment was skipped safely: {exception.GetType().Name}.");
+                playbackRetryTracker.ReportFailure(window.Key);
                 skipped++;
                 continue;
             }
             if (warning is not null)
                 return TemplateMacroPlaybackResult.Stopped(warning);
+            playbackRetryTracker.ReportSuccess(window.Key);
             completed++;
         }
 
         if (assigned == 0)
         {
             return TemplateMacroPlaybackResult.Stopped(
-                Localize("Macro.InvalidAssignment"));
+                playbackText.InvalidAssignment);
         }
         if (completed == 0)
         {
             return TemplateMacroPlaybackResult.Stopped(
-                Localize("Macro.ControllerSkippedInvalid", skipped));
+                playbackText.SkippedInvalid(skipped));
         }
         return skipped == 0
             ? TemplateMacroPlaybackResult.Completed
             : new TemplateMacroPlaybackResult(
-                Localize("Macro.ControllerSkippedInvalid", skipped),
+                playbackText.SkippedInvalid(skipped),
                 MayContinue: true);
     }
 
@@ -1079,10 +1107,13 @@ public partial class MainWindow
         SessionTemplate template,
         IReadOnlyList<RobloxSessionLayoutWindow> windows,
         IReadOnlyDictionary<string, MacroDefinition> definitionsById,
+        IReadOnlyDictionary<string, string> processBasenamesByKey,
         SessionMacroPlaybackCache playbackCache,
         SessionMacroPlaybackLeaseCache playbackLeases,
         ExactWheelDisplayTopology destinationDisplay,
+        ExactWheelSession playbackSession,
         ExactWheelPlaybackRate playbackRate,
+        MacroPlaybackText playbackText,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(template.WholeLayoutMacroId) ||
@@ -1093,7 +1124,7 @@ public partial class MainWindow
             windows.Count == 0)
         {
             return TemplateMacroPlaybackResult.Stopped(
-                Localize("Macro.InvalidAssignment"));
+                playbackText.InvalidAssignment);
         }
 
         var first = windows[0];
@@ -1105,7 +1136,7 @@ public partial class MainWindow
             Trace.WriteLine(
                 $"Whole-session macro target lease was rejected: {leaseResult.Failure?.Kind}.");
             return TemplateMacroPlaybackResult.Stopped(
-                leaseResult.Failure?.Error ?? Localize("Macro.FocusDenied"));
+                leaseResult.Failure?.Error ?? playbackText.FocusDenied);
         }
         var playbackLease = leaseResult.Lease;
         var focused = await _robloxWindowService.FocusAsync(
@@ -1117,36 +1148,41 @@ public partial class MainWindow
         if (!focused.Success)
         {
             return TemplateMacroPlaybackResult.Stopped(
-                focused.Error ?? Localize("Macro.FocusDenied"));
+                focused.Error ?? playbackText.FocusDenied);
         }
         if (!playbackLease.IsDispatchAuthorized())
         {
             return TemplateMacroPlaybackResult.Stopped(
                 playbackLease.Failure?.Error ??
-                    Localize("Macro.FocusDenied"));
+                    playbackText.FocusDenied);
         }
 
+        var windowClass = playbackLeases.GetOrCaptureWindowClass(first);
         var destination = ExactWheelDesktopCapture.CapturePlaybackTarget(
             first.Handle,
             destinationDisplay,
-            Path.GetFileName(first.Identity.ExecutablePath) ?? string.Empty,
+            processBasenamesByKey[first.Key],
+            windowClass,
+            ToExactWheelRect(focused.Window!.OuterBounds),
+            ToExactWheelRect(focused.Window.ClientBounds),
             requireForeground: true);
-        var source = playbackCache.GetOrLoad(
-            definition,
-            _exactWheelMacroStore!.Load);
-        var transformed = playbackCache.GetOrTransform(
+        var transformed = playbackCache.GetOrLoadAndTransform(
             definition,
             SessionMacroTransformKind.WholeLayout,
             destination,
-            () => ExactWheelCoordinateTransforms
+            _exactWheelMacroStore!,
+            static (store, candidate) => store.Load(candidate),
+            static (recording, target) => ExactWheelCoordinateTransforms
                 .TransformVirtualDesktopNormalized(
-                    source,
-                    destination.Display,
-                    destination.Metadata));
+                    recording,
+                    target.Display,
+                    target.Metadata));
         var warning = await PlayRecordingAsync(
             transformed,
             playbackLease,
+            playbackSession,
             playbackRate,
+            playbackText,
             cancellationToken,
             pauseOnFocusLoss: true);
         return warning is null
@@ -1157,12 +1193,13 @@ public partial class MainWindow
     private async Task<string?> PlayRecordingAsync(
         ExactWheelRecording recording,
         RobloxPlaybackTargetLease playbackLease,
+        ExactWheelSession playbackSession,
         ExactWheelPlaybackRate playbackRate,
+        MacroPlaybackText playbackText,
         CancellationToken cancellationToken,
         bool pauseOnFocusLoss = false)
     {
-        await using var session = new ExactWheelSession();
-        var result = await session.PlayAsync(
+        var result = await playbackSession.PlayAsync(
             recording,
             new ExactWheelPlaybackOptions
             {
@@ -1189,9 +1226,65 @@ public partial class MainWindow
         if (result.Succeeded)
             return null;
         return result.Reason == ExactWheelPlaybackStopReason.PhysicalIntervention
-            ? Localize("Macro.StoppedByPhysicalInput")
-            : Localize("Macro.PlaybackFailure", result.Message);
+            ? playbackText.StoppedByPhysicalInput
+            : playbackText.PlaybackFailure(result.Message);
     }
+
+    private void ReportMacroPlaybackProgress(int clientNumber)
+    {
+        var dispatch = Volatile.Read(
+            ref _macroPlaybackProgressDispatch);
+        if (dispatch is null)
+            return;
+        Volatile.Write(ref dispatch.LatestClientNumber, clientNumber);
+        if (!_macroPlaybackProgressThrottle.TryAcquire())
+            return;
+        if (Interlocked.Exchange(ref dispatch.PostPending, 1) != 0)
+            return;
+
+        try
+        {
+            _ = Dispatcher.BeginInvoke(
+                DispatcherPriority.Background,
+                new Action(() =>
+                {
+                    _ = Interlocked.Exchange(
+                        ref dispatch.PostPending,
+                        0);
+                    if (!ReferenceEquals(
+                            Volatile.Read(
+                                ref _macroPlaybackProgressDispatch),
+                            dispatch) ||
+                        !_macroPlaybackInProgress)
+                    {
+                        return;
+                    }
+
+                    var latestClient = Volatile.Read(
+                        ref dispatch.LatestClientNumber);
+                    SetStatus(
+                        Localize("Macro.FocusingClientTitle"),
+                        Localize(
+                            "Macro.FocusingClientDetail",
+                            latestClient),
+                        Localize("Macro.PlaybackBadge"),
+                        StatusTone.Neutral,
+                        announceChanges: false);
+                }));
+        }
+        catch (InvalidOperationException)
+        {
+            _ = Interlocked.Exchange(ref dispatch.PostPending, 0);
+        }
+    }
+
+    private static ExactWheelRect ToExactWheelRect(
+        RobloxPixelRect rectangle) =>
+        new(
+            rectangle.Left,
+            rectangle.Top,
+            checked(rectangle.Left + rectangle.Width),
+            checked(rectangle.Top + rectangle.Height));
 
     private static bool IsExpectedMacroArtifactFailure(Exception exception) =>
         exception is IOException or InvalidDataException or

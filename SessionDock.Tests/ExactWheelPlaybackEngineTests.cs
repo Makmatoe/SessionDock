@@ -6,6 +6,112 @@ namespace SessionDock.Tests;
 public sealed class ExactWheelPlaybackEngineTests
 {
     [Fact]
+    public void PreparePlaybackRecording_CanonicalTimeline_IsAllocationFree()
+    {
+        const int eventCount = 100_000;
+        var events = Enumerable.Range(0, eventCount)
+            .Select(index => MouseMove(
+                checked((ulong)index * 100),
+                checked((ulong)index + 1),
+                100 + index % 500))
+            .ToArray();
+        var recording = ExactWheelTestData.Recording(
+            events,
+            durationMicroseconds: eventCount * 100UL);
+        _ = ExactWheelRecordingValidator.FinalizeOwned(
+            ExactWheelTestData.Display(),
+            ExactWheelTestData.Target(),
+            events,
+            eventCount * 100UL);
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        var prepared = ExactWheelPlaybackEngine
+            .PreparePlaybackRecording(recording);
+
+        var initialAllocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.Same(recording, prepared);
+        Assert.InRange(initialAllocated, 0, 256);
+
+        allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (var index = 0; index < 100_000; index++)
+        {
+            prepared = ExactWheelPlaybackEngine
+                .PreparePlaybackRecording(recording);
+        }
+
+        var repeatedAllocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.Same(recording, prepared);
+        Assert.InRange(repeatedAllocated, 0, 256);
+    }
+
+    [Fact]
+    public void PreparePlaybackRecording_UnsortedLegacyInput_IsCanonicalized()
+    {
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(10_000, 2, 200),
+                MouseMove(0, 1, 100)
+            ],
+            durationMicroseconds: 20_000);
+
+        var prepared = ExactWheelPlaybackEngine
+            .PreparePlaybackRecording(recording);
+
+        Assert.NotSame(recording, prepared);
+        Assert.Equal(
+            [1UL, 2UL],
+            prepared.Events.Select(inputEvent => inputEvent.Sequence));
+    }
+
+    [Fact]
+    public void FinalizeOwned_CanonicalTimeline_DoesNotCopyEventArray()
+    {
+        const int eventCount = 100_000;
+        var events = Enumerable.Range(0, eventCount)
+            .Select(index => MouseMove(
+                checked((ulong)index * 100),
+                checked((ulong)index + 1),
+                100 + index % 500))
+            .ToArray();
+        _ = ExactWheelRecordingValidator.FinalizeOwned(
+            ExactWheelTestData.Display(),
+            ExactWheelTestData.Target(),
+            [MouseMove(0, 1, 100)],
+            100);
+        var display = ExactWheelTestData.Display();
+        var target = ExactWheelTestData.Target();
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+
+        var recording = ExactWheelRecordingValidator.FinalizeOwned(
+            display,
+            target,
+            events,
+            eventCount * 100UL);
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.Equal(eventCount, recording.Events.Count);
+        Assert.InRange(allocated, 0, 256);
+    }
+
+    [Fact]
+    public void Recording_PublicConstructor_PreservesCallerImmutability()
+    {
+        var original = MouseMove(0, 1, 100);
+        var callerEvents = new[] { original };
+        var recording = ExactWheelTestData.Recording(
+            callerEvents,
+            durationMicroseconds: 100);
+
+        callerEvents[0] = MouseMove(0, 1, 500);
+
+        Assert.Equal(original, recording.Events[0]);
+    }
+
+    [Fact]
     public async Task PlayAsync_EmptyRecording_IsRejectedBeforeWorkerStarts()
     {
         var clock = new FakeClock(1_000_000, 1_000);
@@ -33,6 +139,128 @@ public sealed class ExactWheelPlaybackEngineTests
         Assert.Empty(waiter.Deadlines);
         Assert.Empty(backend.Batches);
         await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_TimingLoopStaysOffSharedThreadPool()
+    {
+        var clock = new FakeClock(1_000_000, 1_000);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+
+        var result = await engine.PlayAsync(
+            ExactWheelTestData.Recording(
+                events: [MouseMove(0, 1, 100)],
+                durationMicroseconds: 1),
+            new ExactWheelPlaybackOptions { StopOnPhysicalInput = false },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal([false], backend.ThreadPoolDispatches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_ReusedSessionClearsPriorCancellationSignal()
+    {
+        var clock = new FakeClock(1_000_000, 1_000);
+        var waiter = new FakeWaiter(
+            clock,
+            (_, _, cancellation, _) => cancellation.WaitOne(0)
+                ? DeadlineWaitResult.Cancelled
+                : DeadlineWaitResult.Reached);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 1);
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+
+        var first = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions { StopOnPhysicalInput = false },
+            cancelled.Token);
+        var second = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions { StopOnPhysicalInput = false },
+            CancellationToken.None);
+
+        Assert.Equal(ExactWheelPlaybackStopReason.Cancelled, first.Reason);
+        Assert.True(second.Succeeded);
+        Assert.Single(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_ReusesOneDedicatedWorkerAcrossSegments()
+    {
+        var clock = new FakeClock(1_000_000, 1_000);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 1);
+        var options = new ExactWheelPlaybackOptions
+        {
+            StopOnPhysicalInput = false
+        };
+
+        var first = await engine.PlayAsync(
+            recording,
+            options,
+            CancellationToken.None);
+        var second = await engine.PlayAsync(
+            recording,
+            options,
+            CancellationToken.None);
+
+        Assert.True(first.Succeeded);
+        Assert.True(second.Succeeded);
+        Assert.Equal(2, backend.ThreadIds.Count);
+        Assert.Single(backend.ThreadIds.Distinct());
+        Assert.All(
+            backend.ThreadPoolDispatches,
+            isThreadPoolThread => Assert.False(isThreadPoolThread));
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_WorkerFaultRejectsRetryBeforePublishingCompletion()
+    {
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            new UnexpectedFailureClock(),
+            new PassiveWaiter(),
+            new FakePhysicalInputState(),
+            static () => new FakeCapture());
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 1);
+        var options = new ExactWheelPlaybackOptions
+        {
+            StopOnPhysicalInput = false
+        };
+
+        await Assert.ThrowsAsync<ApplicationException>(() =>
+            engine.PlayAsync(
+                recording,
+                options,
+                CancellationToken.None));
+        var retry = Assert.Throws<InvalidOperationException>(() =>
+        {
+            _ = engine.PlayAsync(
+                recording,
+                options,
+                CancellationToken.None);
+        });
+
+        Assert.IsType<ApplicationException>(retry.InnerException);
+        await Assert.ThrowsAsync<ApplicationException>(async () =>
+            await engine.DisposeAsync());
     }
 
     [Fact]
@@ -857,11 +1085,52 @@ public sealed class ExactWheelPlaybackEngineTests
 
         var result = await engine.PlayAsync(
             ExactWheelTestData.Recording(),
-            new ExactWheelPlaybackOptions(),
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true
+            },
             CancellationToken.None);
 
         Assert.Equal(ExactWheelPlaybackStopReason.PhysicalInputHeld, result.Reason);
         Assert.False(capture.InterventionStarted);
+        Assert.Empty(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_PhysicalInputPressedDuringMonitorStartup_StopsBeforeInjection()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var capture = new FakeCapture();
+        var physicalInput = new FakePhysicalInputState
+        {
+            ReleaseProbe = call => call == 1
+        };
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            physicalInput,
+            () => capture);
+
+        var result = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.PhysicalInputHeld,
+            result.Reason);
+        Assert.Equal(2, physicalInput.ReleaseCheckCount);
+        Assert.True(capture.InterventionStarted);
+        Assert.True(capture.InterventionStopped);
         Assert.Empty(backend.Batches);
         await engine.DisposeAsync();
     }
@@ -894,6 +1163,260 @@ public sealed class ExactWheelPlaybackEngineTests
         Assert.Equal(ExactWheelPlaybackStopReason.PhysicalIntervention, result.Reason);
         Assert.True(capture.InterventionStarted);
         Assert.True(capture.InterventionStopped);
+        Assert.Equal(1, capture.StartCount);
+        Assert.Equal(1, capture.StopCount);
+        Assert.Equal(1, capture.DisposeCount);
+        Assert.Empty(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task InterventionSequence_ReusesOneMonitorAcrossSerialPlayback()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var capture = new FakeCapture();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            new FakePhysicalInputState(),
+            () => capture);
+        var sequence = engine.BeginInterventionSequence();
+
+        var first = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions(),
+            CancellationToken.None);
+        var second = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions(),
+            CancellationToken.None);
+
+        Assert.True(first.Succeeded);
+        Assert.True(second.Succeeded);
+        Assert.Equal(InputCaptureMode.Intervention, capture.Mode);
+        Assert.Equal(1, capture.StartCount);
+        Assert.Equal(0, capture.StopCount);
+        Assert.Equal(0, capture.DisposeCount);
+
+        await sequence.DisposeAsync();
+
+        Assert.Equal(InputCaptureMode.Idle, capture.Mode);
+        Assert.Equal(1, capture.StartCount);
+        Assert.Equal(1, capture.StopCount);
+        Assert.Equal(1, capture.DisposeCount);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task InterventionSequence_ConcurrentDisposalAwaitsOneHookTeardown()
+    {
+        using var stopEntered = new ManualResetEventSlim(false);
+        using var allowStop = new ManualResetEventSlim(false);
+        var clock = new FakeClock(1_000_000, 10);
+        var capture = new FakeCapture
+        {
+            StopEntered = stopEntered,
+            AllowStop = allowStop
+        };
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(new FakeInputBackend()),
+            clock,
+            new FakeWaiter(clock),
+            new FakePhysicalInputState(),
+            () => capture);
+        var sequence = engine.BeginInterventionSequence();
+
+        var firstDispose = sequence.DisposeAsync().AsTask();
+        Assert.True(stopEntered.Wait(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken));
+        var secondDispose = sequence.DisposeAsync().AsTask();
+        var engineDispose = engine.DisposeAsync().AsTask();
+
+        Assert.Same(firstDispose, secondDispose);
+        Assert.False(secondDispose.IsCompleted);
+        Assert.False(engineDispose.IsCompleted);
+
+        allowStop.Set();
+        await Task.WhenAll(firstDispose, secondDispose, engineDispose);
+
+        Assert.Equal(1, capture.StartCount);
+        Assert.Equal(1, capture.StopCount);
+        Assert.Equal(1, capture.DisposeCount);
+    }
+
+    [Fact]
+    public async Task InterventionSequence_RetainsPhysicalSignalBetweenSegments()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(
+            clock,
+            (_, _, _, intervention) =>
+                intervention?.WaitOne(0) == true
+                    ? DeadlineWaitResult.PhysicalIntervention
+                    : DeadlineWaitResult.Reached);
+        var capture = new FakeCapture();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(new FakeInputBackend()),
+            clock,
+            waiter,
+            new FakePhysicalInputState(),
+            () => capture);
+        await using var sequence = engine.BeginInterventionSequence();
+
+        var first = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions(),
+            CancellationToken.None);
+        capture.SignalIntervention();
+        var second = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions(),
+            CancellationToken.None);
+
+        Assert.True(first.Succeeded);
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.PhysicalIntervention,
+            second.Reason);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task InterventionSequence_RejectsHeldControlKeyArmingSemantics()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var capture = new FakeCapture();
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            new FakeWaiter(clock),
+            new FakePhysicalInputState { ControlReleased = false },
+            () => capture);
+        await using var sequence = engine.BeginInterventionSequence();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            engine.PlayAsync(
+                ExactWheelTestData.Recording(),
+                new ExactWheelPlaybackOptions
+                {
+                    WaitForReleaseVirtualKeys = [0x78]
+                },
+                CancellationToken.None));
+
+        Assert.Contains("retained playback sequence", exception.Message);
+        Assert.Empty(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task InterventionSequence_RuntimeHookFailureStopsBeforeInjection()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var capture = new FakeCapture();
+        var waiter = new FakeWaiter(
+            clock,
+            (_, _, _, _) =>
+            {
+                capture.SimulateUnexpectedStop();
+                return DeadlineWaitResult.PhysicalIntervention;
+            });
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            new FakePhysicalInputState(),
+            () => capture);
+        await using var sequence = engine.BeginInterventionSequence();
+
+        var result = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.PhysicalIntervention,
+            result.Reason);
+        Assert.Empty(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_RuntimeHookFailureWhileWaitingForControlReleaseStops()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var capture = new TrackedFakeCapture(controlKeysReleased: false);
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            new FakeWaiter(clock),
+            new FakePhysicalInputState(),
+            () => capture);
+        var playback = engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                WaitForReleaseVirtualKeys = [0x78]
+            },
+            CancellationToken.None);
+        Assert.True(capture.ReleaseCheckObserved.Wait(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken));
+        capture.SimulateUnexpectedStop();
+
+        var result = await playback;
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.PhysicalIntervention,
+            result.Reason);
+        Assert.Equal(1, capture.StopCount);
+        Assert.Equal(1, capture.DisposeCount);
+        Assert.Empty(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task InterventionSequence_HookFailureDuringFinalAuthorizationPreventsInjection()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var capture = new FakeCapture();
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            new FakeWaiter(clock),
+            new FakePhysicalInputState(),
+            () => capture);
+        await using var sequence = engine.BeginInterventionSequence();
+
+        var result = await engine.PlayAsync(
+            ExactWheelTestData.Recording(),
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                EventDispatchAuthorization = _ =>
+                {
+                    capture.SimulateUnexpectedStop();
+                    return ExactWheelDispatchAuthorization.Authorized;
+                }
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.PhysicalIntervention,
+            result.Reason);
         Assert.Empty(backend.Batches);
         await engine.DisposeAsync();
     }
@@ -1169,6 +1692,38 @@ public sealed class ExactWheelPlaybackEngineTests
         public long Timestamp { get; set; } = timestamp;
     }
 
+    private sealed class UnexpectedFailureClock : IPlaybackClock
+    {
+        public long Frequency =>
+            throw new ApplicationException("Synthetic worker failure.");
+
+        public long Timestamp => 1;
+    }
+
+    private sealed class PassiveWaiter : IPlaybackWaiter
+    {
+        public DeadlineWaitResult WaitUntil(
+            long deadlineTicks,
+            ulong finalSpinMicroseconds,
+            IPlaybackClock clock,
+            WaitHandle cancellationEvent,
+            WaitHandle? interventionEvent,
+            out int win32Error)
+        {
+            _ = deadlineTicks;
+            _ = finalSpinMicroseconds;
+            _ = clock;
+            _ = cancellationEvent;
+            _ = interventionEvent;
+            win32Error = 0;
+            return DeadlineWaitResult.Reached;
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
     private sealed class FakeWaiter(
         FakeClock clock,
         Func<long, int, WaitHandle, WaitHandle?, DeadlineWaitResult>? wait = null)
@@ -1211,10 +1766,16 @@ public sealed class ExactWheelPlaybackEngineTests
     {
         internal List<ExactWheelNativeMethods.NativeInput[]> Batches { get; } = [];
 
+        internal List<bool> ThreadPoolDispatches { get; } = [];
+
+        internal List<int> ThreadIds { get; } = [];
+
         public uint Send(
             ExactWheelNativeMethods.NativeInput[] inputs,
             out int win32Error)
         {
+            ThreadPoolDispatches.Add(Thread.CurrentThread.IsThreadPoolThread);
+            ThreadIds.Add(Environment.CurrentManagedThreadId);
             Batches.Add(inputs.ToArray());
             var response = send?.Invoke(inputs, Batches.Count - 1) ??
                 (checked((uint)inputs.Length), 0);
@@ -1258,11 +1819,25 @@ public sealed class ExactWheelPlaybackEngineTests
 
     private sealed class FakeCapture : IExactWheelInputCapture
     {
-        internal bool InterventionStarted { get; private set; }
+        private InputCaptureMode _mode;
 
-        internal bool InterventionStopped { get; private set; }
+        internal bool InterventionStarted => StartCount != 0;
 
-        public InputCaptureMode Mode => InputCaptureMode.Idle;
+        internal bool InterventionStopped => StopCount != 0;
+
+        internal int StartCount { get; private set; }
+
+        internal int StopCount { get; private set; }
+
+        internal int DisposeCount { get; private set; }
+
+        internal ManualResetEventSlim? StopEntered { get; init; }
+
+        internal ManualResetEventSlim? AllowStop { get; init; }
+
+        private EventWaitHandle? InterventionEvent { get; set; }
+
+        public InputCaptureMode Mode => _mode;
 
         public void StartRecording(
             int maximumEvents,
@@ -1276,16 +1851,101 @@ public sealed class ExactWheelPlaybackEngineTests
         public void StartInterventionMonitor(EventWaitHandle interventionEvent)
         {
             ArgumentNullException.ThrowIfNull(interventionEvent);
-            InterventionStarted = true;
+            StartCount++;
+            InterventionEvent = interventionEvent;
+            _mode = InputCaptureMode.Intervention;
         }
 
         public void StopInterventionMonitor()
         {
-            InterventionStopped = true;
+            StopEntered?.Set();
+            if (AllowStop is not null &&
+                !AllowStop.Wait(TimeSpan.FromSeconds(5)))
+            {
+                throw new TimeoutException(
+                    "Synthetic intervention teardown was not released.");
+            }
+            StopCount++;
+            InterventionEvent = null;
+            _mode = InputCaptureMode.Idle;
         }
 
         public void Dispose()
         {
+            DisposeCount++;
+            InterventionEvent = null;
+            _mode = InputCaptureMode.Idle;
         }
+
+        internal void SignalIntervention() => InterventionEvent?.Set();
+
+        internal void SimulateUnexpectedStop()
+        {
+            InterventionEvent?.Set();
+            _mode = InputCaptureMode.Idle;
+        }
+    }
+
+    private sealed class TrackedFakeCapture(bool controlKeysReleased) :
+        IExactWheelInputCapture,
+        ITrackedPhysicalInputState
+    {
+        private InputCaptureMode _mode;
+
+        internal ManualResetEventSlim ReleaseCheckObserved { get; } =
+            new(initialState: false);
+
+        internal int StopCount { get; private set; }
+
+        internal int DisposeCount { get; private set; }
+
+        public InputCaptureMode Mode => _mode;
+
+        public bool AreReleased(
+            IReadOnlyCollection<int> ignoredVirtualKeys)
+        {
+            _ = ignoredVirtualKeys;
+            return true;
+        }
+
+        public bool AreKeysReleased(
+            IReadOnlyCollection<int> virtualKeys)
+        {
+            _ = virtualKeys;
+            ReleaseCheckObserved.Set();
+            return controlKeysReleased;
+        }
+
+        public void StartRecording(
+            int maximumEvents,
+            IReadOnlyCollection<int> waitForReleaseVirtualKeys,
+            Func<ExactWheelInputEvent, bool>? eventAdmission) =>
+            throw new NotSupportedException();
+
+        public InputCaptureResult StopRecording() =>
+            throw new NotSupportedException();
+
+        public void StartInterventionMonitor(
+            EventWaitHandle interventionEvent)
+        {
+            ArgumentNullException.ThrowIfNull(interventionEvent);
+            _mode = InputCaptureMode.Intervention;
+        }
+
+        public void StopInterventionMonitor()
+        {
+            StopCount++;
+            _mode = InputCaptureMode.Idle;
+        }
+
+        public void Dispose()
+        {
+            DisposeCount++;
+            _mode = InputCaptureMode.Idle;
+            ReleaseCheckObserved.Dispose();
+        }
+
+        internal void SimulateUnexpectedStop() =>
+            _mode = InputCaptureMode.Idle;
     }
 }

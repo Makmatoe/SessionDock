@@ -103,7 +103,12 @@ public sealed class UiRefreshPerformanceContractTests
         Assert.Contains("suspensionTask.WaitAsync(", webSession);
         Assert.Contains("catch (TimeoutException)", webSession);
         Assert.Contains("catch (OperationCanceledException)", webSession);
-        Assert.Contains("ObserveLateSuspension(", webSession);
+        Assert.Contains("CreatePendingSuspensionLease(", webSession);
+        Assert.Contains("return pendingLease;", webSession);
+        Assert.Contains("pendingLease.Dispose();", webSession);
+        Assert.Contains("_browserWorkGeneration", webSession);
+        Assert.Contains("RevokePendingMacroSuspension()", webSession);
+        Assert.Contains("ResumeOnDispatcherAsync", webSession);
         Assert.Contains("DispatcherPriority.Send", webSession);
         Assert.Contains("_macroSuspensionGate", webSession);
         Assert.Contains("CoreWebView2? ownedSuspendedCore = null", webSession);
@@ -113,6 +118,99 @@ public sealed class UiRefreshPerformanceContractTests
         Assert.Contains("state.SuspensionGate.Release()", webSession);
         Assert.Contains("if (core.IsSuspended)", webSession);
         Assert.Contains("core.Resume()", webSession);
+    }
+
+    [Fact]
+    public void MacroPlayback_ReusesOneSessionAndBoundsTransientUiProgress()
+    {
+        var host = File.ReadAllText(RepoFile(
+            "SessionDock",
+            "MainWindow.SessionMacros.cs"));
+        var playback = File.ReadAllText(RepoFile(
+            "SessionDock",
+            "MainWindow.Templates.cs"));
+
+        Assert.Contains(
+            "await using var playbackSession = new ExactWheelSession()",
+            host);
+        Assert.Contains("Task.Run(", host);
+        Assert.Contains("RunMacroPlaybackCoreAsync(", host);
+        Assert.Contains("CancellationToken.None", host);
+        var playEntry = Method(
+            host,
+            "private async Task<SessionMacroPlaybackOutcome>",
+            "private async Task RunMacroPlaybackCoreAsync(");
+        var backgroundStart = playEntry.IndexOf(
+            "prepared = await Task.Run(",
+            StringComparison.Ordinal);
+        var authoritativePreparation = playEntry.IndexOf(
+            "PrepareRuntimeMacroPlan(",
+            StringComparison.Ordinal);
+        Assert.True(backgroundStart >= 0);
+        Assert.True(authoritativePreparation > backgroundStart);
+        var preparation = Method(
+            host,
+            "private RuntimeMacroPlan PrepareRuntimeMacroPlan(",
+            "private SessionMacroControllerReadiness PrepareMacroControllerReadiness(");
+        Assert.DoesNotContain("Localize(", preparation);
+        Assert.DoesNotContain("Dispatcher", preparation);
+        Assert.DoesNotContain("SetStatus(", preparation);
+        Assert.Contains(
+            "bool validateMacroArtifacts = true,",
+            preparation);
+        Assert.Contains(
+            "cancellationToken.ThrowIfCancellationRequested();",
+            preparation);
+        var core = Method(
+            host,
+            "private async Task RunMacroPlaybackCoreAsync(",
+            "private MacroPlaybackText CaptureMacroPlaybackText()");
+        Assert.DoesNotContain("Localize(", core);
+        Assert.Contains("playbackText", core);
+        Assert.Equal(
+            1,
+            CountOccurrences(
+                string.Concat(host, playback),
+                "new ExactWheelSession()"));
+        Assert.Contains("playbackSession", playback);
+        Assert.DoesNotContain(
+            "await using var session = new ExactWheelSession()",
+            playback);
+        Assert.Contains("ReportMacroPlaybackProgress", playback);
+        Assert.Contains("_macroPlaybackProgressThrottle.TryAcquire()", playback);
+        Assert.Contains("Dispatcher.BeginInvoke(", playback);
+        Assert.Contains("dispatch.PostPending", playback);
+        Assert.Contains("announceChanges: false", playback);
+        Assert.Contains("plan.ClientPlaybackSlots", playback);
+        Assert.Contains("plan.ProcessBasenamesByKey", playback);
+        Assert.DoesNotContain("Path.GetFileName", playback);
+        Assert.Contains(
+            "static (store, candidate) => store.Load(candidate)",
+            string.Concat(host, playback));
+        Assert.Contains("GetOrLoadAndTransform(", playback);
+        Assert.DoesNotContain(
+            "var source = playbackCache.GetOrLoad(",
+            playback);
+        Assert.Contains("static (recording, target)", playback);
+        Assert.DoesNotContain("() => ExactWheelCoordinateTransforms", playback);
+        Assert.Contains("GetOrCaptureWindowClass", playback);
+        Assert.Contains("focused.Window!.OuterBounds", playback);
+        Assert.Contains("focused.Window.ClientBounds", playback);
+    }
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        var offset = 0;
+        while ((offset = source.IndexOf(
+                   value,
+                   offset,
+                   StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            offset += value.Length;
+        }
+        return count;
     }
 
     private static string Method(string source, string startMarker, string endMarker)

@@ -89,8 +89,8 @@ internal sealed class ExactWheelMacroStore
 
     internal ExactWheelRecording Load(MacroDefinition definition)
     {
-        var bytes = ReadExactBytes(definition);
-        return ExactWheelMacroSerializer.Deserialize(bytes);
+        _ = ReadExactBytes(definition, out var recording);
+        return recording;
     }
 
     // Portable packages must preserve the content-addressed recording exactly.
@@ -98,12 +98,19 @@ internal sealed class ExactWheelMacroStore
     // that could otherwise change the hash or silently rewrite future fields.
     internal byte[] ReadExactBytes(MacroDefinition definition)
     {
+        return ReadExactBytes(definition, out _);
+    }
+
+    private byte[] ReadExactBytes(
+        MacroDefinition definition,
+        out ExactWheelRecording recording)
+    {
         ArgumentNullException.ThrowIfNull(definition);
         var expectedHash = ValidateDefinition(definition);
         EnsureSafeStorage(createIfMissing: false);
         var path = ResolveCatalogPath(definition.SafeFileName);
         var bytes = ReadBoundedRegularFile(path);
-        ValidateExactBytes(definition, bytes, expectedHash);
+        recording = ValidateExactBytes(definition, bytes, expectedHash);
         return bytes;
     }
 
@@ -116,7 +123,7 @@ internal sealed class ExactWheelMacroStore
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(bytes);
         var expectedHash = ValidateDefinition(definition);
-        ValidateExactBytes(definition, bytes, expectedHash);
+        _ = ValidateExactBytes(definition, bytes, expectedHash);
         EnsureSafeStorage();
         var destinationPath = ResolveCatalogPath(definition.SafeFileName);
         return SaveContentAddressed(destinationPath, bytes, expectedHash);
@@ -434,7 +441,7 @@ internal sealed class ExactWheelMacroStore
         }
     }
 
-    private static void ValidateExactBytes(
+    private static ExactWheelRecording ValidateExactBytes(
         MacroDefinition definition,
         byte[] bytes,
         byte[] expectedHash)
@@ -458,6 +465,7 @@ internal sealed class ExactWheelMacroStore
             throw new InvalidDataException(
                 "The macro catalog metadata does not match the macro contents.");
         }
+        return recording;
     }
 
     private static string GetSafeFileName(string sha256) =>

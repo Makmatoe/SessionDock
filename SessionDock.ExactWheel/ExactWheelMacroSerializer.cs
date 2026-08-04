@@ -272,7 +272,7 @@ public static class ExactWheelMacroSerializer
         if (reader.Remaining != 0)
             throw new InvalidDataException("Macro contains trailing data.");
 
-        var recording = new ExactWheelRecording(
+        var recording = ExactWheelRecording.CreateFromOwnedEvents(
             durationMicroseconds,
             new ExactWheelDisplayTopology(
                 virtualLeft,

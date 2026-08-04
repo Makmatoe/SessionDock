@@ -73,11 +73,41 @@ public sealed class SessionMacroPlaybackLoopTests
     }
 
     [Fact]
-    public void CycleBoundary_HasABusySpinFloor()
+    public void CycleBoundary_HasAMinimumCompleteCycleDuration()
     {
         Assert.True(
-            SessionMacroPlaybackLoop.MinimumInterCycleDelay >=
+            SessionMacroPlaybackLoop.MinimumCycleDuration >=
                 TimeSpan.FromMilliseconds(10));
+    }
+
+    [Theory]
+    [InlineData(4, 6)]
+    [InlineData(10, 0)]
+    [InlineData(20, 0)]
+    public async Task CycleBoundary_DelaysOnlyTheUnspentFloor(
+        int elapsedMilliseconds,
+        int expectedDelayMilliseconds)
+    {
+        var cycleCount = 0;
+        var delays = new List<TimeSpan>();
+
+        await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
+            _ => Task.FromResult(++cycleCount == 1),
+            static () => 100,
+            _ => TimeSpan.FromMilliseconds(elapsedMilliseconds),
+            (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        if (expectedDelayMilliseconds == 0)
+            Assert.Empty(delays);
+        else
+            Assert.Equal(
+                [TimeSpan.FromMilliseconds(expectedDelayMilliseconds)],
+                delays);
     }
 
     [Fact]
@@ -122,6 +152,9 @@ public sealed class SessionMacroPlaybackLoopTests
             "SessionMacroPlaybackLoop.RunUntilStoppedAsync(",
             host);
         Assert.Contains(
+            "playbackSession.BeginPlaybackSequence()",
+            host);
+        Assert.Contains(
             "cancellationToken.IsCancellationRequested &&",
             host);
         Assert.Contains(
@@ -142,10 +175,16 @@ public sealed class SessionMacroPlaybackLoopTests
             playback[playback.IndexOf(
                 "private async Task<TemplateMacroPlaybackResult> PlayTemplateMacrosAsync",
                 StringComparison.Ordinal)..]);
-        Assert.Contains("playbackCache.GetOrLoad(", playback);
-        Assert.Contains("playbackCache.GetOrTransform(", playback);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playback,
+                "playbackCache.GetOrLoadAndTransform("));
         Assert.Contains("playbackLeases.GetOrAcquire(", playback);
-        Assert.Contains("_leases.TryGetValue(key", leaseCache);
+        Assert.Contains(
+            "_singleTargetLeases.TryGetValue(key",
+            leaseCache);
+        Assert.Contains("_targetSetLeases", leaseCache);
         Assert.Contains(
             "windowService.AcquirePlaybackTargetLease(targets)",
             leaseCache);

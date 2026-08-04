@@ -10,6 +10,8 @@ internal readonly record struct InjectionAttempt(
 
 internal interface IExactWheelInputBackend
 {
+    // Implementations consume the complete batch synchronously and must not
+    // retain or mutate the array after this call returns.
     uint Send(
         ExactWheelNativeMethods.NativeInput[] inputs,
         out int win32Error);
@@ -47,24 +49,53 @@ internal interface IPhysicalInputState
     bool AreKeysReleased(IReadOnlyCollection<int> virtualKeys);
 }
 
+internal static class PhysicalInputVirtualKeyFamilies
+{
+    internal const int Control = 0x11;
+    internal const int Shift = 0x10;
+    internal const int Menu = 0x12;
+    internal const int LeftControl = 0xA2;
+    internal const int RightControl = 0xA3;
+    internal const int LeftShift = 0xA0;
+    internal const int RightShift = 0xA1;
+    internal const int LeftMenu = 0xA4;
+    internal const int RightMenu = 0xA5;
+
+    internal static bool IsIgnored(
+        int virtualKey,
+        IReadOnlyCollection<int> ignored)
+    {
+        if (ignored.Contains(virtualKey))
+            return true;
+        return virtualKey switch
+        {
+            Control or LeftControl or RightControl =>
+                ignored.Contains(Control) ||
+                ignored.Contains(LeftControl) ||
+                ignored.Contains(RightControl),
+            Shift or LeftShift or RightShift =>
+                ignored.Contains(Shift) ||
+                ignored.Contains(LeftShift) ||
+                ignored.Contains(RightShift),
+            Menu or LeftMenu or RightMenu =>
+                ignored.Contains(Menu) ||
+                ignored.Contains(LeftMenu) ||
+                ignored.Contains(RightMenu),
+            _ => false
+        };
+    }
+}
+
 internal sealed class Win32PhysicalInputState : IPhysicalInputState
 {
-    private const int VirtualKeyControl = 0x11;
-    private const int VirtualKeyShift = 0x10;
-    private const int VirtualKeyMenu = 0x12;
-    private const int VirtualKeyLeftControl = 0xA2;
-    private const int VirtualKeyRightControl = 0xA3;
-    private const int VirtualKeyLeftShift = 0xA0;
-    private const int VirtualKeyRightShift = 0xA1;
-    private const int VirtualKeyLeftMenu = 0xA4;
-    private const int VirtualKeyRightMenu = 0xA5;
-
     public bool AreReleased(IReadOnlyCollection<int> ignoredVirtualKeys)
     {
         ArgumentNullException.ThrowIfNull(ignoredVirtualKeys);
         for (var virtualKey = 1; virtualKey < 255; virtualKey++)
         {
-            if (IsIgnored(virtualKey, ignoredVirtualKeys))
+            if (PhysicalInputVirtualKeyFamilies.IsIgnored(
+                    virtualKey,
+                    ignoredVirtualKeys))
                 continue;
             if ((ExactWheelNativeMethods.GetAsyncKeyState(virtualKey) &
                  0x8000) != 0)
@@ -84,35 +115,6 @@ internal sealed class Win32PhysicalInputState : IPhysicalInputState
              0x8000) == 0);
     }
 
-    private static bool IsIgnored(
-        int virtualKey,
-        IReadOnlyCollection<int> ignored)
-    {
-        if (ignored.Contains(virtualKey))
-            return true;
-        return virtualKey switch
-        {
-            VirtualKeyControl or
-                VirtualKeyLeftControl or
-                VirtualKeyRightControl =>
-                ignored.Contains(VirtualKeyControl) ||
-                ignored.Contains(VirtualKeyLeftControl) ||
-                ignored.Contains(VirtualKeyRightControl),
-            VirtualKeyShift or
-                VirtualKeyLeftShift or
-                VirtualKeyRightShift =>
-                ignored.Contains(VirtualKeyShift) ||
-                ignored.Contains(VirtualKeyLeftShift) ||
-                ignored.Contains(VirtualKeyRightShift),
-            VirtualKeyMenu or
-                VirtualKeyLeftMenu or
-                VirtualKeyRightMenu =>
-                ignored.Contains(VirtualKeyMenu) ||
-                ignored.Contains(VirtualKeyLeftMenu) ||
-                ignored.Contains(VirtualKeyRightMenu),
-            _ => false
-        };
-    }
 }
 
 internal sealed class ExactWheelInputInjector : IDisposable
@@ -120,6 +122,13 @@ internal sealed class ExactWheelInputInjector : IDisposable
     private const int MaximumHeldKeyboardInputs = 256;
 
     private readonly IExactWheelInputBackend _backend;
+    // SendInput consumes the native array synchronously. Reusing the two
+    // possible event-batch shapes avoids one managed array allocation for
+    // every recorded event while preserving atomic move+transition batches.
+    private readonly ExactWheelNativeMethods.NativeInput[] _singleInputBatch =
+        new ExactWheelNativeMethods.NativeInput[1];
+    private readonly ExactWheelNativeMethods.NativeInput[] _doubleInputBatch =
+        new ExactWheelNativeMethods.NativeInput[2];
     private readonly List<HeldKey> _heldKeys = [];
     private readonly bool[] _heldMouseButtons = new bool[6];
     private bool _disposed;
@@ -134,8 +143,21 @@ internal sealed class ExactWheelInputInjector : IDisposable
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
     }
 
-    internal bool HasHeldInputs =>
-        _heldKeys.Count != 0 || _heldMouseButtons.Any(held => held);
+    internal bool HasHeldInputs
+    {
+        get
+        {
+            if (_heldKeys.Count != 0)
+                return true;
+            for (var index = 1; index < _heldMouseButtons.Length; index++)
+            {
+                if (_heldMouseButtons[index])
+                    return true;
+            }
+
+            return false;
+        }
+    }
 
     internal InjectionAttempt Inject(
         ExactWheelInputEvent inputEvent,
@@ -143,8 +165,8 @@ internal sealed class ExactWheelInputInjector : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(topology);
-        var inputs = BuildBatch(inputEvent, topology);
-        if (inputs.Length == 0)
+        var inputs = BuildReusableBatch(inputEvent, topology);
+        if (inputs is null)
             return new InjectionAttempt(false, 0, 0, 13);
 
         if (inputEvent.Type == ExactWheelInputEventType.KeyDown)
@@ -175,6 +197,9 @@ internal sealed class ExactWheelInputInjector : IDisposable
 
     internal InjectionAttempt ReleaseHeld()
     {
+        if (!HasHeldInputs)
+            return new InjectionAttempt(true, 0, 0, 0);
+
         var inputs = new List<ExactWheelNativeMethods.NativeInput>();
         var releases = new List<ReleaseIdentity>();
         foreach (var key in _heldKeys)
@@ -262,6 +287,50 @@ internal sealed class ExactWheelInputInjector : IDisposable
                     : [BuildKeyboard(inputEvent)];
             default:
                 return [];
+        }
+    }
+
+    private ExactWheelNativeMethods.NativeInput[]? BuildReusableBatch(
+        ExactWheelInputEvent inputEvent,
+        ExactWheelDisplayTopology topology)
+    {
+        switch (inputEvent.Type)
+        {
+            case ExactWheelInputEventType.MouseMove:
+                _singleInputBatch[0] = BuildAbsoluteMove(
+                    inputEvent.X,
+                    inputEvent.Y,
+                    topology);
+                return _singleInputBatch;
+            case ExactWheelInputEventType.VerticalWheel:
+            case ExactWheelInputEventType.HorizontalWheel:
+                _doubleInputBatch[0] = BuildAbsoluteMove(
+                    inputEvent.X,
+                    inputEvent.Y,
+                    topology);
+                _doubleInputBatch[1] = BuildWheel(inputEvent);
+                return _doubleInputBatch;
+            case ExactWheelInputEventType.MouseButtonDown:
+            case ExactWheelInputEventType.MouseButtonUp:
+                {
+                    var transition = BuildMouseTransition(inputEvent);
+                    if (transition is null)
+                        return null;
+                    _doubleInputBatch[0] = BuildAbsoluteMove(
+                        inputEvent.X,
+                        inputEvent.Y,
+                        topology);
+                    _doubleInputBatch[1] = transition.Value;
+                    return _doubleInputBatch;
+                }
+            case ExactWheelInputEventType.KeyDown:
+            case ExactWheelInputEventType.KeyUp:
+                if (inputEvent.Data1 is < 0 or > ushort.MaxValue)
+                    return null;
+                _singleInputBatch[0] = BuildKeyboard(inputEvent);
+                return _singleInputBatch;
+            default:
+                return null;
         }
     }
 

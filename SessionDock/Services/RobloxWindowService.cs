@@ -715,25 +715,19 @@ internal sealed partial class RobloxWindowService
         do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            leaseFailure = playbackLease.ValidateExactTarget(
-                identity,
-                windowHandle,
-                revalidateIdentityAndToken: false);
-            if (leaseFailure is not null)
-                return LeaseValidationFailure(leaseFailure);
-
             var foreground = _native.GetForegroundWindow();
             if (foreground == windowHandle &&
                 _native.GetWindowProcessId(foreground) == identity.ProcessId)
             {
-                // Revalidate start time, executable path, user, session, and
-                // token elevation on the retained process immediately before
-                // success. Executable signature trust was force-checked when
-                // this exact process handle entered the lease.
+                // The retained lease schedules start-time, path, user,
+                // session, and token checks per exact target. Honor that
+                // deadline here rather than forcing the same expensive check
+                // on every short macro cycle. Exact liveness and HWND
+                // ownership remain live-checked on every call and dispatch.
                 leaseFailure = playbackLease.ValidateExactTarget(
                     identity,
                     windowHandle,
-                    revalidateIdentityAndToken: true);
+                    revalidateIdentityAndToken: false);
                 if (leaseFailure is not null)
                     return LeaseValidationFailure(leaseFailure);
                 if (!_native.TryGetGeometry(
@@ -755,6 +749,18 @@ internal sealed partial class RobloxWindowService
                         _native.IsMinimized(windowHandle),
                         _native.IsMaximized(windowHandle)));
             }
+
+            // A successful foreground transition takes the stronger final
+            // retained-identity path above. While Windows is still deciding,
+            // keep checking the exact retained process/HWND before waiting so
+            // a changed target fails closed without duplicating the success
+            // path's native checks.
+            leaseFailure = playbackLease.ValidateExactTarget(
+                identity,
+                windowHandle,
+                revalidateIdentityAndToken: false);
+            if (leaseFailure is not null)
+                return LeaseValidationFailure(leaseFailure);
 
             if (_native.UtcNow >= deadline)
                 break;
