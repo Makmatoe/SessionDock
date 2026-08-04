@@ -533,12 +533,19 @@ try {
     }
 
     $version = Get-ProjectVersion
-    Assert-LegacyReadableReleaseNotes `
-        -Path (Join-Path $root "SessionDock/ReleaseNotes/$version.en-US.md")
     foreach ($culture in @('de-DE', 'en-US', 'es-ES', 'fr-FR', 'nl-NL')) {
         $localizedNotes = Join-Path $root "SessionDock/ReleaseNotes/$version.$culture.md"
-        if (-not (Test-Path -LiteralPath $localizedNotes -PathType Leaf)) {
-            throw "Release notes are missing for ${culture}: $localizedNotes"
+        Assert-LegacyReadableReleaseNotes -Path $localizedNotes
+        if ($culture -ceq 'en-US') {
+            Assert-DiscordCompatibleReleaseNotes `
+                -Path $localizedNotes `
+                -Version $version
+        }
+        else {
+            $null = Read-CanonicalReleaseNotes `
+                -Path $localizedNotes `
+                -Version $version `
+                -Label "Canonical $culture release notes"
         }
     }
 
@@ -584,9 +591,9 @@ try {
         (Join-Path $root 'SessionDock/Resources/handlescope-compatibility-bootstrap.json') `
         -Raw | ConvertFrom-Json
     if ([long] $compatibilityBootstrap.sequence -ne 3 -or
-        $compatibilityBootstrap.sessionDockVersion -cne '3.1.0' -or
+        $compatibilityBootstrap.sessionDockVersion -cne '3.1.1' -or
         $compatibilityBootstrap.recommendedVersion -cne '0.3.0') {
-        throw 'The 3.1.0 compatibility bootstrap must retain sequence 3 and the external HandleScope 0.3.0 recommendation.'
+        throw 'The 3.1.1 compatibility bootstrap must retain sequence 3 and the external HandleScope 0.3.0 recommendation.'
     }
     $applicationIcons = @($applicationProject.SelectNodes(
             '/Project/PropertyGroup/ApplicationIcon') |

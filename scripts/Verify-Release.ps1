@@ -27,6 +27,7 @@ try {
 
     $notesPath = Join-Path $root "SessionDock/ReleaseNotes/$version.en-US.md"
     Assert-LegacyReadableReleaseNotes -Path $notesPath
+    Assert-DiscordCompatibleReleaseNotes -Path $notesPath -Version $version
 
     $head = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $head -cnotmatch '^[0-9a-f]{40}$') {
