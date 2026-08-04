@@ -269,6 +269,9 @@ public partial class MainWindow
                 AccountsBackButton.Focus();
                 break;
             case MainWorkspacePage.Advanced:
+                RenderAccountList();
+                if (RecentTabPanel.Visibility == Visibility.Visible)
+                    RenderRecentExperiences();
                 HomeFromSettingsButton.Focus();
                 break;
         }

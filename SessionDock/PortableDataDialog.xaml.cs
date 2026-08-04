@@ -15,6 +15,7 @@ public partial class PortableDataDialog : Window
 {
     private readonly AppSettings _settings;
     private readonly SessionTemplateCatalog _catalog;
+    private readonly SessionTemplateCatalog _normalizedCatalog;
     private readonly Func<MacroDefinition, byte[]> _readMacroBytes;
     private readonly AccessibilityLiveRegion _exportStatusLiveRegion;
     private readonly AccessibilityLiveRegion _importStatusLiveRegion;
@@ -22,6 +23,8 @@ public partial class PortableDataDialog : Window
     private readonly List<PortableSelectionRow> _macroRows = [];
     private readonly List<PortableSelectionRow> _destinationRows = [];
     private readonly List<PortableSelectionRow> _presetRows = [];
+    private readonly IReadOnlyDictionary<string, PortableSelectionRow>
+        _macroRowsById;
     private PortableExportPackage? _exportPackage;
     private PortableImportPlan? _importPlan;
     private int _ineligibleDestinationCount;
@@ -40,12 +43,16 @@ public partial class PortableDataDialog : Window
         InitializeComponent();
         _settings = settings;
         _catalog = catalog;
+        _normalizedCatalog = SessionTemplatePolicy.Normalize(catalog);
         _readMacroBytes = readMacroBytes;
         _exportStatusLiveRegion = new AccessibilityLiveRegion(ExportStatusText);
         _importStatusLiveRegion = new AccessibilityLiveRegion(ImportStatusText);
         WindowLayoutService.FitToWorkArea(this);
 
         BuildInventory();
+        _macroRowsById = _macroRows.ToDictionary(
+            row => row.Id,
+            StringComparer.OrdinalIgnoreCase);
         BindInventory();
         RefreshSelectionState();
         Loaded += PortableDataDialog_Loaded;
@@ -67,8 +74,7 @@ public partial class PortableDataDialog : Window
 
     private void BuildInventory()
     {
-        var normalizedCatalog = SessionTemplatePolicy.Normalize(_catalog);
-        var definitionsById = normalizedCatalog.MacroDefinitions
+        var definitionsById = _normalizedCatalog.MacroDefinitions
             .Where(definition => !string.IsNullOrWhiteSpace(definition.ContentId))
             .GroupBy(
                 definition => definition.ContentId,
@@ -103,7 +109,7 @@ public partial class PortableDataDialog : Window
                 OnSelectionChanged));
         }
 
-        foreach (var template in normalizedCatalog.Templates.OrderBy(
+        foreach (var template in _normalizedCatalog.Templates.OrderBy(
                      template => template.Name,
                      StringComparer.CurrentCultureIgnoreCase))
         {
@@ -218,11 +224,10 @@ public partial class PortableDataDialog : Window
             {
                 foreach (var dependencyId in row.MacroDependencies)
                 {
-                    var dependency = _macroRows.FirstOrDefault(candidate =>
-                        candidate.Id.Equals(
+                    if (_macroRowsById.TryGetValue(
                             dependencyId,
-                            StringComparison.OrdinalIgnoreCase));
-                    if (dependency is
+                            out var dependency) &&
+                        dependency is
                         {
                             IsSelectable: true,
                             HasKeyboardInput: false
@@ -250,6 +255,10 @@ public partial class PortableDataDialog : Window
         _updatingSelection = true;
         try
         {
+            var keyboardMacroIds = _macroRows
+                .Where(macro => macro.HasKeyboardInput)
+                .Select(macro => macro.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach (var row in AllRows())
             {
                 var containsKeyboardInput =
@@ -257,12 +266,7 @@ public partial class PortableDataDialog : Window
                     row.HasKeyboardInput;
                 var requiresKeyboardDependency =
                     row.Kind == PortableSelectionKind.Template &&
-                    row.MacroDependencies.Any(dependencyId =>
-                        _macroRows.Any(macro =>
-                            macro.Id.Equals(
-                                dependencyId,
-                                StringComparison.OrdinalIgnoreCase) &&
-                            macro.HasKeyboardInput));
+                    row.MacroDependencies.Any(keyboardMacroIds.Contains);
                 row.IsSelected = row.IsSelectable &&
                     !containsKeyboardInput &&
                     !requiresKeyboardDependency;
@@ -369,8 +373,7 @@ public partial class PortableDataDialog : Window
         var selectedTemplateIds = selectedTemplates
             .Select(row => row.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var normalizedCatalog = SessionTemplatePolicy.Normalize(_catalog);
-        var omittedSlotDestinations = normalizedCatalog.Templates
+        var omittedSlotDestinations = _normalizedCatalog.Templates
             .Where(template => selectedTemplateIds.Contains(template.Id))
             .SelectMany(template => template.ClientSlots)
             .Count(slot =>
@@ -809,14 +812,11 @@ public partial class PortableDataDialog : Window
             .Where(row => row.IsSelected && row.HasKeyboardInput)
             .Select(row => row.Id)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var macroRowsById = _macroRows.ToDictionary(
-            row => row.Id,
-            StringComparer.OrdinalIgnoreCase);
         foreach (var dependencyId in _templateRows
                      .Where(row => row.IsSelected)
                      .SelectMany(row => row.MacroDependencies))
         {
-            if (macroRowsById.TryGetValue(dependencyId, out var macro) &&
+            if (_macroRowsById.TryGetValue(dependencyId, out var macro) &&
                 macro.HasKeyboardInput)
             {
                 selectedIds.Add(macro.Id);

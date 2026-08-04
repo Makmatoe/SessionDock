@@ -19,6 +19,7 @@ public partial class MainWindow
         _macroPlaybackProgressThrottle = new();
     private MacroPlaybackProgressDispatchState?
         _macroPlaybackProgressDispatch;
+    private SessionMacroPlaybackCache? _preflightMacroPlaybackCache;
     private bool _macroPlaybackInProgress;
     private bool _macroAssignmentInProgress;
 
@@ -29,22 +30,49 @@ public partial class MainWindow
     }
 
     private void InstallCurrentBatchMacroContext(
-        SessionMacroLaunchPlanResult plan)
+        SessionMacroLaunchPlanResult plan,
+        SessionMacroPlaybackCache? preflightPlaybackCache = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
-        CancelCurrentMacroPlayback();
-        if (_currentMacroContext is not null)
-            _currentMacroContext.Changed -= CurrentMacroContext_Changed;
-        _currentMacroContext = plan.Context;
-        _currentMacroContext.Changed += CurrentMacroContext_Changed;
-        if (_macroController is not null)
-            _macroController.UpdateContext(plan.Context);
-        UpdateCurrentMacroActions();
+        var cachePublished = false;
+        try
+        {
+            CancelCurrentMacroPlayback();
+            if (_currentMacroContext is not null)
+                _currentMacroContext.Changed -= CurrentMacroContext_Changed;
+            var previousPreflightCache = Interlocked.Exchange(
+                ref _preflightMacroPlaybackCache,
+                preflightPlaybackCache);
+            cachePublished = preflightPlaybackCache is not null;
+            previousPreflightCache?.Dispose();
+            _currentMacroContext = plan.Context;
+            _currentMacroContext.Changed += CurrentMacroContext_Changed;
+            if (_macroController is not null)
+                _macroController.UpdateContext(plan.Context);
+            UpdateCurrentMacroActions();
 
-        if (plan.Context.Snapshot().HasAssignments)
-            OpenMacroController(userInitiated: false);
-        else
-            _macroController?.Hide();
+            if (plan.Context.Snapshot().HasAssignments)
+                OpenMacroController(userInitiated: false);
+            else
+            {
+                Interlocked.Exchange(
+                    ref _preflightMacroPlaybackCache,
+                    null)?.Dispose();
+                cachePublished = false;
+                _macroController?.Hide();
+            }
+        }
+        catch
+        {
+            if (preflightPlaybackCache is not null)
+            {
+                SessionMacroPlaybackCacheReservation.ReleaseFailedTransfer(
+                    ref _preflightMacroPlaybackCache,
+                    preflightPlaybackCache,
+                    cachePublished);
+            }
+            throw;
+        }
     }
 
     private void ClearCurrentBatchMacroContext()
@@ -52,6 +80,9 @@ public partial class MainWindow
         CancelCurrentMacroPlayback();
         if (_currentMacroContext is not null)
             _currentMacroContext.Changed -= CurrentMacroContext_Changed;
+        Interlocked.Exchange(
+            ref _preflightMacroPlaybackCache,
+            null)?.Dispose();
         _currentMacroContext = null;
         _macroController?.Hide();
         UpdateCurrentMacroActions();
@@ -61,6 +92,12 @@ public partial class MainWindow
     {
         _ = sender;
         _ = e;
+        // Assignment edits invalidate the exact preflight working set. Drop
+        // it as a unit so removed sources cannot consume the 129-artifact run
+        // budget before the edited snapshot loads its current definitions.
+        Interlocked.Exchange(
+            ref _preflightMacroPlaybackCache,
+            null)?.Dispose();
         UpdateCurrentMacroActions();
     }
 
@@ -114,12 +151,14 @@ public partial class MainWindow
                 return;
             }
 
+            using var trustContext = new RobloxExecutableTrustContext();
             var validated = await Task.WhenAll(snapshot.Clients.Select(
                 async client =>
                 {
                     var capture = await _robloxWindowService.CaptureAsync(
                         client.Identity,
                         client.WindowHandle,
+                        trustContext,
                         cancellationToken);
                     return (Client: client, Valid: capture.Success);
                 }));
@@ -274,6 +313,10 @@ public partial class MainWindow
         var progressDispatch = new MacroPlaybackProgressDispatchState();
         IDisposable? playbackPerformanceMode = null;
         RuntimeMacroPlan? prepared = null;
+        var playbackCache = Interlocked.Exchange(
+                ref _preflightMacroPlaybackCache,
+                null) ??
+            new SessionMacroPlaybackCache();
         try
         {
             playbackPerformanceMode =
@@ -284,6 +327,7 @@ public partial class MainWindow
                     snapshot,
                     catalog,
                     playbackText,
+                    playbackCache,
                     cancellationToken: playbackCancellation.Token),
                 CancellationToken.None);
             if (!prepared.HasAssignments)
@@ -377,6 +421,10 @@ public partial class MainWindow
                 null,
                 progressDispatch);
             prepared?.PlaybackLeases.Dispose();
+            if (prepared is null)
+                playbackCache.Dispose();
+            else
+                prepared.PlaybackCache.Dispose();
             playbackPerformanceMode?.Dispose();
             _macroPlaybackProgressThrottle.Reset();
             _macroPlaybackInProgress = false;
@@ -406,42 +454,28 @@ public partial class MainWindow
         CancellationToken cancellationToken)
     {
         await using var playbackSession = new ExactWheelSession();
+        // A macro run is one serial playback sequence, even when it loops
+        // indefinitely. Retaining one healthy intervention monitor avoids
+        // creating a hook thread and sampling every physical key again at
+        // each short n=1 cycle; every PlayAsync still verifies its health.
+        await using var playbackSequence =
+            playbackSession.BeginPlaybackSequence();
         await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
             async cycleCancellationToken =>
             {
-                // Reuse the global intervention hook for one complete client
-                // cycle. This removes per-client setup/teardown churn while
-                // keeping its ownership aligned with the cycle boundary.
-                await using var playbackSequence =
-                    playbackSession.BeginPlaybackSequence();
-                ExactWheelDisplayTopology destinationDisplay;
-                try
-                {
-                    destinationDisplay = prepared.PlaybackCache
-                        .GetDisplayTopology(
-                            ExactWheelDesktopCapture.CaptureDisplayTopology);
-                }
-                catch (Exception exception) when (
-                    IsExpectedMacroArtifactFailure(exception) ||
-                    exception is System.ComponentModel.Win32Exception)
-                {
-                    warnings.Add(playbackText.PlaybackFailure(
-                        exception.Message));
-                    return false;
-                }
-
                 var mayContinue = true;
+                var madeProgress = false;
                 if (prepared.ClientTemplate is not null)
                 {
                     var result = await PlayTemplateMacrosAsync(
                         prepared.ClientTemplate,
                         prepared,
-                        destinationDisplay,
                         playbackSession,
                         rate,
                         playbackText,
                         cycleCancellationToken);
                     mayContinue = result.MayContinue;
+                    madeProgress |= result.MadeProgress;
                     if (!string.IsNullOrWhiteSpace(result.Warning))
                         warnings.Add(result.Warning);
                 }
@@ -450,17 +484,27 @@ public partial class MainWindow
                     var result = await PlayTemplateMacrosAsync(
                         prepared.WholeTemplate,
                         prepared,
-                        destinationDisplay,
                         playbackSession,
                         rate,
                         playbackText,
                         cycleCancellationToken);
                     mayContinue = result.MayContinue;
+                    madeProgress |= result.MadeProgress;
                     if (!string.IsNullOrWhiteSpace(result.Warning))
                         warnings.Add(result.Warning);
                 }
 
-                return mayContinue;
+                if (!mayContinue)
+                    return SessionMacroPlaybackCycleResult.Stop;
+                if (madeProgress)
+                    return SessionMacroPlaybackCycleResult.Continue();
+
+                var retryDelay = prepared.PlaybackRetryTracker
+                    .GetDelayUntilNextAttempt();
+                return retryDelay is null
+                    ? SessionMacroPlaybackCycleResult.Stop
+                    : SessionMacroPlaybackCycleResult.Continue(
+                        retryDelay.Value);
             },
             cancellationToken);
     }
@@ -481,13 +525,14 @@ public partial class MainWindow
         SessionMacroLaunchSnapshot snapshot,
         SessionTemplateCatalog catalog,
         MacroPlaybackText playbackText,
+        SessionMacroPlaybackCache? playbackCache = null,
         bool validateMacroArtifacts = true,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         _exactWheelMacroStore ??=
             new ExactWheelMacroStore(_sessionTemplateStore);
-        var playbackCache = new SessionMacroPlaybackCache();
+        playbackCache ??= new SessionMacroPlaybackCache();
         var playbackLeases = new SessionMacroPlaybackLeaseCache();
         var clientByKey = snapshot.Clients
             .GroupBy(
@@ -681,10 +726,11 @@ public partial class MainWindow
                 return isValid;
             try
             {
-                _ = playbackCache.GetOrLoad(
+                _ = playbackCache.GetOrLoadCancellable(
                     definition,
                     _exactWheelMacroStore!,
-                    static (store, candidate) => store.Load(candidate));
+                    static (store, candidate) => store.Load(candidate),
+                    cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 fileValidity[cacheKey] = true;
                 return true;
@@ -862,6 +908,9 @@ public partial class MainWindow
         CancelCurrentMacroPlayback();
         if (_currentMacroContext is not null)
             _currentMacroContext.Changed -= CurrentMacroContext_Changed;
+        Interlocked.Exchange(
+            ref _preflightMacroPlaybackCache,
+            null)?.Dispose();
         _currentMacroContext = null;
         if (_macroController is not null)
         {

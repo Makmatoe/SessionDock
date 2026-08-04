@@ -191,6 +191,52 @@ public sealed class ExactWheelSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Protects a programmatic focus transition between serial playback
+    /// segments. With no physical intervention it completes immediately. Once
+    /// the retained monitor observes human input, it waits without activating
+    /// another window until the input is released and the caller confirms that
+    /// an exact allowed target was restored by the user.
+    /// </summary>
+    public Task<ExactWheelFocusTransitionWaitResult>
+        WaitForFocusTransitionAsync(
+        Func<ExactWheelDispatchAuthorization> resumeAuthorization,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resumeAuthorization);
+        lock (_gate)
+        {
+            EnsureIdle();
+            if (_playbackSequence is null)
+            {
+                throw new InvalidOperationException(
+                    "Begin a retained playback sequence before waiting for a focus transition.");
+            }
+        }
+
+        return _playback.WaitForFocusTransitionAsync(
+            resumeAuthorization,
+            cancellationToken);
+    }
+
+    /// <summary>
+    /// Rechecks the retained physical-intervention monitor immediately before
+    /// a caller asks Windows to activate or restore a playback target.
+    /// </summary>
+    public bool IsProgrammaticFocusAllowed()
+    {
+        lock (_gate)
+        {
+            if (_state != ExactWheelSessionState.Idle ||
+                _playbackSequence is null)
+            {
+                return false;
+            }
+        }
+
+        return _playback.IsProgrammaticFocusAllowed();
+    }
+
     public void EmergencyStop() => _playback.RequestStop();
 
     public async ValueTask DisposeAsync()

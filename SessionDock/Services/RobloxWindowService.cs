@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace SessionDock.Services;
 
@@ -82,11 +83,15 @@ internal interface IRobloxWindowNativeAdapter
 
     RobloxProcessVerificationStatus VerifyProcess(
         RobloxClientProcessIdentity identity,
-        bool forceTrustRefresh);
+        bool forceTrustRefresh,
+        bool verifyExecutableTrust,
+        SafeFileHandle? executableTrustHandle);
 
     RobloxProcessVerificationStatus TryPinProcessLifetime(
         RobloxClientProcessIdentity identity,
         bool forceTrustRefresh,
+        bool verifyExecutableTrust,
+        SafeFileHandle? executableTrustHandle,
         out IRobloxProcessLifetimePin? lifetimePin)
     {
         lifetimePin = null;
@@ -179,19 +184,46 @@ internal sealed partial class RobloxWindowService
     internal IReadOnlyList<RobloxMonitor> GetMonitors() =>
         _native.GetMonitors();
 
-    internal async Task<RobloxWindowOperationResult> WaitForWindowAsync(
+    internal Task<RobloxWindowOperationResult> WaitForWindowAsync(
         RobloxClientProcessIdentity identity,
         TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default) =>
+        WaitForWindowAsync(
+            identity,
+            timeout,
+            trustContext: null,
+            cancellationToken);
+
+    internal async Task<RobloxWindowOperationResult> WaitForWindowAsync(
+        RobloxClientProcessIdentity identity,
+        TimeSpan? timeout,
+        RobloxExecutableTrustContext? trustContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(identity);
         var effectiveTimeout = ValidateTimeout(
             timeout ?? DefaultWindowTimeout,
             nameof(timeout));
-        var preliminary = _native.TryPinProcessLifetime(
-            identity,
-            forceTrustRefresh: true,
-            out var lifetimePin);
+        var trustClaim = trustContext is null
+            ? null
+            : await trustContext.AcquireVerificationAsync(
+                identity.ExecutablePath,
+                cancellationToken);
+        if (trustClaim?.ExecutableTrustRejected == true)
+            return VerificationFailure(
+                RobloxProcessVerificationStatus.ExecutableNotTrusted);
+        RobloxProcessVerificationStatus preliminary;
+        IRobloxProcessLifetimePin? lifetimePin;
+        using (trustClaim)
+        {
+            preliminary = _native.TryPinProcessLifetime(
+                identity,
+                trustClaim?.ForceTrustRefresh ?? true,
+                trustClaim?.VerifyExecutableTrust ?? true,
+                trustClaim?.ExecutableHandle,
+                out lifetimePin);
+            trustClaim?.ReportVerification(preliminary);
+        }
         if (preliminary != RobloxProcessVerificationStatus.Verified ||
             lifetimePin is null)
         {
@@ -373,17 +405,44 @@ internal sealed partial class RobloxWindowService
         }
     }
 
+    internal Task<RobloxWindowOperationResult> CaptureAsync(
+        RobloxClientProcessIdentity identity,
+        nint windowHandle,
+        CancellationToken cancellationToken = default) =>
+        CaptureAsync(
+            identity,
+            windowHandle,
+            trustContext: null,
+            cancellationToken);
+
     internal async Task<RobloxWindowOperationResult> CaptureAsync(
         RobloxClientProcessIdentity identity,
         nint windowHandle,
+        RobloxExecutableTrustContext? trustContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(identity);
         cancellationToken.ThrowIfCancellationRequested();
-        var validated = ValidateWindow(
-            identity,
-            windowHandle,
-            forceTrustRefresh: true);
+        var trustClaim = trustContext is null
+            ? null
+            : await trustContext.AcquireVerificationAsync(
+                identity.ExecutablePath,
+                cancellationToken);
+        if (trustClaim?.ExecutableTrustRejected == true)
+            return VerificationFailure(
+                RobloxProcessVerificationStatus.ExecutableNotTrusted);
+        RobloxWindowOperationResult? validated;
+        using (trustClaim)
+        {
+            validated = ValidateWindow(
+                identity,
+                windowHandle,
+                trustClaim?.ForceTrustRefresh ?? true,
+                trustClaim?.VerifyExecutableTrust ?? true,
+                trustClaim?.ExecutableHandle,
+                out var verification);
+            trustClaim?.ReportVerification(verification);
+        }
         if (validated is not null)
             return validated;
         if (!_native.TryGetGeometry(
@@ -406,11 +465,26 @@ internal sealed partial class RobloxWindowService
             _native.IsMaximized(windowHandle)));
     }
 
-    internal async Task<RobloxWindowOperationResult> SetBoundsAsync(
+    internal Task<RobloxWindowOperationResult> SetBoundsAsync(
         RobloxClientProcessIdentity identity,
         nint windowHandle,
         RobloxPixelRect requestedOuterBounds,
         TimeSpan? realizeTimeout = null,
+        CancellationToken cancellationToken = default) =>
+        SetBoundsAsync(
+            identity,
+            windowHandle,
+            requestedOuterBounds,
+            realizeTimeout,
+            trustContext: null,
+            cancellationToken);
+
+    internal async Task<RobloxWindowOperationResult> SetBoundsAsync(
+        RobloxClientProcessIdentity identity,
+        nint windowHandle,
+        RobloxPixelRect requestedOuterBounds,
+        TimeSpan? realizeTimeout,
+        RobloxExecutableTrustContext? trustContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(identity);
@@ -424,10 +498,26 @@ internal sealed partial class RobloxWindowService
         var effectiveTimeout = ValidateTimeout(
             realizeTimeout ?? DefaultRealizeTimeout,
             nameof(realizeTimeout));
-        var validated = ValidateWindow(
-            identity,
-            windowHandle,
-            forceTrustRefresh: true);
+        var trustClaim = trustContext is null
+            ? null
+            : await trustContext.AcquireVerificationAsync(
+                identity.ExecutablePath,
+                cancellationToken);
+        if (trustClaim?.ExecutableTrustRejected == true)
+            return VerificationFailure(
+                RobloxProcessVerificationStatus.ExecutableNotTrusted);
+        RobloxWindowOperationResult? validated;
+        using (trustClaim)
+        {
+            validated = ValidateWindow(
+                identity,
+                windowHandle,
+                trustClaim?.ForceTrustRefresh ?? true,
+                trustClaim?.VerifyExecutableTrust ?? true,
+                trustClaim?.ExecutableHandle,
+                out var verification);
+            trustClaim?.ReportVerification(verification);
+        }
         if (validated is not null)
             return validated;
         var restored = await RestoreIfNeededAsync(
@@ -600,7 +690,9 @@ internal sealed partial class RobloxWindowService
             {
                 var finalVerification = _native.VerifyProcess(
                     identity,
-                    forceTrustRefresh: true);
+                    forceTrustRefresh: true,
+                    verifyExecutableTrust: true,
+                    executableTrustHandle: null);
                 if (finalVerification != RobloxProcessVerificationStatus.Verified)
                     return VerificationFailure(finalVerification);
                 if (!_native.TryGetGeometry(
@@ -634,11 +726,26 @@ internal sealed partial class RobloxWindowService
             "Windows denied the foreground request. Click the visible Roblox reveal area and try again.");
     }
 
-    internal async Task<RobloxWindowOperationResult> FocusAsync(
+    internal Task<RobloxWindowOperationResult> FocusAsync(
         RobloxPlaybackTargetLease playbackLease,
         RobloxClientProcessIdentity identity,
         nint windowHandle,
         TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default) =>
+        FocusAsync(
+            playbackLease,
+            identity,
+            windowHandle,
+            timeout,
+            canProgrammaticallyActivate: null,
+            cancellationToken);
+
+    internal async Task<RobloxWindowOperationResult> FocusAsync(
+        RobloxPlaybackTargetLease playbackLease,
+        RobloxClientProcessIdentity identity,
+        nint windowHandle,
+        TimeSpan? timeout,
+        Func<bool>? canProgrammaticallyActivate,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(playbackLease);
@@ -657,6 +764,8 @@ internal sealed partial class RobloxWindowService
         if (_native.IsMinimized(windowHandle) ||
             _native.IsMaximized(windowHandle))
         {
+            if (!CanProgrammaticallyActivate(canProgrammaticallyActivate))
+                return PhysicalInterventionFocusFailure();
             if (!_native.TryRestore(windowHandle))
             {
                 return RobloxWindowOperationResult.Failed(
@@ -710,6 +819,8 @@ internal sealed partial class RobloxWindowService
         // liveness/identity proof plus live HWND ownership checks; it must not
         // hash and WinVerifyTrust the same executable again.
         cancellationToken.ThrowIfCancellationRequested();
+        if (!CanProgrammaticallyActivate(canProgrammaticallyActivate))
+            return PhysicalInterventionFocusFailure();
         _ = _native.TrySetForeground(windowHandle);
         var deadline = _native.UtcNow + effectiveTimeout;
         do
@@ -773,9 +884,42 @@ internal sealed partial class RobloxWindowService
             "Windows denied the foreground request. Click the visible Roblox reveal area and try again.");
     }
 
+    private static bool CanProgrammaticallyActivate(Func<bool>? guard)
+    {
+        if (guard is null)
+            return true;
+        try
+        {
+            return guard();
+        }
+        catch (Exception)
+        {
+            // A lost intervention monitor or concurrently disposed playback
+            // session must fail closed before calling a foreground API.
+            return false;
+        }
+    }
+
+    private static RobloxWindowOperationResult
+        PhysicalInterventionFocusFailure() =>
+        RobloxWindowOperationResult.Failed(
+            RobloxWindowOperationStatus.FocusDenied,
+            "Focus stayed paused after physical input. Release the input and click an allowed Roblox window to resume.");
+
     internal Task<RobloxWindowZOrderResult> ApplyZOrderAsync(
         RobloxCascadeLayoutPlan plan,
         IReadOnlyList<RobloxWindowZOrderTarget> targets,
+        CancellationToken cancellationToken = default) =>
+        ApplyZOrderAsync(
+            plan,
+            targets,
+            trustContext: null,
+            cancellationToken);
+
+    internal Task<RobloxWindowZOrderResult> ApplyZOrderAsync(
+        RobloxCascadeLayoutPlan plan,
+        IReadOnlyList<RobloxWindowZOrderTarget> targets,
+        RobloxExecutableTrustContext? trustContext,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan);
@@ -827,10 +971,29 @@ internal sealed partial class RobloxWindowService
             }
 
             var target = matches[0];
-            var validated = ValidateWindow(
-                target.Identity,
-                target.Handle,
-                forceTrustRefresh: true);
+            var trustClaim = trustContext?.AcquireVerification(
+                target.Identity.ExecutablePath,
+                cancellationToken);
+            if (trustClaim?.ExecutableTrustRejected == true)
+            {
+                return Task.FromResult(new RobloxWindowZOrderResult(
+                    false,
+                    VerificationFailure(
+                        RobloxProcessVerificationStatus
+                            .ExecutableNotTrusted).Error));
+            }
+            RobloxWindowOperationResult? validated;
+            using (trustClaim)
+            {
+                validated = ValidateWindow(
+                    target.Identity,
+                    target.Handle,
+                    trustClaim?.ForceTrustRefresh ?? true,
+                    trustClaim?.VerifyExecutableTrust ?? true,
+                    trustClaim?.ExecutableHandle,
+                    out var verification);
+                trustClaim?.ReportVerification(verification);
+            }
             if (validated is not null)
             {
                 return Task.FromResult(new RobloxWindowZOrderResult(
@@ -951,9 +1114,28 @@ internal sealed partial class RobloxWindowService
         nint windowHandle,
         bool forceTrustRefresh = false)
     {
-        var verification = _native.VerifyProcess(
+        return ValidateWindow(
             identity,
-            forceTrustRefresh);
+            windowHandle,
+            forceTrustRefresh,
+            verifyExecutableTrust: true,
+            executableTrustHandle: null,
+            out _);
+    }
+
+    private RobloxWindowOperationResult? ValidateWindow(
+        RobloxClientProcessIdentity identity,
+        nint windowHandle,
+        bool forceTrustRefresh,
+        bool verifyExecutableTrust,
+        SafeFileHandle? executableTrustHandle,
+        out RobloxProcessVerificationStatus verification)
+    {
+        verification = _native.VerifyProcess(
+            identity,
+            forceTrustRefresh,
+            verifyExecutableTrust,
+            executableTrustHandle);
         if (verification != RobloxProcessVerificationStatus.Verified)
             return VerificationFailure(verification);
         return ValidateWindowHandle(identity, windowHandle);
@@ -1135,7 +1317,9 @@ internal sealed class Win32RobloxWindowNativeAdapter :
 
     public RobloxProcessVerificationStatus VerifyProcess(
         RobloxClientProcessIdentity identity,
-        bool forceTrustRefresh)
+        bool forceTrustRefresh,
+        bool verifyExecutableTrust,
+        SafeFileHandle? executableTrustHandle)
     {
         ArgumentNullException.ThrowIfNull(identity);
         Process process;
@@ -1149,12 +1333,21 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         }
 
         using (process)
-            return VerifyPinnedProcess(process, identity, forceTrustRefresh);
+        {
+            return VerifyPinnedProcess(
+                process,
+                identity,
+                forceTrustRefresh,
+                verifyExecutableTrust,
+                executableTrustHandle);
+        }
     }
 
     public RobloxProcessVerificationStatus TryPinProcessLifetime(
         RobloxClientProcessIdentity identity,
         bool forceTrustRefresh,
+        bool verifyExecutableTrust,
+        SafeFileHandle? executableTrustHandle,
         out IRobloxProcessLifetimePin? lifetimePin)
     {
         ArgumentNullException.ThrowIfNull(identity);
@@ -1171,7 +1364,9 @@ internal sealed class Win32RobloxWindowNativeAdapter :
             var verification = VerifyPinnedProcess(
                 process,
                 identity,
-                forceTrustRefresh);
+                forceTrustRefresh,
+                verifyExecutableTrust,
+                executableTrustHandle);
             if (verification != RobloxProcessVerificationStatus.Verified)
                 return verification;
 
@@ -1198,7 +1393,8 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         Process process,
         RobloxClientProcessIdentity identity,
         bool forceTrustRefresh,
-        bool verifyExecutableTrust = true)
+        bool verifyExecutableTrust,
+        SafeFileHandle? executableTrustHandle)
     {
         try
         {
@@ -1216,9 +1412,14 @@ internal sealed class Win32RobloxWindowNativeAdapter :
                 return RobloxProcessVerificationStatus.ExecutablePathMismatch;
             }
             if (verifyExecutableTrust &&
-                !RobloxExecutableTrust.IsTrustedPlayerPath(
-                    executablePath,
-                    forceTrustRefresh))
+                !(executableTrustHandle is not null
+                    ? RobloxExecutableTrust.IsTrustedPlayerPath(
+                        executablePath,
+                        executableTrustHandle,
+                        forceTrustRefresh)
+                    : RobloxExecutableTrust.IsTrustedPlayerPath(
+                        executablePath,
+                        forceTrustRefresh)))
             {
                 return RobloxProcessVerificationStatus.ExecutableNotTrusted;
             }
@@ -1317,7 +1518,8 @@ internal sealed class Win32RobloxWindowNativeAdapter :
                     // refresh stalls input without adding protection against
                     // PID reuse. A caller requesting a forced refresh still
                     // gets a complete file/signature verification.
-                    verifyExecutableTrust: refreshExecutableTrust);
+                    verifyExecutableTrust: refreshExecutableTrust,
+                    executableTrustHandle: null);
                 if (verification == RobloxProcessVerificationStatus.Exited)
                     _isAlive = false;
                 return verification;

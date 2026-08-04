@@ -191,10 +191,12 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
     // process identity hundreds of times per second on a laptop.
     private const ulong TargetGuardPollMicroseconds = 10_000;
     // A malformed or legacy zero-duration timeline must never turn an
-    // infinite repeat into an AboveNormal-priority busy loop. The playable
+    // infinite repeat into a dedicated-thread busy loop. The playable
     // boundary rejects empty recordings; this floor is the final defense for
     // any very short nonempty timeline that is repeated indefinitely.
     private const ulong MinimumInfiniteInterLoopDelayMicroseconds = 10_000;
+    private static readonly TimeSpan FocusTransitionPollInterval =
+        TimeSpan.FromMilliseconds(50);
     private const string UnsafeHeldInputPauseMessage =
         "Playback stopped before pausing because an injected key or mouse button was still held. Cleanup emitted the required global release input to avoid leaving Windows in a stuck state.";
 
@@ -214,6 +216,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
     private IExactWheelInputCapture? _retainedInterventionCapture;
     private Task? _interventionSequenceEndTask;
     private long _interventionSequenceGeneration;
+    private bool _interventionSequencePhysicalInputPrevalidated;
     private bool _interventionSequenceEnding;
     private bool _workerShutdownRequested;
     private bool _disposed;
@@ -254,6 +257,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         ValidateOptions(options);
 
         var ordered = PreparePlaybackRecording(recording);
+        options.CoordinateTransform?.ValidateRecording(ordered);
 
         lock (_gate)
         {
@@ -355,9 +359,13 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 EventResetMode.ManualReset);
             _activeInterventionEvent.Reset();
             var capture = _captureFactory();
+            var physicalInputPrevalidated = false;
             try
             {
                 capture.StartInterventionMonitor(_activeInterventionEvent);
+                physicalInputPrevalidated = ArePhysicalInputsReleased(
+                    capture,
+                    Array.Empty<int>());
             }
             catch
             {
@@ -374,12 +382,140 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             }
 
             _retainedInterventionCapture = capture;
+            _interventionSequencePhysicalInputPrevalidated =
+                physicalInputPrevalidated;
             _interventionSequenceGeneration = unchecked(
                 _interventionSequenceGeneration + 1);
             return new InterventionSequenceLease(
                 this,
                 _interventionSequenceGeneration);
         }
+    }
+
+    internal async Task<ExactWheelFocusTransitionWaitResult>
+        WaitForFocusTransitionAsync(
+        Func<ExactWheelDispatchAuthorization> resumeAuthorization,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(resumeAuthorization);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        IExactWheelInputCapture? capture;
+        EventWaitHandle? interventionEvent;
+        bool physicalInputPrevalidated;
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_interventionSequenceEnding ||
+                _retainedInterventionCapture is null ||
+                _activeInterventionEvent is null)
+            {
+                throw new InvalidOperationException(
+                    "A retained intervention monitor is required before a focus transition.");
+            }
+
+            capture = _retainedInterventionCapture;
+            interventionEvent = _activeInterventionEvent;
+            physicalInputPrevalidated =
+                _interventionSequencePhysicalInputPrevalidated;
+        }
+
+        if (!IsInterventionMonitorHealthy(capture))
+        {
+            return ExactWheelFocusTransitionWaitResult
+                .InterventionMonitorUnavailable;
+        }
+
+        var physicalInputReleased = ArePhysicalInputsReleased(
+            capture,
+            Array.Empty<int>());
+        if (!physicalInputPrevalidated)
+        {
+            if (!physicalInputReleased)
+            {
+                return ExactWheelFocusTransitionWaitResult
+                    .PhysicalInputHeld;
+            }
+
+            MarkRetainedPhysicalInputPrevalidated(capture);
+        }
+
+        // The common serial transition performs no polling or authorization
+        // work. Only a physical signal (including one that arrived between two
+        // PlayAsync calls) latches the explicit-user-resume path.
+        if (physicalInputReleased && !interventionEvent.WaitOne(0))
+            return ExactWheelFocusTransitionWaitResult.Ready;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsInterventionMonitorHealthy(capture))
+            {
+                return ExactWheelFocusTransitionWaitResult
+                    .InterventionMonitorUnavailable;
+            }
+
+            if (ArePhysicalInputsReleased(capture, Array.Empty<int>()))
+            {
+                var authorization = GetResumeAuthorization(
+                    resumeAuthorization);
+                if (authorization == ExactWheelDispatchAuthorization.Denied)
+                {
+                    return ExactWheelFocusTransitionWaitResult
+                        .AuthorizationDenied;
+                }
+                if (authorization ==
+                    ExactWheelDispatchAuthorization.Authorized)
+                {
+                    // Reset first, then recheck all state. A hook callback that
+                    // races the reset sets the manual-reset event again and
+                    // keeps the transition paused instead of being lost.
+                    interventionEvent.Reset();
+                    if (IsInterventionMonitorHealthy(capture) &&
+                        ArePhysicalInputsReleased(
+                            capture,
+                            Array.Empty<int>()) &&
+                        !interventionEvent.WaitOne(0) &&
+                        GetResumeAuthorization(resumeAuthorization) ==
+                            ExactWheelDispatchAuthorization.Authorized)
+                    {
+                        return ExactWheelFocusTransitionWaitResult.Ready;
+                    }
+                }
+            }
+
+            await Task.Delay(
+                    FocusTransitionPollInterval,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    internal bool IsProgrammaticFocusAllowed()
+    {
+        IExactWheelInputCapture? capture;
+        EventWaitHandle? interventionEvent;
+        bool physicalInputPrevalidated;
+        lock (_gate)
+        {
+            if (_disposed ||
+                _interventionSequenceEnding ||
+                _retainedInterventionCapture is null ||
+                _activeInterventionEvent is null)
+            {
+                return false;
+            }
+
+            capture = _retainedInterventionCapture;
+            interventionEvent = _activeInterventionEvent;
+            physicalInputPrevalidated =
+                _interventionSequencePhysicalInputPrevalidated;
+        }
+
+        return physicalInputPrevalidated &&
+            IsInterventionMonitorHealthy(capture) &&
+            ArePhysicalInputsReleased(capture, Array.Empty<int>()) &&
+            !interventionEvent.WaitOne(0);
     }
 
     internal void RequestStop()
@@ -546,10 +682,15 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         IExactWheelInputCapture? retainedInterventionCapture = null;
+        var physicalInputPrevalidated = false;
         if (interventionMonitorRetained)
         {
             lock (_gate)
+            {
                 retainedInterventionCapture = _retainedInterventionCapture;
+                physicalInputPrevalidated =
+                    _interventionSequencePhysicalInputPrevalidated;
+            }
             if (!IsInterventionMonitorHealthy(
                     retainedInterventionCapture))
             {
@@ -571,6 +712,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         try
         {
             if (options.EnforcePhysicalInputRelease &&
+                !physicalInputPrevalidated &&
                 activeInterventionCapture is not
                     ITrackedPhysicalInputState)
             {
@@ -596,7 +738,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                     ? interventionEvent
                     : null,
                 activeInterventionCapture,
-                physicalInputPrevalidated: false);
+                physicalInputPrevalidated);
         }
         catch (Win32Exception exception)
         {
@@ -673,7 +815,10 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 ? _retainedInterventionCapture
                 : null;
             if (capture is not null)
+            {
                 _retainedInterventionCapture = null;
+                _interventionSequencePhysicalInputPrevalidated = false;
+            }
         }
         StopAndDisposeInterventionCapture(capture, ref failure);
         lock (_gate)
@@ -694,6 +839,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         {
             var capture = _retainedInterventionCapture;
             _retainedInterventionCapture = null;
+            _interventionSequencePhysicalInputPrevalidated = false;
             return capture;
         }
     }
@@ -757,14 +903,19 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         if (retainedInterventionCapture is null)
             interventionEvent?.Reset();
         if (options.EnforcePhysicalInputRelease &&
-            !physicalInputPrevalidated &&
-            !ArePhysicalInputsReleased(
-                retainedInterventionCapture,
-                Array.Empty<int>()))
+            !physicalInputPrevalidated)
         {
-            return Cleanup(Result(
-                ExactWheelPlaybackStopReason.PhysicalInputHeld,
-                message: "Release held keys and mouse buttons before playback."));
+            if (!ArePhysicalInputsReleased(
+                    retainedInterventionCapture,
+                    Array.Empty<int>()))
+            {
+                return Cleanup(Result(
+                    ExactWheelPlaybackStopReason.PhysicalInputHeld,
+                    message: "Release held keys and mouse buttons before playback."));
+            }
+
+            MarkRetainedPhysicalInputPrevalidated(
+                retainedInterventionCapture);
         }
 
         var frequency = _clock.Frequency;
@@ -780,6 +931,8 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 options.InterLoopDelayMicroseconds,
                 MinimumInfiniteInterLoopDelayMicroseconds)
             : options.InterLoopDelayMicroseconds;
+        var playbackTopology = options.CoordinateTransform?
+            .DestinationDisplay ?? recording.Display;
 
         var result = Result(ExactWheelPlaybackStopReason.Completed);
         var progress = new PlaybackProgressReporter(
@@ -795,7 +948,20 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                  eventIndex < recording.Events.Count;
                  eventIndex++)
             {
-                var inputEvent = recording.Events[eventIndex];
+                var timelineEvent = recording.Events[eventIndex];
+                if (!TryTransformEvent(
+                        options,
+                        timelineEvent,
+                        out var inputEvent,
+                        out var transformError))
+                {
+                    result = Result(
+                        ExactWheelPlaybackStopReason.InvalidTimeline,
+                        loopIndex: loopIndex,
+                        eventIndex: eventIndex,
+                        message: transformError);
+                    break;
+                }
                 while (result.Reason == ExactWheelPlaybackStopReason.Completed)
                 {
                     long deadline;
@@ -805,7 +971,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             origin,
                             loopIndex,
                             recording.DurationMicroseconds,
-                            inputEvent.TimestampMicroseconds,
+                            timelineEvent.TimestampMicroseconds,
                             options.Rate,
                             interLoopDelayMicroseconds,
                             frequency);
@@ -880,7 +1046,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
 
                     try
                     {
-                        CoalesceOverdueMouseMoves(
+                        var coalesced = CoalesceOverdueMouseMoves(
                             recording,
                             options,
                             origin,
@@ -888,8 +1054,22 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             interLoopDelayMicroseconds,
                             frequency,
                             ref eventIndex,
-                            ref inputEvent,
+                            ref timelineEvent,
                             ref deadline);
+                        if (coalesced &&
+                            !TryTransformEvent(
+                                options,
+                                timelineEvent,
+                                out inputEvent,
+                                out transformError))
+                        {
+                            result = Result(
+                                ExactWheelPlaybackStopReason.InvalidTimeline,
+                                loopIndex: loopIndex,
+                                eventIndex: eventIndex,
+                                message: transformError);
+                            break;
+                        }
                     }
                     catch (Exception exception) when (
                         exception is OverflowException or ArgumentException)
@@ -1111,7 +1291,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
 
                     var injected = _injector.Inject(
                         inputEvent,
-                        recording.Display);
+                        playbackTopology);
                     if (!injected.Succeeded)
                     {
                         result = Result(
@@ -1132,7 +1312,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             loopIndex,
                             eventIndex,
                             recording.Events.Count,
-                            inputEvent.TimestampMicroseconds,
+                            timelineEvent.TimestampMicroseconds,
                             lateness));
                     break;
                 }
@@ -1272,7 +1452,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         return ordered;
     }
 
-    private void CoalesceOverdueMouseMoves(
+    private bool CoalesceOverdueMouseMoves(
         ExactWheelRecording recording,
         ExactWheelPlaybackOptions options,
         long origin,
@@ -1287,10 +1467,11 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             inputEvent.Type != ExactWheelInputEventType.MouseMove ||
             _injector.HasHeldInputs)
         {
-            return;
+            return false;
         }
 
         var now = _clock.Timestamp;
+        var coalesced = false;
         while (eventIndex + 1 < recording.Events.Count)
         {
             var candidate = recording.Events[eventIndex + 1];
@@ -1309,8 +1490,34 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 break;
 
             eventIndex++;
+            coalesced = true;
             inputEvent = candidate;
             deadline = candidateDeadline;
+        }
+
+        return coalesced;
+    }
+
+    private static bool TryTransformEvent(
+        ExactWheelPlaybackOptions options,
+        ExactWheelInputEvent inputEvent,
+        out ExactWheelInputEvent transformed,
+        out string error)
+    {
+        try
+        {
+            transformed = options.CoordinateTransform?.TransformEvent(
+                inputEvent) ?? inputEvent;
+            error = string.Empty;
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or InvalidDataException or
+                OverflowException)
+        {
+            transformed = default;
+            error = exception.Message;
+            return false;
         }
     }
 
@@ -1630,6 +1837,19 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         }
     }
 
+    private static ExactWheelDispatchAuthorization GetResumeAuthorization(
+        Func<ExactWheelDispatchAuthorization> resumeAuthorization)
+    {
+        try
+        {
+            return NormalizeAuthorization(resumeAuthorization());
+        }
+        catch (Exception)
+        {
+            return ExactWheelDispatchAuthorization.Denied;
+        }
+    }
+
     private static ExactWheelDispatchAuthorization NormalizeAuthorization(
         ExactWheelDispatchAuthorization authorization) =>
         authorization switch
@@ -1651,6 +1871,20 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         capture is ITrackedPhysicalInputState tracked
             ? tracked.AreReleased(ignoredVirtualKeys)
             : _physicalInput.AreReleased(ignoredVirtualKeys);
+
+    private void MarkRetainedPhysicalInputPrevalidated(
+        IExactWheelInputCapture? capture)
+    {
+        if (capture is null)
+            return;
+        lock (_gate)
+        {
+            if (ReferenceEquals(_retainedInterventionCapture, capture))
+            {
+                _interventionSequencePhysicalInputPrevalidated = true;
+            }
+        }
+    }
 
     private bool AreControlKeysReleased(
         IExactWheelInputCapture? capture,

@@ -61,12 +61,12 @@ public partial class TemplateEditorDialog : Window
             .Where(macro => macro.Kind == SessionMacroKind.Client)
             .Select(CreateMacroChoice)
             .Prepend(noMacro)
-            .ToList();
+            .ToArray();
         var wholeLayoutMacros = normalizedMacros
             .Where(macro => macro.Kind == SessionMacroKind.WholeLayout)
             .Select(CreateMacroChoice)
             .Prepend(noMacro)
-            .ToList();
+            .ToArray();
 
         _existingSlots = (_existingTemplate?.ClientSlots ?? [])
             .GroupBy(
@@ -84,6 +84,8 @@ public partial class TemplateEditorDialog : Window
             {
                 Key = client.AccountKey
             }).ToArray());
+        var sharedDestinationChoices = CreateDestinationChoices(
+            destinationDefinitions);
 
         _clientRows = _clients
             .Select(client =>
@@ -93,22 +95,25 @@ public partial class TemplateEditorDialog : Window
                     SessionTemplateMacroMode.PerClient
                         ? slot?.PerClientMacroId
                         : null;
-                var choices = clientMacros.ToList();
+                var selectedMacro = ResolveChoice(
+                    clientMacros,
+                    selectedId,
+                    noMacro,
+                    out var choices);
                 var destination = slot is null
                     ? client.Destination
                     : slot.Destination;
-                var destinationChoices = CreateDestinationChoices(
-                    destinationDefinitions,
-                    destination);
+                var selectedDestination = ResolveDestinationChoice(
+                    sharedDestinationChoices,
+                    destination,
+                    out var destinationChoices);
                 return new ClientMacroRow(
                     client,
                     choices,
-                    ResolveChoice(choices, selectedId, noMacro),
+                    selectedMacro,
                     destination,
                     destinationChoices,
-                    ResolveDestinationChoice(
-                        destinationChoices,
-                        destination),
+                    selectedDestination,
                     Localize(
                         "Template.Editor.ClientMacroName",
                         client.DisplayName),
@@ -126,21 +131,25 @@ public partial class TemplateEditorDialog : Window
         ClientMacroList.ItemsSource = _clientRows;
         ClientDestinationList.ItemsSource = _clientRows;
         SharedTargetList.ItemsSource = _clientRows;
-        SharedMacroComboBox.ItemsSource = clientMacros;
-        SharedMacroComboBox.SelectedItem = ResolveChoice(
+        var selectedSharedMacro = ResolveChoice(
             clientMacros,
             _existingTemplate?.MacroMode == SessionTemplateMacroMode.Shared
                 ? _existingTemplate.SharedMacroId
                 : null,
-            noMacro);
-        WholeLayoutMacroComboBox.ItemsSource = wholeLayoutMacros;
-        WholeLayoutMacroComboBox.SelectedItem = ResolveChoice(
+            noMacro,
+            out var sharedMacroChoices);
+        SharedMacroComboBox.ItemsSource = sharedMacroChoices;
+        SharedMacroComboBox.SelectedItem = selectedSharedMacro;
+        var selectedWholeLayoutMacro = ResolveChoice(
             wholeLayoutMacros,
             _existingTemplate?.MacroMode ==
                 SessionTemplateMacroMode.WholeLayout
                 ? _existingTemplate.WholeLayoutMacroId
                 : null,
-            noMacro);
+            noMacro,
+            out var wholeLayoutMacroChoices);
+        WholeLayoutMacroComboBox.ItemsSource = wholeLayoutMacroChoices;
+        WholeLayoutMacroComboBox.SelectedItem = selectedWholeLayoutMacro;
 
         MacroModeComboBox.ItemsSource = new[]
         {
@@ -393,10 +402,12 @@ public partial class TemplateEditorDialog : Window
             : null;
 
     private MacroChoice ResolveChoice(
-        ICollection<MacroChoice> choices,
+        IReadOnlyList<MacroChoice> choices,
         string? contentId,
-        MacroChoice noMacro)
+        MacroChoice noMacro,
+        out IReadOnlyList<MacroChoice> resolvedChoices)
     {
+        resolvedChoices = choices;
         if (string.IsNullOrWhiteSpace(contentId))
             return noMacro;
         var existing = choices.FirstOrDefault(choice => string.Equals(
@@ -409,8 +420,21 @@ public partial class TemplateEditorDialog : Window
             contentId,
             Localize("Template.Editor.UnavailableMacro", contentId),
             IsAvailable: false);
-        choices.Add(unavailable);
+        resolvedChoices = ReuseSharedOptionsOrAppend(
+            choices,
+            unavailable);
         return unavailable;
+    }
+
+    internal static IReadOnlyList<T> ReuseSharedOptionsOrAppend<T>(
+        IReadOnlyList<T> sharedOptions,
+        T? additionalOption)
+        where T : class
+    {
+        ArgumentNullException.ThrowIfNull(sharedOptions);
+        return additionalOption is null
+            ? sharedOptions
+            : [.. sharedOptions, additionalOption];
     }
 
     private static IReadOnlyList<TemplateEditorClient> NormalizeClients(
@@ -514,8 +538,7 @@ public partial class TemplateEditorDialog : Window
     }
 
     private IReadOnlyList<DestinationChoice> CreateDestinationChoices(
-        IReadOnlyList<NamedDestination> namedDestinations,
-        string? currentValue)
+        IReadOnlyList<NamedDestination> namedDestinations)
     {
         var choices = new List<DestinationChoice>
         {
@@ -525,31 +548,32 @@ public partial class TemplateEditorDialog : Window
             new DestinationChoice(
                 destination.Value,
                 destination.Name)));
-        var normalizedCurrent = currentValue?.Trim();
-        if (!string.IsNullOrWhiteSpace(normalizedCurrent) &&
-            choices.All(choice => !string.Equals(
-                choice.Value,
-                normalizedCurrent,
-                StringComparison.Ordinal)))
-        {
-            choices.Add(new DestinationChoice(
-                normalizedCurrent,
-                Localize(
-                    "Template.Editor.CustomDestination",
-                    normalizedCurrent)));
-        }
         return choices;
     }
 
-    private static DestinationChoice? ResolveDestinationChoice(
+    private DestinationChoice? ResolveDestinationChoice(
         IReadOnlyList<DestinationChoice> choices,
-        string? destination)
+        string? destination,
+        out IReadOnlyList<DestinationChoice> resolvedChoices)
     {
         var value = destination?.Trim();
-        return choices.FirstOrDefault(choice => string.Equals(
+        var existing = choices.FirstOrDefault(choice => string.Equals(
             choice.Value,
             string.IsNullOrWhiteSpace(value) ? null : value,
             StringComparison.Ordinal));
+        if (existing is not null || string.IsNullOrWhiteSpace(value))
+        {
+            resolvedChoices = choices;
+            return existing;
+        }
+
+        var custom = new DestinationChoice(
+            value,
+            Localize(
+                "Template.Editor.CustomDestination",
+                value));
+        resolvedChoices = ReuseSharedOptionsOrAppend(choices, custom);
+        return custom;
     }
 
     private static NormalizedClientWindowPlacement? ClonePlacement(

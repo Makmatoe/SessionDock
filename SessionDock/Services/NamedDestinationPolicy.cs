@@ -158,6 +158,8 @@ internal static class NamedDestinationPolicy
                 validAccountKeys.Contains(key))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var selectedKeySet = selectedKeys.ToHashSet(
+            StringComparer.OrdinalIgnoreCase);
         var target = settings.NamedDestinations.FirstOrDefault(destination =>
             string.Equals(
                 destination.Id,
@@ -167,9 +169,7 @@ internal static class NamedDestinationPolicy
         var removedAccountKeys = target is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : target.AccountKeys
-                .Where(key => !selectedKeys.Contains(
-                    key,
-                    StringComparer.OrdinalIgnoreCase))
+                .Where(key => !selectedKeySet.Contains(key))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
         if (target is null)
         {
@@ -185,9 +185,7 @@ internal static class NamedDestinationPolicy
             if (ReferenceEquals(destination, target))
                 continue;
             destination.AccountKeys ??= [];
-            destination.AccountKeys.RemoveAll(key => selectedKeys.Contains(
-                key,
-                StringComparer.OrdinalIgnoreCase));
+            destination.AccountKeys.RemoveAll(selectedKeySet.Contains);
         }
 
         target.Name = normalizedName;
@@ -208,9 +206,7 @@ internal static class NamedDestinationPolicy
         }
         foreach (var account in settings.Accounts.Where(account =>
                      account is not null &&
-                     selectedKeys.Contains(
-                         account.Key,
-                         StringComparer.OrdinalIgnoreCase)))
+                     selectedKeySet.Contains(account.Key)))
         {
             account.Destination = normalizedValue;
         }
@@ -334,6 +330,62 @@ internal static class NamedDestinationPolicy
         // destinations.
         account.Destination = target?.Value ?? destinationValue;
         return target?.Id;
+    }
+
+    internal static void SetAllAccountDestinations(
+        AppSettings settings,
+        string? destinationValue)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings.Accounts ??= [];
+        foreach (var account in settings.Accounts)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(account.Key);
+        }
+
+        settings.NamedDestinations = Normalize(
+            settings.NamedDestinations,
+            settings.Accounts);
+        var accountsByKey = settings.Accounts
+            .GroupBy(
+                account => account.Key,
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var currentAssignments = new Dictionary<string, NamedDestination>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var destination in settings.NamedDestinations)
+        {
+            foreach (var accountKey in destination.AccountKeys ?? [])
+                currentAssignments[accountKey] = destination;
+        }
+
+        var matchingDestinations = settings.NamedDestinations
+            .Where(destination => DestinationValuesAreEquivalent(
+                destination.Value,
+                destinationValue))
+            .ToArray();
+        foreach (var destination in settings.NamedDestinations)
+            destination.AccountKeys = [];
+
+        foreach (var (accountKey, matchingAccounts) in accountsByKey)
+        {
+            currentAssignments.TryGetValue(
+                accountKey,
+                out var currentAssignment);
+            var target = currentAssignment is not null &&
+                         matchingDestinations.Contains(currentAssignment)
+                ? currentAssignment
+                : matchingDestinations.Length == 1
+                    ? matchingDestinations[0]
+                    : null;
+            if (target is not null)
+                target.AccountKeys.Add(accountKey);
+            foreach (var account in matchingAccounts)
+                account.Destination = target?.Value ?? destinationValue;
+        }
     }
 
     internal static string? GetAssignedDestinationId(

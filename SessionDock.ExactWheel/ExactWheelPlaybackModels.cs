@@ -21,6 +21,14 @@ public enum ExactWheelDispatchAuthorization
     Denied
 }
 
+public enum ExactWheelFocusTransitionWaitResult
+{
+    Ready,
+    PhysicalInputHeld,
+    AuthorizationDenied,
+    InterventionMonitorUnavailable
+}
+
 public sealed class ExactWheelPlaybackOptions
 {
     public ExactWheelPlaybackRate Rate { get; init; } =
@@ -67,6 +75,15 @@ public sealed class ExactWheelPlaybackOptions
 
     public Func<ExactWheelInputEvent, ExactWheelDispatchAuthorization>?
         EventDispatchAuthorization
+    { get; init; }
+
+    /// <summary>
+    /// Maps pointer coordinates immediately before authorization and
+    /// injection. This avoids materializing a full transformed event array
+    /// for every destination client while ensuring target checks observe the
+    /// final coordinates that will be sent to Windows.
+    /// </summary>
+    public ExactWheelPlaybackCoordinateTransform? CoordinateTransform
     { get; init; }
 
     public IProgress<ExactWheelPlaybackProgress>? Progress { get; init; }

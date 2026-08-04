@@ -1274,6 +1274,20 @@ public partial class MainWindow : Window
 
     private void RenderAccountList()
     {
+        // The account strip belongs exclusively to the Advanced workspace.
+        // Account mutations still refresh visible setup pages and command
+        // state below, but they do not recreate up to 128 hidden button trees.
+        if (AdvancedWorkspace.Visibility != Visibility.Visible)
+        {
+            UpdateAccountControlAvailability();
+            RefreshBatchRetryState();
+            if (AccountsWorkspace.Visibility == Visibility.Visible)
+                RefreshAccountsWorkspace();
+            if (DestinationsWorkspace.Visibility == Visibility.Visible)
+                RefreshDestinationsWorkspace();
+            return;
+        }
+
         var requestedFocusKey = _accountFocusRestoreKey;
         _accountFocusRestoreKey = null;
         var restoreKeyboardFocus =

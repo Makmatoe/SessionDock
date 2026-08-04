@@ -116,6 +116,31 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         </Style>
 
+        <Style x:Key="PortableSelectionItems" TargetType="ItemsControl">
+            <Setter Property="MaxHeight" Value="260"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel/>
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ItemsControl">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      CanContentScroll="True">
+                            <ItemsPresenter/>
+                        </ScrollViewer>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <DataTemplate x:Key="PortableSelectionItemTemplate">
             <Border Margin="0,4,0,0" Padding="9,7"
                     Background="{DynamicResource CardSurfaceBrush}"
@@ -237,6 +262,7 @@
                                         </Expander.Header>
                                         <ItemsControl x:Name="TemplateItemsControl"
                                                       Margin="0,4,0,0"
+                                                      Style="{StaticResource PortableSelectionItems}"
                                                       ItemTemplate="{StaticResource PortableSelectionItemTemplate}"/>
                                     </Expander>
                                 </Border>
@@ -255,6 +281,7 @@
                                                        Foreground="{DynamicResource WarningMutedTextBrush}"
                                                        FontSize="10" TextWrapping="Wrap"/>
                                             <ItemsControl x:Name="MacroItemsControl"
+                                                          Style="{StaticResource PortableSelectionItems}"
                                                           ItemTemplate="{StaticResource PortableSelectionItemTemplate}"/>
                                         </StackPanel>
                                     </Expander>
@@ -273,6 +300,7 @@
                                                        Foreground="{DynamicResource MutedBrush}"
                                                        FontSize="10" TextWrapping="Wrap"/>
                                             <ItemsControl x:Name="DestinationItemsControl"
+                                                          Style="{StaticResource PortableSelectionItems}"
                                                           ItemTemplate="{StaticResource PortableSelectionItemTemplate}"/>
                                         </StackPanel>
                                     </Expander>
@@ -287,6 +315,7 @@
                                         </Expander.Header>
                                         <ItemsControl x:Name="PresetItemsControl"
                                                       Margin="0,4,0,0"
+                                                      Style="{StaticResource PortableSelectionItems}"
                                                       ItemTemplate="{StaticResource PortableSelectionItemTemplate}"/>
                                     </Expander>
                                 </Border>

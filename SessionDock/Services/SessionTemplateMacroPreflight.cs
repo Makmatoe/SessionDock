@@ -42,29 +42,68 @@ internal static class SessionTemplateMacroPreflight
         ExactWheelMacroStore macroStore)
     {
         ArgumentNullException.ThrowIfNull(macroStore);
-        return Validate(
+        using var playbackCache = new SessionMacroPlaybackCache();
+        return ValidateCancellable(
             template,
             catalog,
-            definition =>
+            macroStore,
+            playbackCache,
+            CancellationToken.None);
+    }
+
+    internal static SessionTemplateMacroPreflightResult Validate(
+        SessionTemplate template,
+        SessionTemplateCatalog catalog,
+        ExactWheelMacroStore macroStore,
+        SessionMacroPlaybackCache playbackCache)
+        => ValidateCancellable(
+            template,
+            catalog,
+            macroStore,
+            playbackCache,
+            CancellationToken.None);
+
+    internal static SessionTemplateMacroPreflightResult ValidateCancellable(
+        SessionTemplate template,
+        SessionTemplateCatalog catalog,
+        ExactWheelMacroStore macroStore,
+        SessionMacroPlaybackCache playbackCache,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(macroStore);
+        ArgumentNullException.ThrowIfNull(playbackCache);
+        return ValidateCancellable(
+            template,
+            catalog,
+            (definition, token) =>
             {
-                var recording = macroStore.Load(definition);
+                token.ThrowIfCancellationRequested();
+                var recording = playbackCache.GetOrLoadCancellable(
+                    definition,
+                    macroStore,
+                    static (store, candidate) => store.Load(candidate),
+                    token);
+                token.ThrowIfCancellationRequested();
                 _ = definition.Kind switch
                 {
                     SessionMacroKind.Client =>
-                        ExactWheelCoordinateTransforms.TransformClientRelative(
-                            recording,
-                            recording.Display,
-                            recording.Target),
+                        ExactWheelCoordinateTransforms
+                            .CreateClientRelativePlaybackTransformCancellable(
+                                recording,
+                                recording.Display,
+                                recording.Target,
+                                token),
                     SessionMacroKind.WholeLayout =>
                         ExactWheelCoordinateTransforms
-                            .TransformVirtualDesktopNormalized(
+                            .CreateVirtualDesktopNormalizedPlaybackTransform(
                                 recording,
                                 recording.Display,
                                 recording.Target),
                     _ => throw new InvalidDataException(
                         "The macro kind is not supported for playback.")
                 };
-            });
+            },
+            cancellationToken);
     }
 
     internal static SessionTemplateMacroPreflightResult Validate(
@@ -72,9 +111,24 @@ internal static class SessionTemplateMacroPreflight
         SessionTemplateCatalog catalog,
         Action<MacroDefinition> validateMacro)
     {
+        ArgumentNullException.ThrowIfNull(validateMacro);
+        return ValidateCancellable(
+            template,
+            catalog,
+            (definition, _) => validateMacro(definition),
+            CancellationToken.None);
+    }
+
+    internal static SessionTemplateMacroPreflightResult ValidateCancellable(
+        SessionTemplate template,
+        SessionTemplateCatalog catalog,
+        Action<MacroDefinition, CancellationToken> validateMacro,
+        CancellationToken cancellationToken)
+    {
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(catalog);
         ArgumentNullException.ThrowIfNull(validateMacro);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var assignments = SessionTemplateMacroAssignmentPolicy.Resolve(
             template,
@@ -97,9 +151,10 @@ internal static class SessionTemplateMacroPreflight
 
         foreach (var definition in resolvedDefinitions)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                validateMacro(definition);
+                validateMacro(definition, cancellationToken);
             }
             catch (Exception exception) when (
                 exception is IOException or InvalidDataException or

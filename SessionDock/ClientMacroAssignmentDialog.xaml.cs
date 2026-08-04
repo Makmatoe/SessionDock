@@ -18,6 +18,8 @@ public partial class ClientMacroAssignmentDialog : Window
     private readonly RobloxWindowService _windowService;
     private readonly IReadOnlySet<string> _selectableAccountKeys;
     private readonly IReadOnlyList<SessionMacroClientTarget> _selectableClients;
+    private readonly IReadOnlyDictionary<nint, SessionMacroClientTarget>
+        _selectableClientsByWindowHandle;
     private readonly IReadOnlyDictionary<string, string> _definitionNames;
     private readonly AppLocalizationService _localization;
     private readonly DispatcherTimer _foregroundTimer;
@@ -51,6 +53,13 @@ public partial class ClientMacroAssignmentDialog : Window
             .Where(client =>
                 _selectableAccountKeys.Contains(client.AccountKey))
             .ToArray();
+        _selectableClientsByWindowHandle = _selectableClients
+            .Where(client => client.WindowHandle != nint.Zero)
+            .GroupBy(client => client.WindowHandle)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Single());
 
         var macroOptions = definitions
             .Where(definition =>
@@ -131,26 +140,17 @@ public partial class ClientMacroAssignmentDialog : Window
             return;
         }
 
-        if (_lastAssignedHandle != nint.Zero &&
-            ExactWheelDesktopCapture.IsForeground(_lastAssignedHandle))
+        var foregroundWindow =
+            ExactWheelDesktopCapture.GetForegroundRootWindow();
+        if (foregroundWindow == nint.Zero ||
+            foregroundWindow == _lastAssignedHandle)
+            return;
+        if (!_selectableClientsByWindowHandle.TryGetValue(
+                foregroundWindow,
+                out var match))
         {
             return;
         }
-
-        SessionMacroClientTarget? match = null;
-        foreach (var client in _selectableClients)
-        {
-            if (client.WindowHandle == _lastAssignedHandle ||
-                !ExactWheelDesktopCapture.IsForeground(client.WindowHandle))
-            {
-                continue;
-            }
-            if (match is not null)
-                return;
-            match = client;
-        }
-        if (match is null)
-            return;
 
         _assigning = true;
         try
@@ -160,7 +160,8 @@ public partial class ClientMacroAssignmentDialog : Window
                 client.Identity,
                 client.WindowHandle);
             if (!valid.Success ||
-                !ExactWheelDesktopCapture.IsForeground(client.WindowHandle))
+                ExactWheelDesktopCapture.GetForegroundRootWindow() !=
+                    client.WindowHandle)
             {
                 SetStatus(
                     Localize("Macro.AssignClientUnavailable"),

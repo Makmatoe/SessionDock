@@ -12,33 +12,69 @@ internal enum SessionMacroTransformKind
 }
 
 /// <summary>
-/// Keeps verified and coordinate-adapted macros in memory for one playback run.
-/// The cache is deliberately bounded: ordinary macros avoid disk and transform
-/// work on every loop, while unusually large recordings safely fall back to
-/// one-shot processing instead of consuming unbounded laptop memory.
+/// Keeps verified source macros and small coordinate plans in memory for one
+/// playback run. Source events remain memory-bounded, while destination plans
+/// contain only immutable geometry and therefore scale linearly with active
+/// assignments instead of copying every event for every client.
 /// </summary>
-internal sealed class SessionMacroPlaybackCache
+internal sealed class SessionMacroPlaybackCache : IDisposable
 {
-    internal const int MaximumSourceEntries = 64;
-    internal const int MaximumTransformedEntries = 64;
-    internal const int MaximumSourceEvents = 750_000;
-    // Eight 100k-event client transforms fit together, matching the common
-    // multi-client workload without allowing the cache to grow unbounded.
-    internal const int MaximumTransformedEvents = 1_000_000;
-    internal const int MaximumEventsPerTransformedEntry =
-        (int)ExactWheelLimits.MaximumEventCount;
+    // Keep the common mixed-mode case (one maximum-size per-client macro and
+    // one maximum-size whole-layout macro) warm. This is still a fixed memory
+    // ceiling independent of n. Additional unique recordings move once into
+    // immutable page-backed storage instead of being deserialized every loop
+    // or multiplying resident event arrays per destination.
+    internal const int MaximumSourceEvents =
+        checked((int)ExactWheelLimits.MaximumEventCount * 2);
+    internal const int MaximumSourceArtifacts =
+        SessionTemplatePolicy.MaximumSlotsPerTemplate + 1;
+    // Do not let a syntactically valid 128-source template consume gigabytes
+    // of Temp space or provoke that much real-time antivirus I/O. Runs with a
+    // larger unique working set fail preflight before creating the next map.
+    internal const long MaximumPageableSourceBytes =
+        256L * 1024L * 1024L;
     internal static readonly TimeSpan DisplayRefreshInterval =
         TimeSpan.FromSeconds(2);
 
-    private readonly Dictionary<MacroCacheKey, ExactWheelRecording> _sources =
+    private const int PageableEventBytes = 40;
+
+    private readonly Dictionary<ArtifactCacheKey, SourceCacheEntry> _sources =
         [];
-    private readonly Dictionary<TransformCacheKey, TransformedCacheEntry>
-        _transformed = new(TransformCacheKeyComparer.Instance);
-    private int _sourceEventCount;
-    private int _transformedEventCount;
+    private readonly Dictionary<TransformIdentityKey, CoordinateTransformEntry>
+        _coordinateTransforms = [];
+    private readonly Func<ExactWheelRecording, int> _getSourceEventWeight;
+    private readonly long _maximumPageableSourceBytes;
+    private int _residentSourceEventCount;
+    private long _pageableSourceBytes;
+    private int _pageableSourceCount;
+    private bool _disposed;
     private ExactWheelDisplayTopology? _displayTopology;
     private long _lastDisplayTimestamp = -1;
     private long _nextDisplayRefreshTimestamp;
+
+    internal SessionMacroPlaybackCache()
+        : this(
+            static recording => recording.Events.Count,
+            MaximumPageableSourceBytes)
+    {
+    }
+
+    // The weight seam lets scaling tests model maximum-size sources without
+    // allocating millions of events. Production always uses the exact count.
+    internal SessionMacroPlaybackCache(
+        Func<ExactWheelRecording, int> getSourceEventWeight,
+        long maximumPageableSourceBytes = MaximumPageableSourceBytes)
+    {
+        _getSourceEventWeight = getSourceEventWeight ??
+            throw new ArgumentNullException(nameof(getSourceEventWeight));
+        if (maximumPageableSourceBytes is < 0 or >
+            MaximumPageableSourceBytes)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumPageableSourceBytes));
+        }
+        _maximumPageableSourceBytes = maximumPageableSourceBytes;
+    }
 
     internal ExactWheelDisplayTopology GetDisplayTopology(
         Func<ExactWheelDisplayTopology> capture) =>
@@ -52,6 +88,7 @@ internal sealed class SessionMacroPlaybackCache
         long timestamp,
         long frequency)
     {
+        ThrowIfDisposed();
         ArgumentNullException.ThrowIfNull(capture);
         ArgumentOutOfRangeException.ThrowIfNegative(timestamp);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(frequency);
@@ -85,6 +122,28 @@ internal sealed class SessionMacroPlaybackCache
             loader,
             static (callback, candidate) => callback(candidate));
 
+    internal ExactWheelRecording GetOrLoadCancellable<TState>(
+        MacroDefinition definition,
+        TState state,
+        Func<TState, MacroDefinition, ExactWheelRecording> loader,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(loader);
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        var key = ArtifactCacheKey.Create(definition);
+        if (_sources.TryGetValue(key, out var cached))
+            return cached.Recording;
+        EnsureSourceAdmission(definition);
+
+        var recording = loader(state, definition) ??
+            throw new InvalidDataException(
+                "The macro loader returned no recording.");
+        cancellationToken.ThrowIfCancellationRequested();
+        return CacheSource(key, recording, cancellationToken);
+    }
+
     internal ExactWheelRecording GetOrLoad<TState>(
         MacroDefinition definition,
         TState state,
@@ -92,164 +151,178 @@ internal sealed class SessionMacroPlaybackCache
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(loader);
-        var key = MacroCacheKey.Create(definition);
+        ThrowIfDisposed();
+        var key = ArtifactCacheKey.Create(definition);
         if (_sources.TryGetValue(key, out var cached))
-            return cached;
+            return cached.Recording;
+        EnsureSourceAdmission(definition);
 
         var recording = loader(state, definition) ??
             throw new InvalidDataException("The macro loader returned no recording.");
-        TryCacheSource(key, recording);
-        return recording;
+        return CacheSource(key, recording, CancellationToken.None);
     }
 
-    internal ExactWheelRecording GetOrTransform(
-        MacroDefinition definition,
-        SessionMacroTransformKind kind,
-        ExactWheelRecordingTarget destination,
-        Func<ExactWheelRecording> transform) =>
-        GetOrTransform(
-            definition,
-            kind,
-            destination,
-            transform,
-            static (callback, _) => callback());
-
-    internal ExactWheelRecording GetOrTransform<TState>(
-        MacroDefinition definition,
-        SessionMacroTransformKind kind,
-        ExactWheelRecordingTarget destination,
-        TState state,
-        Func<TState, ExactWheelRecordingTarget, ExactWheelRecording> transform)
+    private void EnsureSourceAdmission(MacroDefinition definition)
     {
-        ArgumentNullException.ThrowIfNull(definition);
-        ArgumentNullException.ThrowIfNull(destination);
-        ArgumentNullException.ThrowIfNull(transform);
-        var key = new TransformCacheKey(
-            MacroCacheKey.Create(definition),
-            kind,
-            DestinationCacheKey.Create(destination));
-        if (_transformed.TryGetValue(key, out var cached))
-            return cached.Recording;
-
-        var recording = transform(state, destination) ??
-            throw new InvalidDataException("The macro transform returned no recording.");
-        TryCacheTransform(key, recording);
-        return recording;
+        if (_sources.Count >= MaximumSourceArtifacts)
+        {
+            throw new InvalidDataException(
+                $"One playback run supports at most {MaximumSourceArtifacts} unique macro sources.");
+        }
+        if (definition.EventCount is > 0 and <=
+                (int)ExactWheelLimits.MaximumEventCount &&
+            definition.EventCount >
+                MaximumSourceEvents - _residentSourceEventCount)
+        {
+            var declaredPageableBytes = checked(
+                (long)definition.EventCount * PageableEventBytes);
+            if (declaredPageableBytes >
+                _maximumPageableSourceBytes - _pageableSourceBytes)
+            {
+                throw new InvalidDataException(
+                    "The pageable macro source budget was exceeded.");
+            }
+        }
     }
 
-    internal ExactWheelRecording GetOrLoadAndTransform<TLoaderState>(
+    internal SessionMacroPlaybackPlan GetOrLoadAndCreateTransform<
+        TLoaderState>(
         MacroDefinition definition,
         SessionMacroTransformKind kind,
         ExactWheelRecordingTarget destination,
         TLoaderState loaderState,
         Func<TLoaderState, MacroDefinition, ExactWheelRecording> loader,
         Func<ExactWheelRecording, ExactWheelRecordingTarget,
-            ExactWheelRecording> transform)
+            ExactWheelPlaybackCoordinateTransform> createTransform)
     {
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(destination);
         ArgumentNullException.ThrowIfNull(loader);
-        ArgumentNullException.ThrowIfNull(transform);
-        var key = new TransformCacheKey(
-            MacroCacheKey.Create(definition),
+        ArgumentNullException.ThrowIfNull(createTransform);
+        var artifactKey = ArtifactCacheKey.Create(definition);
+        var transformKey = new TransformIdentityKey(
+            artifactKey,
             kind,
-            DestinationCacheKey.Create(destination));
-        if (_transformed.TryGetValue(key, out var cached))
-            return cached.Recording;
-
-        // Resolve the source only after the transformed lookup misses. The
-        // transformed working set is intentionally larger than the source
-        // cache, so doing this in the opposite order can re-read a large
-        // uncached source on every otherwise-cached client cycle.
+            destination.WindowHandle.ToInt64());
+        var destinationKey = DestinationCacheKey.Create(destination);
         var source = GetOrLoad(definition, loaderState, loader);
-        var recording = transform(source, destination) ??
+        if (_coordinateTransforms.TryGetValue(
+                transformKey,
+                out var cached) &&
+            DestinationsEqual(cached.Destination, destinationKey))
+        {
+            return new SessionMacroPlaybackPlan(source, cached.Transform);
+        }
+
+        var transform = createTransform(source, destination) ??
             throw new InvalidDataException(
-                "The macro transform returned no recording.");
-        TryCacheTransform(key, recording);
-        return recording;
+                "The macro coordinate transform factory returned no plan.");
+        _coordinateTransforms[transformKey] = new CoordinateTransformEntry(
+            destinationKey,
+            transform);
+        return new SessionMacroPlaybackPlan(source, transform);
     }
 
     internal int CachedSourceCount => _sources.Count;
 
-    internal int CachedTransformedCount => _transformed.Count;
+    internal int CachedResidentSourceEventCount =>
+        _residentSourceEventCount;
 
-    private void TryCacheSource(
-        MacroCacheKey key,
-        ExactWheelRecording recording)
+    internal int CachedPageableSourceCount => _pageableSourceCount;
+
+    internal long CachedPageableSourceBytes => _pageableSourceBytes;
+
+    internal IReadOnlyList<string> PageableSourcePaths => _sources.Values
+        .Select(source => source.PageableOwner?.BackingPath)
+        .Where(path => path is not null)
+        .Select(path => path!)
+        .ToArray();
+
+    internal int CachedCoordinateTransformCount =>
+        _coordinateTransforms.Count;
+
+    public void Dispose()
     {
-        var eventCount = recording.Events.Count;
-        if (_sources.Count >= MaximumSourceEntries ||
-            eventCount > MaximumSourceEvents - _sourceEventCount)
-        {
+        if (_disposed)
             return;
-        }
-
-        _sources.Add(key, recording);
-        _sourceEventCount += eventCount;
+        _disposed = true;
+        foreach (var source in _sources.Values)
+            source.PageableOwner?.Dispose();
+        _sources.Clear();
+        _coordinateTransforms.Clear();
+        _displayTopology = null;
+        _residentSourceEventCount = 0;
+        _pageableSourceCount = 0;
+        _pageableSourceBytes = 0;
     }
 
-    private void TryCacheTransform(
-        TransformCacheKey key,
-        ExactWheelRecording recording)
+    private ExactWheelRecording CacheSource(
+        ArtifactCacheKey key,
+        ExactWheelRecording recording,
+        CancellationToken cancellationToken)
     {
-        var eventCount = recording.Events.Count;
-        if (eventCount > MaximumEventsPerTransformedEntry)
-            return;
-
-        RemoveStaleTransformForSameTarget(key);
-        if (_transformed.Count >= MaximumTransformedEntries ||
-            eventCount > MaximumTransformedEvents - _transformedEventCount)
+        cancellationToken.ThrowIfCancellationRequested();
+        var eventWeight = _getSourceEventWeight(recording);
+        if (eventWeight is < 0 or >
+            (int)ExactWheelLimits.MaximumEventCount)
         {
-            // A repeating client scan must not evict the entry needed next and
-            // degrade into zero cache hits. Keep the admitted working set and
-            // let only this over-budget transform run one-shot.
-            return;
+            throw new InvalidDataException(
+                "The macro source event weight is outside the safety limit.");
         }
 
-        _transformed.Add(
-            key,
-            new TransformedCacheEntry(recording, eventCount));
-        _transformedEventCount += eventCount;
-    }
-
-    private void RemoveStaleTransformForSameTarget(TransformCacheKey key)
-    {
-        TransformCacheKey? staleKey = null;
-        foreach (var existing in _transformed.Keys)
+        if (eventWeight <=
+            MaximumSourceEvents - _residentSourceEventCount)
         {
-            if (existing.Macro == key.Macro &&
-                existing.Kind == key.Kind &&
-                existing.Destination.WindowHandle ==
-                    key.Destination.WindowHandle)
-            {
-                staleKey = existing;
-                break;
-            }
+            _sources.Add(key, new SourceCacheEntry(recording, null));
+            _residentSourceEventCount += eventWeight;
+            return recording;
         }
-        if (staleKey is not { } stale)
-            return;
-        if (_transformed.Remove(stale, out var removed))
-            _transformedEventCount -= removed.EventCount;
+
+        var pageableBytes = checked(
+            (long)recording.Events.Count * PageableEventBytes);
+        if (pageableBytes >
+            _maximumPageableSourceBytes - _pageableSourceBytes)
+        {
+            throw new InvalidDataException(
+                "The pageable macro source budget was exceeded.");
+        }
+
+        var pageable = ExactWheelPageableRecording.CreateCancellable(
+            recording,
+            cancellationToken);
+        try
+        {
+            _sources.Add(
+                key,
+                new SourceCacheEntry(pageable.Recording, pageable));
+            _pageableSourceCount++;
+            _pageableSourceBytes += pageableBytes;
+            return pageable.Recording;
+        }
+        catch
+        {
+            pageable.Dispose();
+            throw;
+        }
     }
 
-    private readonly record struct MacroCacheKey(
-        string ContentId,
+    private void ThrowIfDisposed() =>
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+    private readonly record struct ArtifactCacheKey(
         string Sha256,
-        string SafeFileName,
-        SessionMacroKind Kind)
+        string SafeFileName)
     {
-        internal static MacroCacheKey Create(MacroDefinition definition) =>
+        internal static ArtifactCacheKey Create(MacroDefinition definition) =>
             new(
-                definition.ContentId,
                 definition.Sha256,
-                definition.SafeFileName,
-                definition.Kind);
+                definition.SafeFileName);
     }
 
-    private readonly record struct TransformCacheKey(
-        MacroCacheKey Macro,
+    private readonly record struct TransformIdentityKey(
+        ArtifactCacheKey Artifact,
         SessionMacroTransformKind Kind,
-        DestinationCacheKey Destination);
+        long WindowHandle);
 
     private readonly record struct DestinationCacheKey(
         long WindowHandle,
@@ -273,88 +346,102 @@ internal sealed class SessionMacroPlaybackCache
         }
     }
 
-    private sealed class TransformCacheKeyComparer :
-        IEqualityComparer<TransformCacheKey>
+    private static bool DestinationsEqual(
+        DestinationCacheKey left,
+        DestinationCacheKey right)
     {
-        internal static TransformCacheKeyComparer Instance { get; } = new();
-
-        public bool Equals(TransformCacheKey left, TransformCacheKey right) =>
-            left.Macro == right.Macro &&
-            left.Kind == right.Kind &&
-            DestinationsEqual(left.Destination, right.Destination);
-
-        public int GetHashCode(TransformCacheKey key)
+        if (left.WindowHandle != right.WindowHandle ||
+            !string.Equals(
+                left.ProcessBasename,
+                right.ProcessBasename,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                left.WindowClass,
+                right.WindowClass,
+                StringComparison.Ordinal) ||
+            left.WindowRect != right.WindowRect ||
+            left.ClientRect != right.ClientRect)
         {
-            var destination = key.Destination;
-            var display = destination.Display;
-            var hash = new HashCode();
-            hash.Add(key.Macro);
-            hash.Add(key.Kind);
-            hash.Add(destination.WindowHandle);
-            hash.Add(display.VirtualLeft);
-            hash.Add(display.VirtualTop);
-            hash.Add(display.VirtualWidth);
-            hash.Add(display.VirtualHeight);
-            hash.Add(display.Monitors.Count);
-            for (var index = 0; index < display.Monitors.Count; index++)
-            {
-                var monitor = display.Monitors[index];
-                hash.Add(monitor.Bounds);
-                hash.Add(monitor.DpiX);
-                hash.Add(monitor.DpiY);
-            }
-            hash.Add(destination.ProcessBasename, StringComparer.Ordinal);
-            hash.Add(destination.WindowClass, StringComparer.Ordinal);
-            hash.Add(destination.WindowRect);
-            hash.Add(destination.ClientRect);
-            return hash.ToHashCode();
+            return false;
         }
 
-        private static bool DestinationsEqual(
-            DestinationCacheKey left,
-            DestinationCacheKey right)
-        {
-            if (left.WindowHandle != right.WindowHandle ||
-                !string.Equals(
-                    left.ProcessBasename,
-                    right.ProcessBasename,
-                    StringComparison.Ordinal) ||
-                !string.Equals(
-                    left.WindowClass,
-                    right.WindowClass,
-                    StringComparison.Ordinal) ||
-                left.WindowRect != right.WindowRect ||
-                left.ClientRect != right.ClientRect)
-            {
-                return false;
-            }
-
-            var leftDisplay = left.Display;
-            var rightDisplay = right.Display;
-            if (ReferenceEquals(leftDisplay, rightDisplay))
-                return true;
-            if (leftDisplay.VirtualLeft != rightDisplay.VirtualLeft ||
-                leftDisplay.VirtualTop != rightDisplay.VirtualTop ||
-                leftDisplay.VirtualWidth != rightDisplay.VirtualWidth ||
-                leftDisplay.VirtualHeight != rightDisplay.VirtualHeight ||
-                leftDisplay.Monitors.Count != rightDisplay.Monitors.Count)
-            {
-                return false;
-            }
-
-            for (var index = 0; index < leftDisplay.Monitors.Count; index++)
-            {
-                if (leftDisplay.Monitors[index] !=
-                    rightDisplay.Monitors[index])
-                {
-                    return false;
-                }
-            }
+        var leftDisplay = left.Display;
+        var rightDisplay = right.Display;
+        if (ReferenceEquals(leftDisplay, rightDisplay))
             return true;
+        if (leftDisplay.VirtualLeft != rightDisplay.VirtualLeft ||
+            leftDisplay.VirtualTop != rightDisplay.VirtualTop ||
+            leftDisplay.VirtualWidth != rightDisplay.VirtualWidth ||
+            leftDisplay.VirtualHeight != rightDisplay.VirtualHeight ||
+            leftDisplay.Monitors.Count != rightDisplay.Monitors.Count)
+        {
+            return false;
         }
+
+        for (var index = 0; index < leftDisplay.Monitors.Count; index++)
+        {
+            if (leftDisplay.Monitors[index] != rightDisplay.Monitors[index])
+                return false;
+        }
+        return true;
     }
 
-    private sealed record TransformedCacheEntry(
+    private sealed record CoordinateTransformEntry(
+        DestinationCacheKey Destination,
+        ExactWheelPlaybackCoordinateTransform Transform);
+
+    private sealed record SourceCacheEntry(
         ExactWheelRecording Recording,
-        int EventCount);
+        ExactWheelPageableRecording? PageableOwner);
+}
+
+internal readonly record struct SessionMacroPlaybackPlan(
+    ExactWheelRecording Recording,
+    ExactWheelPlaybackCoordinateTransform CoordinateTransform);
+
+/// <summary>
+/// Transfers one preflight cache into the launched macro context without
+/// leaking it when launch, cancellation, or window discovery fails first.
+/// </summary>
+internal sealed class SessionMacroPlaybackCacheReservation : IDisposable
+{
+    private SessionMacroPlaybackCache? _cache;
+
+    internal SessionMacroPlaybackCacheReservation(
+        SessionMacroPlaybackCache? cache = null)
+    {
+        _cache = cache ?? new SessionMacroPlaybackCache();
+    }
+
+    internal SessionMacroPlaybackCache Cache =>
+        Volatile.Read(ref _cache) ??
+        throw new ObjectDisposedException(
+            nameof(SessionMacroPlaybackCacheReservation));
+
+    internal SessionMacroPlaybackCache? Take() =>
+        Interlocked.Exchange(ref _cache, null);
+
+    internal static void ReleaseFailedTransfer(
+        ref SessionMacroPlaybackCache? publishedCache,
+        SessionMacroPlaybackCache transferredCache,
+        bool wasPublished)
+    {
+        ArgumentNullException.ThrowIfNull(transferredCache);
+        if (wasPublished &&
+            !ReferenceEquals(
+                Interlocked.CompareExchange(
+                    ref publishedCache,
+                    null,
+                    transferredCache),
+                transferredCache))
+        {
+            // Another owner already consumed or replaced the exact cache.
+            return;
+        }
+
+        transferredCache.Dispose();
+    }
+
+    public void Dispose() =>
+        Interlocked.Exchange(ref _cache, null)?.Dispose();
 }

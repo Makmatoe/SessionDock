@@ -203,6 +203,67 @@ public sealed class NamedDestinationPolicyTests
                 destination.Id == "other-id").AccountKeys);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public void UpsertEditing_LargeAccountSetsPreserveExactAssignments(
+        int accountCount)
+    {
+        var accounts = Enumerable.Range(0, accountCount)
+            .Select(index => new AccountProfile
+            {
+                Key = $"account-{index:D3}",
+                Destination = "12345"
+            })
+            .ToList();
+        var selectedKeys = accounts
+            .Where((_, index) => index % 2 == 0)
+            .Select(account => account.Key)
+            .ToArray();
+        var selectedKeySet = selectedKeys.ToHashSet(
+            StringComparer.OrdinalIgnoreCase);
+        var settings = new AppSettings
+        {
+            Accounts = accounts,
+            NamedDestinations =
+            [
+                new NamedDestination
+                {
+                    Id = "scaled-id",
+                    Name = "Scaled",
+                    Value = "12345",
+                    AccountKeys = accounts
+                        .Select(account => account.Key)
+                        .ToList()
+                }
+            ]
+        };
+
+        var saved = NamedDestinationPolicy.TryUpsert(
+            settings,
+            destinationId: "scaled-id",
+            name: "Scaled",
+            value: "54321",
+            selectedKeys,
+            out var savedId,
+            out var errorKey);
+
+        Assert.True(saved);
+        Assert.Equal("scaled-id", savedId);
+        Assert.Empty(errorKey);
+        Assert.Equal(
+            selectedKeys,
+            Assert.Single(settings.NamedDestinations).AccountKeys);
+        Assert.All(
+            accounts,
+            account => Assert.Equal(
+                selectedKeySet.Contains(account.Key) ? "54321" : null,
+                account.Destination));
+    }
+
     [Fact]
     public void CustomValue_UnassignsTheAccountWithoutChangingOtherAccounts()
     {

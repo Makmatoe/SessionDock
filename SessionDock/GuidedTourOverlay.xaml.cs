@@ -33,13 +33,13 @@ public partial class GuidedTourOverlay : UserControl
     private Rect _lastPlacementHighlight = Rect.Empty;
     private Size _lastPlacementViewport = Size.Empty;
     private int _lastPlacementStep = -1;
+    private bool _isTrackingLayout;
 
     public GuidedTourOverlay()
     {
         InitializeComponent();
         _announcementLiveRegion = new AccessibilityLiveRegion(TitleText);
         IsVisibleChanged += Overlay_IsVisibleChanged;
-        LayoutUpdated += Overlay_LayoutUpdated;
     }
 
     public event EventHandler? Completed;
@@ -71,6 +71,7 @@ public partial class GuidedTourOverlay : UserControl
         _nextText = nextText;
         _finishText = finishText;
         SkipButton.Content = skipText;
+        StartLayoutTracking();
         Visibility = Visibility.Visible;
         Panel.SetZIndex(this, int.MaxValue);
         ShowCurrentStep();
@@ -83,6 +84,7 @@ public partial class GuidedTourOverlay : UserControl
     {
         _steps = [];
         _stepIndex = 0;
+        StopLayoutTracking();
         InvalidateCalloutPlacement();
         Visibility = Visibility.Collapsed;
     }
@@ -164,6 +166,14 @@ public partial class GuidedTourOverlay : UserControl
         }
 
         var highlight = InflateAndClamp(targetBounds, HighlightPadding);
+        var viewport = new Size(ActualWidth, ActualHeight);
+        if (_lastPlacementStep == _stepIndex &&
+            AreClose(_lastPlacementViewport, viewport) &&
+            AreClose(_lastPlacementHighlight, highlight))
+        {
+            return;
+        }
+
         PositionElement(
             TargetOutline,
             highlight.Left,
@@ -194,14 +204,6 @@ public partial class GuidedTourOverlay : UserControl
             highlight.Bottom,
             ActualWidth,
             Math.Max(0, ActualHeight - highlight.Bottom));
-
-        var viewport = new Size(ActualWidth, ActualHeight);
-        if (_lastPlacementStep == _stepIndex &&
-            AreClose(_lastPlacementViewport, viewport) &&
-            AreClose(_lastPlacementHighlight, highlight))
-        {
-            return;
-        }
 
         var maximumCalloutWidth = Math.Max(
             1,
@@ -405,12 +407,35 @@ public partial class GuidedTourOverlay : UserControl
             UpdateSpotlight();
     }
 
+    private void StartLayoutTracking()
+    {
+        if (_isTrackingLayout)
+            return;
+        LayoutUpdated += Overlay_LayoutUpdated;
+        _isTrackingLayout = true;
+    }
+
+    private void StopLayoutTracking()
+    {
+        if (!_isTrackingLayout)
+            return;
+        LayoutUpdated -= Overlay_LayoutUpdated;
+        _isTrackingLayout = false;
+    }
+
     private void Overlay_IsVisibleChanged(
         object sender,
         DependencyPropertyChangedEventArgs e)
     {
         _ = sender;
         if (e.NewValue is true)
+        {
+            StartLayoutTracking();
             UpdateSpotlight();
+        }
+        else
+        {
+            StopLayoutTracking();
+        }
     }
 }

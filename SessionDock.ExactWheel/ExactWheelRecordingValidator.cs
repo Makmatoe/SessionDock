@@ -81,6 +81,16 @@ public static class ExactWheelRecordingValidator
         }
     }
 
+    internal static void ValidatePlaybackDestination(
+        ExactWheelDisplayTopology display,
+        ExactWheelTargetMetadata target)
+    {
+        ArgumentNullException.ThrowIfNull(display);
+        ArgumentNullException.ThrowIfNull(target);
+        ValidateDisplay(display);
+        ValidateTarget(target);
+    }
+
     public static ExactWheelRecording Finalize(
         ExactWheelDisplayTopology display,
         ExactWheelTargetMetadata target,

@@ -33,6 +33,306 @@ public sealed class RobloxWindowServiceTests
             Assert.Single(native.LifetimePins).ForceTrustRefreshCalls);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public async Task WaitForWindowAsync_SharedOperationSerializesForcedTrust(
+        int targetCount)
+    {
+        var identities = Enumerable.Range(0, targetCount)
+            .Select(index => Identity with
+            {
+                ProcessId = Identity.ProcessId + index,
+                StartTimeUtc = Identity.StartTimeUtc.AddSeconds(index)
+            })
+            .ToArray();
+        using var forcedPinEntered = new ManualResetEventSlim();
+        using var releaseForcedPin = new ManualResetEventSlim();
+        var native = ReadyNative();
+        native.AcceptedIdentities = identities;
+        native.VerificationStatus =
+            RobloxProcessVerificationStatus.WrongUserOrSession;
+        native.ForcedPinEntered = forcedPinEntered;
+        native.ReleaseForcedPin = releaseForcedPin;
+        var service = CreateService(native);
+        using var trustContext = CreateShareableTrustContext();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var first = Task.Run(
+            () => service.WaitForWindowAsync(
+                identities[0],
+                TimeSpan.FromMilliseconds(20),
+                trustContext,
+                cancellationToken),
+            cancellationToken);
+
+        var operations = new List<Task<RobloxWindowOperationResult>> { first };
+        try
+        {
+            var entered = await Task.Run(
+                () => forcedPinEntered.Wait(
+                    TimeSpan.FromSeconds(5),
+                    cancellationToken),
+                cancellationToken);
+            Assert.True(
+                entered,
+                "The forced trust verification did not start.");
+            for (var index = 1; index < identities.Length; index++)
+            {
+                operations.Add(service.WaitForWindowAsync(
+                    identities[index],
+                    TimeSpan.FromMilliseconds(20),
+                    trustContext,
+                    cancellationToken));
+            }
+
+            Assert.Equal(1, native.PinAttemptCount);
+        }
+        finally
+        {
+            releaseForcedPin.Set();
+        }
+
+        var results = await Task.WhenAll(operations);
+        Assert.All(
+            results,
+            result => Assert.Equal(
+                RobloxWindowOperationStatus.IdentityRejected,
+                result.Status));
+        Assert.Equal(targetCount, native.PinAttemptCount);
+        Assert.Equal(
+            1,
+            native.PinForceTrustRefreshCalls.Count(forceRefresh =>
+                forceRefresh));
+        Assert.Equal(
+            targetCount - 1,
+            native.PinForceTrustRefreshCalls.Count(forceRefresh =>
+                !forceRefresh));
+        Assert.Equal(
+            1,
+            native.PinVerifyExecutableTrustCalls.Count(verify => verify));
+        Assert.Equal(
+            targetCount - 1,
+            native.PinVerifyExecutableTrustCalls.Count(verify => !verify));
+        Assert.All(native.PinExecutableTrustHandles, Assert.NotNull);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public async Task CaptureAsync_SharedOperationSerializesForcedTrust(
+        int targetCount)
+    {
+        var identities = Enumerable.Range(0, targetCount)
+            .Select(index => Identity with
+            {
+                ProcessId = Identity.ProcessId + index,
+                StartTimeUtc = Identity.StartTimeUtc.AddSeconds(index)
+            })
+            .ToArray();
+        var handles = Enumerable.Range(0, targetCount)
+            .Select(index => (nint)(100 + index))
+            .ToArray();
+        using var forcedVerificationEntered = new ManualResetEventSlim();
+        using var releaseForcedVerification = new ManualResetEventSlim();
+        var native = ReadyNative();
+        native.AcceptedIdentities = identities;
+        native.ForcedVerificationEntered = forcedVerificationEntered;
+        native.ReleaseForcedVerification = releaseForcedVerification;
+        for (var index = 0; index < targetCount; index++)
+        {
+            native.WindowProcessIds[handles[index]] =
+                identities[index].ProcessId;
+            native.OuterBoundsByWindow[handles[index]] =
+                native.OuterBounds;
+            native.ClientBoundsByWindow[handles[index]] =
+                native.ClientBounds;
+        }
+        var service = CreateService(native);
+        using var trustContext = CreateShareableTrustContext();
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var first = Task.Run(
+            () => service.CaptureAsync(
+                identities[0],
+                handles[0],
+                trustContext,
+                cancellationToken),
+            cancellationToken);
+        var operations = new List<Task<RobloxWindowOperationResult>> { first };
+        try
+        {
+            var entered = await Task.Run(
+                () => forcedVerificationEntered.Wait(
+                    TimeSpan.FromSeconds(5),
+                    cancellationToken),
+                cancellationToken);
+            Assert.True(
+                entered,
+                "The forced trust verification did not start.");
+            for (var index = 1; index < identities.Length; index++)
+            {
+                operations.Add(service.CaptureAsync(
+                    identities[index],
+                    handles[index],
+                    trustContext,
+                    cancellationToken));
+            }
+
+            Assert.Single(native.ForceTrustRefreshCalls);
+        }
+        finally
+        {
+            releaseForcedVerification.Set();
+        }
+
+        var results = await Task.WhenAll(operations);
+        Assert.All(results, result => Assert.True(result.Success, result.Error));
+        Assert.Equal(
+            1,
+            native.ForceTrustRefreshCalls.Count(forceRefresh =>
+                forceRefresh));
+        Assert.Equal(
+            targetCount - 1,
+            native.ForceTrustRefreshCalls.Count(forceRefresh =>
+                !forceRefresh));
+        Assert.Equal(
+            1,
+            native.VerifyExecutableTrustCalls.Count(verify => verify));
+        Assert.Equal(
+            targetCount - 1,
+            native.VerifyExecutableTrustCalls.Count(verify => !verify));
+        Assert.All(native.ExecutableTrustHandles, Assert.NotNull);
+    }
+
+    [Fact]
+    public async Task SharedTrust_StaleFirstProcessDoesNotConsumeForcedProof()
+    {
+        var native = ReadyNative();
+        var service = CreateService(native);
+        using var context = new RobloxExecutableTrustContext();
+        native.VerificationStatus =
+            RobloxProcessVerificationStatus.StartTimeMismatch;
+
+        var stale = await service.WaitForWindowAsync(
+            Identity,
+            TimeSpan.FromMilliseconds(20),
+            context,
+            TestContext.Current.CancellationToken);
+        native.VerificationStatus = RobloxProcessVerificationStatus.Verified;
+        var valid = await service.WaitForWindowAsync(
+            Identity,
+            TimeSpan.FromMilliseconds(20),
+            context,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RobloxWindowOperationStatus.IdentityRejected, stale.Status);
+        Assert.True(valid.Success, valid.Error);
+        Assert.Equal([true, true], native.PinForceTrustRefreshCalls);
+        Assert.Equal([true, true], native.PinVerifyExecutableTrustCalls);
+    }
+
+    [Fact]
+    public async Task SharedTrust_RejectionFailsFollowersWithoutNativeRetry()
+    {
+        var native = ReadyNative();
+        native.VerificationStatus =
+            RobloxProcessVerificationStatus.ExecutableNotTrusted;
+        var service = CreateService(native);
+        using var context = CreateShareableTrustContext();
+
+        var first = await service.CaptureAsync(
+            Identity,
+            (nint)100,
+            context,
+            TestContext.Current.CancellationToken);
+        var second = await service.CaptureAsync(
+            Identity,
+            (nint)100,
+            context,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RobloxWindowOperationStatus.IdentityRejected, first.Status);
+        Assert.Equal(RobloxWindowOperationStatus.IdentityRejected, second.Status);
+        Assert.Single(native.ForceTrustRefreshCalls);
+        Assert.Single(native.VerifyExecutableTrustCalls);
+    }
+
+    [Fact]
+    public async Task SharedTrust_WithoutAFileLeaseNeverSkipsNativeTrust()
+    {
+        var native = ReadyNative();
+        var service = CreateService(native);
+        using var context = new RobloxExecutableTrustContext();
+
+        var first = await service.CaptureAsync(
+            Identity,
+            (nint)100,
+            context,
+            TestContext.Current.CancellationToken);
+        var second = await service.CaptureAsync(
+            Identity,
+            (nint)100,
+            context,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(first.Success, first.Error);
+        Assert.True(second.Success, second.Error);
+        Assert.Equal([true, true], native.ForceTrustRefreshCalls);
+        Assert.Equal([true, true], native.VerifyExecutableTrustCalls);
+    }
+
+    [Fact]
+    public void SharedTrust_RetainsVerifiedPathUntilContextIsDisposed()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            $"SessionDock.TrustContext.{Guid.NewGuid():N}");
+        Directory.CreateDirectory(root);
+        var executable = Path.Combine(root, "RobloxPlayerBeta.exe");
+        var replacement = Path.Combine(root, "replacement.exe");
+        File.WriteAllBytes(executable, [1, 2, 3, 4]);
+        File.WriteAllBytes(replacement, [5, 6, 7, 8]);
+        try
+        {
+            using (var context = new RobloxExecutableTrustContext())
+            {
+                using (var claim = context.AcquireVerification(
+                           executable,
+                           TestContext.Current.CancellationToken))
+                {
+                    Assert.True(claim.VerifyExecutableTrust);
+                    claim.ReportVerification(
+                        RobloxProcessVerificationStatus.Verified);
+                }
+                using (var follower = context.AcquireVerification(
+                           executable,
+                           TestContext.Current.CancellationToken))
+                {
+                    Assert.False(follower.VerifyExecutableTrust);
+                }
+
+                var replacementError = Record.Exception(() =>
+                    File.Move(replacement, executable, overwrite: true));
+                Assert.True(
+                    replacementError is IOException or
+                        UnauthorizedAccessException,
+                    $"Expected the retained executable handle to block replacement, but got {replacementError?.GetType().Name ?? "no exception"}.");
+            }
+
+            File.Move(replacement, executable, overwrite: true);
+            Assert.Equal([5, 6, 7, 8], File.ReadAllBytes(executable));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task WaitForWindowAsync_WaitsForHandleAndGeometryToSettle()
     {
@@ -311,6 +611,49 @@ public sealed class RobloxWindowServiceTests
     }
 
     [Fact]
+    public async Task FocusAsync_WithRetainedLease_InterventionGuardBlocksActivation()
+    {
+        var native = ReadyNative();
+        native.Minimized = true;
+        native.SetForegroundResult = true;
+        native.SetForegroundChangesForeground = true;
+        var service = CreateService(native);
+        var acquisition = service.AcquirePlaybackTargetLease(
+            Identity,
+            (nint)100);
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(
+            acquisition.Lease);
+        var activationAllowed = false;
+
+        var blocked = await service.FocusAsync(
+            lease,
+            Identity,
+            (nint)100,
+            TimeSpan.FromMilliseconds(20),
+            () => activationAllowed,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            RobloxWindowOperationStatus.FocusDenied,
+            blocked.Status);
+        Assert.False(native.RestoreCalled);
+        Assert.False(native.SetForegroundCalled);
+
+        activationAllowed = true;
+        var focused = await service.FocusAsync(
+            lease,
+            Identity,
+            (nint)100,
+            TimeSpan.FromMilliseconds(20),
+            () => activationAllowed,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(focused.Success, focused.Error);
+        Assert.True(native.RestoreCalled);
+        Assert.True(native.SetForegroundCalled);
+    }
+
+    [Fact]
     public async Task FocusAsync_WithRetainedLease_RejectsMismatchedExactTarget()
     {
         var native = ReadyNative();
@@ -391,6 +734,74 @@ public sealed class RobloxWindowServiceTests
         Assert.Equal(1, pin.DisposeCount);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public void SessionMacroLeaseCache_RetryReacquiresAfterStickyFailure(
+        int targetCount)
+    {
+        var identities = Enumerable.Range(0, targetCount)
+            .Select(index => Identity with
+            {
+                ProcessId = Identity.ProcessId + index,
+                StartTimeUtc = Identity.StartTimeUtc.AddSeconds(index)
+            })
+            .ToArray();
+        var windows = identities
+            .Select((identity, index) => new RobloxSessionLayoutWindow(
+                $"account-{index}",
+                identity,
+                (nint)(100 + index)))
+            .ToArray();
+        var native = ReadyNative();
+        native.AcceptedIdentities = identities;
+        foreach (var window in windows)
+            native.WindowProcessIds[window.Handle] = window.Identity.ProcessId;
+        var service = CreateService(native);
+        var capturedWindowClasses = 0;
+        using var cache = new SessionMacroPlaybackLeaseCache(_ =>
+        {
+            capturedWindowClasses++;
+            return "WINDOWSCLIENT";
+        });
+        long timestamp = 0;
+        var retries = new SessionMacroPlaybackRetryTracker(
+            () => timestamp,
+            timestampFrequency: 1_000);
+
+        var first = cache.GetOrAcquire(service, windows);
+        Assert.True(first.Success, first.Failure?.Error);
+        _ = cache.GetOrCaptureWindowClass(windows[0]);
+        native.Usable = false;
+        var stickyFailure = first.Lease!.ValidateExactTarget(
+            windows[0].Identity,
+            windows[0].Handle,
+            revalidateIdentityAndToken: false);
+        Assert.Equal(
+            RobloxPlaybackTargetLeaseFailureKind.WindowUnavailable,
+            stickyFailure?.Kind);
+        retries.ReportFailure(
+            "retry-target",
+            SessionMacroPlaybackRetryDisposition.Transient);
+        Assert.False(retries.CanAttempt("retry-target"));
+
+        native.Usable = true;
+        timestamp = 250;
+        Assert.True(retries.CanAttempt("retry-target"));
+        var reacquired = cache.GetOrAcquire(service, windows);
+
+        Assert.True(reacquired.Success, reacquired.Failure?.Error);
+        Assert.NotSame(first.Lease, reacquired.Lease);
+        Assert.Equal(targetCount * 2, native.PinAttemptCount);
+        Assert.Equal(1, cache.Count);
+        Assert.Equal(0, cache.CachedWindowClassCount);
+        Assert.Equal("WINDOWSCLIENT", cache.GetOrCaptureWindowClass(windows[0]));
+        Assert.Equal(2, capturedWindowClasses);
+    }
+
     [Fact]
     public void SessionMacroLeaseCache_CachedSingleTargetHitsAreAllocationFree()
     {
@@ -400,7 +811,9 @@ public sealed class RobloxWindowServiceTests
             "account-a",
             Identity,
             (nint)100);
-        using var cache = new SessionMacroPlaybackLeaseCache();
+        using var cache = new SessionMacroPlaybackLeaseCache(
+            _ => "WINDOWSCLIENT",
+            CreateShareableTrustContext());
         _ = cache.GetOrAcquire(service, window);
         for (var index = 0; index < 100; index++)
             _ = cache.GetOrAcquire(service, window);
@@ -458,6 +871,99 @@ public sealed class RobloxWindowServiceTests
         Assert.Equal(80_000, aggregate);
         Assert.Equal(8, native.PinAttemptCount);
         Assert.Equal(0, allocated);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public void SessionMacroLeaseCache_ForceRefreshesSharedExecutableOnce(
+        int targetCount)
+    {
+        var identities = Enumerable.Range(0, targetCount)
+            .Select(index => Identity with
+            {
+                ProcessId = Identity.ProcessId + index,
+                StartTimeUtc = Identity.StartTimeUtc.AddSeconds(index)
+            })
+            .ToArray();
+        var windows = identities
+            .Select((identity, index) => new RobloxSessionLayoutWindow(
+                $"account-{index}",
+                identity,
+                (nint)(100 + index)))
+            .ToArray();
+        var native = ReadyNative();
+        native.AcceptedIdentities = identities;
+        foreach (var window in windows)
+            native.WindowProcessIds[window.Handle] = window.Identity.ProcessId;
+        using var cache = new SessionMacroPlaybackLeaseCache(
+            _ => "WINDOWSCLIENT",
+            CreateShareableTrustContext());
+
+        var acquired = cache.GetOrAcquire(CreateService(native), windows);
+
+        Assert.True(acquired.Success, acquired.Failure?.Error);
+        Assert.Equal(targetCount, native.PinAttemptCount);
+        Assert.Equal(
+            1,
+            native.PinForceTrustRefreshCalls.Count(forceRefresh =>
+                forceRefresh));
+        Assert.Equal(
+            targetCount - 1,
+            native.PinForceTrustRefreshCalls.Count(forceRefresh =>
+                !forceRefresh));
+        Assert.Equal(
+            1,
+            native.PinVerifyExecutableTrustCalls.Count(verify => verify));
+        Assert.Equal(
+            targetCount - 1,
+            native.PinVerifyExecutableTrustCalls.Count(verify => !verify));
+    }
+
+    [Theory]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public void SessionMacroLeaseCache_SameImmutableTargetListHitIsConstantTime(
+        int targetCount)
+    {
+        var identities = Enumerable.Range(0, targetCount)
+            .Select(index => Identity with
+            {
+                ProcessId = Identity.ProcessId + index,
+                StartTimeUtc = Identity.StartTimeUtc.AddSeconds(index)
+            })
+            .ToArray();
+        var windows = identities
+            .Select((identity, index) => new RobloxSessionLayoutWindow(
+                $"account-{index}",
+                identity,
+                (nint)(100 + index)))
+            .ToArray();
+        var countedWindows = new CountingReadOnlyList<
+            RobloxSessionLayoutWindow>(windows);
+        var native = ReadyNative();
+        native.AcceptedIdentities = identities;
+        foreach (var window in windows)
+            native.WindowProcessIds[window.Handle] = window.Identity.ProcessId;
+        var service = CreateService(native);
+        using var cache = new SessionMacroPlaybackLeaseCache();
+        var first = cache.GetOrAcquire(service, countedWindows);
+        Assert.True(first.Success, first.Failure?.Error);
+        countedWindows.ResetIndexReadCount();
+
+        for (var index = 0; index < 1_000; index++)
+        {
+            var cached = cache.GetOrAcquire(service, countedWindows);
+            Assert.Same(first.Lease, cached.Lease);
+        }
+
+        Assert.Equal(0, countedWindows.IndexReadCount);
+        Assert.Equal(targetCount, native.PinAttemptCount);
     }
 
     [Fact]
@@ -1266,7 +1772,9 @@ public sealed class RobloxWindowServiceTests
 
         var status = new Win32RobloxWindowNativeAdapter().VerifyProcess(
             stale,
-            forceTrustRefresh: false);
+            forceTrustRefresh: false,
+            verifyExecutableTrust: true,
+            executableTrustHandle: null);
 
         Assert.Equal(
             RobloxProcessVerificationStatus.StartTimeMismatch,
@@ -1287,6 +1795,10 @@ public sealed class RobloxWindowServiceTests
 
     private sealed class FakeNative : IRobloxWindowNativeAdapter
     {
+        private readonly object _pinSync = new();
+        private readonly object _verificationSync = new();
+        private int _pinAttemptCount;
+
         public DateTimeOffset UtcNow { get; private set; } =
             new(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
 
@@ -1328,9 +1840,21 @@ public sealed class RobloxWindowServiceTests
         public bool SetForegroundCalled { get; private set; }
         public RobloxPixelRect LastRequestedBounds { get; private set; }
         public List<bool> ForceTrustRefreshCalls { get; } = [];
+        public List<bool> VerifyExecutableTrustCalls { get; } = [];
+        public List<Microsoft.Win32.SafeHandles.SafeFileHandle?>
+            ExecutableTrustHandles
+        { get; } = [];
         public List<bool> PinForceTrustRefreshCalls { get; } = [];
+        public List<bool> PinVerifyExecutableTrustCalls { get; } = [];
+        public List<Microsoft.Win32.SafeHandles.SafeFileHandle?>
+            PinExecutableTrustHandles
+        { get; } = [];
         public List<FakeProcessLifetimePin> LifetimePins { get; } = [];
-        public int PinAttemptCount { get; private set; }
+        public int PinAttemptCount => Volatile.Read(ref _pinAttemptCount);
+        public ManualResetEventSlim? ForcedPinEntered { get; set; }
+        public ManualResetEventSlim? ReleaseForcedPin { get; set; }
+        public ManualResetEventSlim? ForcedVerificationEntered { get; set; }
+        public ManualResetEventSlim? ReleaseForcedVerification { get; set; }
         public HashSet<nint> TopmostWindows { get; } = [];
         public List<nint> DemotedWindows { get; } = [];
         public List<RobloxWindowZOrderPlacement> AppliedZOrderPlacements
@@ -1338,21 +1862,52 @@ public sealed class RobloxWindowServiceTests
 
         public RobloxProcessVerificationStatus VerifyProcess(
             RobloxClientProcessIdentity identity,
-            bool forceTrustRefresh)
+            bool forceTrustRefresh,
+            bool verifyExecutableTrust,
+            Microsoft.Win32.SafeHandles.SafeFileHandle?
+                executableTrustHandle)
         {
             Assert.Contains(identity, AcceptedIdentities ?? [Identity]);
-            ForceTrustRefreshCalls.Add(forceTrustRefresh);
+            lock (_verificationSync)
+            {
+                ForceTrustRefreshCalls.Add(forceTrustRefresh);
+                VerifyExecutableTrustCalls.Add(verifyExecutableTrust);
+                ExecutableTrustHandles.Add(executableTrustHandle);
+            }
+            if (forceTrustRefresh &&
+                ForcedVerificationEntered is { } entered)
+            {
+                entered.Set();
+                _ = ReleaseForcedVerification?.Wait(
+                    TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken);
+            }
             return VerificationStatus;
         }
 
         public RobloxProcessVerificationStatus TryPinProcessLifetime(
             RobloxClientProcessIdentity identity,
             bool forceTrustRefresh,
+            bool verifyExecutableTrust,
+            Microsoft.Win32.SafeHandles.SafeFileHandle?
+                executableTrustHandle,
             out IRobloxProcessLifetimePin? lifetimePin)
         {
             Assert.Contains(identity, AcceptedIdentities ?? [Identity]);
-            PinAttemptCount++;
-            PinForceTrustRefreshCalls.Add(forceTrustRefresh);
+            Interlocked.Increment(ref _pinAttemptCount);
+            lock (_pinSync)
+            {
+                PinForceTrustRefreshCalls.Add(forceTrustRefresh);
+                PinVerifyExecutableTrustCalls.Add(verifyExecutableTrust);
+                PinExecutableTrustHandles.Add(executableTrustHandle);
+            }
+            if (forceTrustRefresh && ForcedPinEntered is { } entered)
+            {
+                entered.Set();
+                _ = ReleaseForcedPin?.Wait(
+                    TimeSpan.FromSeconds(5),
+                    TestContext.Current.CancellationToken);
+            }
             if (VerificationStatus != RobloxProcessVerificationStatus.Verified)
             {
                 lifetimePin = null;
@@ -1360,7 +1915,8 @@ public sealed class RobloxWindowServiceTests
             }
 
             var pin = new FakeProcessLifetimePin(identity);
-            LifetimePins.Add(pin);
+            lock (_pinSync)
+                LifetimePins.Add(pin);
             lifetimePin = pin;
             return RobloxProcessVerificationStatus.Verified;
         }
@@ -1552,6 +2108,39 @@ public sealed class RobloxWindowServiceTests
             IsRetainedProcessAlive = false;
         }
     }
+
+    private sealed class CountingReadOnlyList<T>(IReadOnlyList<T> values) :
+        IReadOnlyList<T>
+    {
+        internal int IndexReadCount { get; private set; }
+
+        public int Count => values.Count;
+
+        public T this[int index]
+        {
+            get
+            {
+                IndexReadCount++;
+                return values[index];
+            }
+        }
+
+        public IEnumerator<T> GetEnumerator() => values.GetEnumerator();
+
+        System.Collections.IEnumerator
+            System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        internal void ResetIndexReadCount() => IndexReadCount = 0;
+    }
+
+    private static RobloxExecutableTrustContext
+        CreateShareableTrustContext() =>
+        new(_ => File.OpenHandle(
+            typeof(RobloxWindowServiceTests).Assembly.Location,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.RandomAccess));
 
     private static string RepoFile(params string[] components)
     {

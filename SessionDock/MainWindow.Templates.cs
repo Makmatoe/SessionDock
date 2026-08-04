@@ -10,6 +10,8 @@ namespace SessionDock;
 
 public partial class MainWindow
 {
+    private const string WholeLayoutMacroRetryTargetKey =
+        "sessiondock:whole-layout";
     private readonly SessionTemplateStore _sessionTemplateStore = new();
     private readonly RobloxWindowService _robloxWindowService = new();
     private RobloxSessionLayoutCoordinator? _robloxSessionLayoutCoordinator;
@@ -154,125 +156,160 @@ public partial class MainWindow
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        // Artifact and assignment failures must fail closed before destination
-        // persistence or RunBatchLaunchAsync can cancel the prior macro,
-        // close clients, or enqueue replacement launches.
-        var macroPreflight = PreflightTemplateMacros(template);
-        if (!macroPreflight.Success)
+        var preflightCatalog = SessionTemplatePolicy.Normalize(catalog);
+        var preflightTemplate = preflightCatalog.Templates.SingleOrDefault(
+            candidate => candidate.Id.Equals(
+                template.Id,
+                StringComparison.OrdinalIgnoreCase));
+        _exactWheelMacroStore ??=
+            new ExactWheelMacroStore(_sessionTemplateStore);
+        var preflightStore = _exactWheelMacroStore;
+        using var macroPlaybackCacheReservation =
+            new SessionMacroPlaybackCacheReservation();
+        var preflightPlaybackCache =
+            macroPlaybackCacheReservation.Cache;
+        SetOperationBusy(true);
+        try
         {
-            ShowBatchResult(
-                new BatchLaunchResult(
-                    0,
-                    template.ClientSlots.Count,
-                    [],
-                    ClientsWereClosed: false,
-                    Cancelled: false,
-                    AutomationWarning: null,
-                    MacroPreflightFailure: macroPreflight.FailureKind),
-                restoredOriginalProfile: true,
-                launchPlans: []);
-            return;
-        }
+            // Artifact and assignment failures must fail closed before
+            // destination persistence or RunBatchLaunchAsync can cancel the
+            // prior macro, close clients, or enqueue replacement launches.
+            // All WPF-bound state was captured above; only immutable catalog,
+            // template, store, and run-cache references enter this worker.
+            var macroPreflight = preflightTemplate is null
+                ? SessionTemplateMacroPreflightResult.Invalid(template.Id)
+                : await Task.Run(
+                    () => SessionTemplateMacroPreflight.ValidateCancellable(
+                        preflightTemplate,
+                        preflightCatalog,
+                        preflightStore,
+                        preflightPlaybackCache,
+                        cancellationToken),
+                    cancellationToken);
+            if (!macroPreflight.Success)
+            {
+                ShowBatchResult(
+                    new BatchLaunchResult(
+                        0,
+                        template.ClientSlots.Count,
+                        [],
+                        ClientsWereClosed: false,
+                        Cancelled: false,
+                        AutomationWarning: null,
+                        MacroPreflightFailure: macroPreflight.FailureKind),
+                    restoredOriginalProfile: true,
+                    launchPlans: []);
+                return;
+            }
+            template = preflightTemplate!;
 
-        if (!await FlushDestinationPersistenceAsync())
-            return;
-        cancellationToken.ThrowIfCancellationRequested();
+            if (!await FlushDestinationPersistenceAsync())
+                return;
+            cancellationToken.ThrowIfCancellationRequested();
 
-        var accountsByKey = _settings.Accounts
-            .Where(account => !string.IsNullOrWhiteSpace(account.Key))
-            .GroupBy(account => account.Key, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                group => group.Key,
-                group => group.First(),
-                StringComparer.OrdinalIgnoreCase);
-        var selectedAccounts = new List<AccountProfile>();
-        foreach (var slot in template.ClientSlots.OrderBy(slot => slot.Order))
-        {
-            if (!accountsByKey.TryGetValue(slot.AccountKey, out var account))
+            var accountsByKey = _settings.Accounts
+                .Where(account => !string.IsNullOrWhiteSpace(account.Key))
+                .GroupBy(account => account.Key, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    group => group.Key,
+                    group => group.First(),
+                    StringComparer.OrdinalIgnoreCase);
+            var selectedAccounts = new List<AccountProfile>();
+            foreach (var slot in template.ClientSlots.OrderBy(slot => slot.Order))
+            {
+                if (!accountsByKey.TryGetValue(slot.AccountKey, out var account))
+                {
+                    SetStatus(
+                        Localize("Main.BatchDestinationsNotReadyTitle"),
+                        Localize("Template.MissingAccounts", 1),
+                        Localize("Main.InvalidDestinationBadge"),
+                        StatusTone.Error);
+                    return;
+                }
+
+                var selected = AppSettingsSnapshot.Clone(account);
+                if (!string.IsNullOrWhiteSpace(slot.Destination))
+                    selected.Destination = slot.Destination;
+                selectedAccounts.Add(selected);
+            }
+
+            if (!BatchDestinationPlanner.TryCreate(
+                    selectedAccounts,
+                    _settings.RecentExperiences,
+                    out var launchPlans,
+                    out var planningError))
             {
                 SetStatus(
                     Localize("Main.BatchDestinationsNotReadyTitle"),
-                    Localize("Template.MissingAccounts", 1),
+                    LocalizeBatchPlanningError(planningError),
                     Localize("Main.InvalidDestinationBadge"),
                     StatusTone.Error);
                 return;
             }
 
-            var selected = AppSettingsSnapshot.Clone(account);
-            if (!string.IsNullOrWhiteSpace(slot.Destination))
-                selected.Destination = slot.Destination;
-            selectedAccounts.Add(selected);
-        }
+            ClearBatchRetryState();
+            var originalProfile = _activeProfile;
+            _batchCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            SetOperationBusy(true);
+            SetBatchCancellationControls(active: true, enabled: true);
+            BatchLaunchResult? result = null;
+            var restoredOriginalProfile = true;
+            try
+            {
+                result = await RunBatchLaunchAsync(
+                    launchPlans,
+                    TimeSpan.FromSeconds(template.DelaySeconds),
+                    _batchCancellation.Token,
+                    template,
+                    macroPlaybackCacheReservation);
+            }
+            catch (OperationCanceledException)
+            {
+                result = BatchLaunchResult.CancelledResult(selectedAccounts.Count);
+            }
+            finally
+            {
+                _launchInProgress = false;
+                SetBatchCancellationControls(active: true, enabled: false);
+                if (!cancellationToken.IsCancellationRequested &&
+                    result?.MacroPreflightFailure is null)
+                {
+                    try
+                    {
+                        restoredOriginalProfile = await RestoreBatchProfileAsync(
+                            originalProfile,
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (
+                        cancellationToken.IsCancellationRequested)
+                    {
+                        restoredOriginalProfile = false;
+                    }
+                }
 
-        if (!BatchDestinationPlanner.TryCreate(
-                selectedAccounts,
-                _settings.RecentExperiences,
-                out var launchPlans,
-                out var planningError))
-        {
-            SetStatus(
-                Localize("Main.BatchDestinationsNotReadyTitle"),
-                LocalizeBatchPlanningError(planningError),
-                Localize("Main.InvalidDestinationBadge"),
-                StatusTone.Error);
-            return;
-        }
+                _batchCancellation.Dispose();
+                _batchCancellation = null;
+                if (!_operationLifetime.IsShuttingDown)
+                {
+                    SetBatchCancellationControls(active: false, enabled: false);
+                    SetOperationBusy(false);
+                }
+            }
 
-        ClearBatchRetryState();
-        var originalProfile = _activeProfile;
-        _batchCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        SetOperationBusy(true);
-        SetBatchCancellationControls(active: true, enabled: true);
-        BatchLaunchResult? result = null;
-        var restoredOriginalProfile = true;
-        try
-        {
-            result = await RunBatchLaunchAsync(
-                launchPlans,
-                TimeSpan.FromSeconds(template.DelaySeconds),
-                _batchCancellation.Token,
-                template);
-        }
-        catch (OperationCanceledException)
-        {
-            result = BatchLaunchResult.CancelledResult(selectedAccounts.Count);
+            if (cancellationToken.IsCancellationRequested)
+                return;
+            ShowBatchResult(
+                result ?? BatchLaunchResult.CancelledResult(
+                    selectedAccounts.Count),
+                restoredOriginalProfile,
+                launchPlans);
         }
         finally
         {
-            _launchInProgress = false;
-            SetBatchCancellationControls(active: true, enabled: false);
-            if (!cancellationToken.IsCancellationRequested &&
-                result?.MacroPreflightFailure is null)
-            {
-                try
-                {
-                    restoredOriginalProfile = await RestoreBatchProfileAsync(
-                        originalProfile,
-                        cancellationToken);
-                }
-                catch (OperationCanceledException) when (
-                    cancellationToken.IsCancellationRequested)
-                {
-                    restoredOriginalProfile = false;
-                }
-            }
-
-            _batchCancellation.Dispose();
-            _batchCancellation = null;
             if (!_operationLifetime.IsShuttingDown)
-            {
-                SetBatchCancellationControls(active: false, enabled: false);
                 SetOperationBusy(false);
-            }
         }
-
-        if (cancellationToken.IsCancellationRequested)
-            return;
-        ShowBatchResult(
-            result ?? BatchLaunchResult.CancelledResult(selectedAccounts.Count),
-            restoredOriginalProfile,
-            launchPlans);
     }
 
     private async void RecordMacroButtonClick(
@@ -325,11 +362,13 @@ public partial class MainWindow
                 return;
             }
 
+            using var trustContext = new RobloxExecutableTrustContext();
             var discovered = await Task.WhenAll(attributed.Select(async client =>
             {
                 var result = await _robloxWindowService.WaitForWindowAsync(
                     client.Identity,
                     timeout: null,
+                    trustContext,
                     cancellationToken);
                 return (Client: client, Result: result);
             }));
@@ -538,11 +577,13 @@ public partial class MainWindow
                 return;
             }
 
+            using var trustContext = new RobloxExecutableTrustContext();
             var discovered = await Task.WhenAll(attributed.Select(async client =>
             {
                 var result = await _robloxWindowService.WaitForWindowAsync(
                     client.Identity,
                     timeout: null,
+                    trustContext,
                     cancellationToken);
                 return (Client: client, Result: result);
             }));
@@ -683,38 +724,12 @@ public partial class MainWindow
         }
     }
 
-    private SessionTemplateMacroPreflightResult PreflightTemplateMacros(
-        SessionTemplate? template)
-    {
-        if (template is null ||
-            template.MacroMode == SessionTemplateMacroMode.None)
-        {
-            return SessionTemplateMacroPreflightResult.Passed;
-        }
-
-        var catalog = TryLoadSessionTemplateCatalog();
-        if (catalog is null)
-            return SessionTemplateMacroPreflightResult.Unavailable();
-
-        _exactWheelMacroStore ??=
-            new ExactWheelMacroStore(_sessionTemplateStore);
-        var result = SessionTemplateMacroPreflight.Validate(
-            template,
-            catalog,
-            _exactWheelMacroStore);
-        if (!result.Success)
-        {
-            Trace.WriteLine(
-                $"Template macro preflight failed safely: {result.FailureKind}.");
-        }
-
-        return result;
-    }
-
     private async Task<SessionPostLaunchResult> ApplySessionPostLaunchAsync(
         SessionTemplate? template,
         IReadOnlyList<LaunchedBatchClient> launchedClients,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SessionMacroPlaybackCacheReservation?
+            macroPlaybackCacheReservation = null)
     {
         ArgumentNullException.ThrowIfNull(launchedClients);
         var catalog = TryLoadSessionTemplateCatalog();
@@ -750,11 +765,13 @@ public partial class MainWindow
                 StatusTone.Neutral);
         }
 
+        using var trustContext = new RobloxExecutableTrustContext();
         var discovered = await Task.WhenAll(tracked.Select(async client =>
         {
             var result = await _robloxWindowService.WaitForWindowAsync(
                 client.Identity,
                 timeout: null,
+                trustContext,
                 cancellationToken);
             return (Client: client, Result: result);
         }));
@@ -860,7 +877,11 @@ public partial class MainWindow
             catalog?.MacroDefinitions ?? [],
             wholeLayoutCompletedSuccessfully:
                 template is null || layout is { Success: true });
-        InstallCurrentBatchMacroContext(macroPlan);
+        var preflightPlaybackCache =
+            macroPlaybackCacheReservation?.Take();
+        InstallCurrentBatchMacroContext(
+            macroPlan,
+            preflightPlaybackCache);
         if (macroPlan.Issues.Count > 0)
         {
             warnings.Add(Localize(
@@ -876,7 +897,6 @@ public partial class MainWindow
     private async Task<TemplateMacroPlaybackResult> PlayTemplateMacrosAsync(
         SessionTemplate template,
         RuntimeMacroPlan plan,
-        ExactWheelDisplayTopology destinationDisplay,
         ExactWheelSession playbackSession,
         ExactWheelPlaybackRate playbackRate,
         MacroPlaybackText playbackText,
@@ -898,7 +918,6 @@ public partial class MainWindow
                         plan.PlaybackCache,
                         plan.PlaybackLeases,
                         plan.PlaybackRetryTracker,
-                        destinationDisplay,
                         playbackSession,
                         sharedMacroId: null,
                         playbackRate,
@@ -915,7 +934,6 @@ public partial class MainWindow
                         plan.PlaybackCache,
                         plan.PlaybackLeases,
                         plan.PlaybackRetryTracker,
-                        destinationDisplay,
                         playbackSession,
                         template.SharedMacroId,
                         playbackRate,
@@ -929,7 +947,7 @@ public partial class MainWindow
                         plan.ProcessBasenamesByKey,
                         plan.PlaybackCache,
                         plan.PlaybackLeases,
-                        destinationDisplay,
+                        plan.PlaybackRetryTracker,
                         playbackSession,
                         playbackRate,
                         playbackText,
@@ -957,7 +975,6 @@ public partial class MainWindow
         SessionMacroPlaybackCache playbackCache,
         SessionMacroPlaybackLeaseCache playbackLeases,
         SessionMacroPlaybackRetryTracker playbackRetryTracker,
-        ExactWheelDisplayTopology destinationDisplay,
         ExactWheelSession playbackSession,
         string? sharedMacroId,
         ExactWheelPlaybackRate playbackRate,
@@ -994,7 +1011,8 @@ public partial class MainWindow
 
             ReportMacroPlaybackProgress(slot.Order + 1);
 
-            string? warning;
+            MacroRecordingPlaybackOutcome playbackOutcome;
+            RobloxPlaybackTargetLease? retainedPlaybackLease = null;
             try
             {
                 var leaseResult = playbackLeases.GetOrAcquire(
@@ -1004,59 +1022,114 @@ public partial class MainWindow
                 {
                     Trace.WriteLine(
                         $"One client macro target lease was rejected: {leaseResult.Failure?.Kind}.");
-                    playbackRetryTracker.ReportFailure(window.Key);
+                    playbackRetryTracker.ReportFailure(
+                        window.Key,
+                        ClassifyMacroPlaybackRetry(
+                            leaseResult.Failure?.Kind));
                     skipped++;
                     continue;
                 }
                 var playbackLease = leaseResult.Lease;
+                retainedPlaybackLease = playbackLease;
+                var focusTransition = await playbackSession
+                    .WaitForFocusTransitionAsync(
+                        playbackLease.GetDispatchAuthorization,
+                        cancellationToken);
+                if (focusTransition !=
+                    ExactWheelFocusTransitionWaitResult.Ready)
+                {
+                    if (focusTransition is
+                        ExactWheelFocusTransitionWaitResult.PhysicalInputHeld or
+                        ExactWheelFocusTransitionWaitResult
+                            .InterventionMonitorUnavailable)
+                    {
+                        return TemplateMacroPlaybackResult.Stopped(
+                            playbackText.StoppedByPhysicalInput);
+                    }
+
+                    if (playbackLease.Failure is { } transitionFailure)
+                    {
+                        playbackRetryTracker.ReportFailure(
+                            window.Key,
+                            ClassifyMacroPlaybackRetry(
+                                transitionFailure.Kind));
+                        skipped++;
+                        continue;
+                    }
+
+                    return TemplateMacroPlaybackResult.Stopped(
+                        playbackText.FocusDenied);
+                }
                 var focused = await _robloxWindowService.FocusAsync(
                     playbackLease,
                     window.Identity,
                     window.Handle,
                     timeout: null,
-                    cancellationToken);
+                    cancellationToken: cancellationToken,
+                    canProgrammaticallyActivate:
+                        playbackSession.IsProgrammaticFocusAllowed);
                 if (!focused.Success)
                 {
-                    playbackRetryTracker.ReportFailure(window.Key);
+                    playbackRetryTracker.ReportFailure(
+                        window.Key,
+                        ClassifyMacroPlaybackRetry(
+                            playbackLease.Failure?.Kind,
+                            focused.Status));
                     skipped++;
                     continue;
                 }
-                if (!playbackLease.IsDispatchAuthorized())
+                ExactWheelRecordingTarget destination;
+                try
                 {
-                    playbackRetryTracker.ReportFailure(window.Key);
+                    var windowClass = playbackLeases
+                        .GetOrCaptureWindowClass(window);
+                    var destinationDisplay = playbackCache.GetDisplayTopology(
+                        ExactWheelDesktopCapture.CaptureDisplayTopology);
+                    destination =
+                        ExactWheelDesktopCapture.CapturePlaybackTarget(
+                            window.Handle,
+                            destinationDisplay,
+                            processBasenamesByKey[window.Key],
+                            windowClass,
+                            ToExactWheelRect(focused.Window!.OuterBounds),
+                            ToExactWheelRect(focused.Window.ClientBounds),
+                            // Focus may legitimately move after FocusAsync.
+                            // Event authorization below pauses until this
+                            // exact leased target is foreground again.
+                            requireForeground: false);
+                }
+                catch (Exception exception) when (
+                    IsExpectedMacroTargetCaptureFailure(exception))
+                {
+                    Trace.WriteLine(
+                        $"One client macro target snapshot was deferred: {exception.GetType().Name}.");
+                    playbackRetryTracker.ReportFailure(
+                        window.Key,
+                        SessionMacroPlaybackRetryDisposition.Transient);
                     skipped++;
                     continue;
                 }
-                var windowClass = playbackLeases
-                    .GetOrCaptureWindowClass(window);
-                var destination =
-                    ExactWheelDesktopCapture.CapturePlaybackTarget(
-                        window.Handle,
-                        destinationDisplay,
-                        processBasenamesByKey[window.Key],
-                        windowClass,
-                        ToExactWheelRect(focused.Window!.OuterBounds),
-                        ToExactWheelRect(focused.Window.ClientBounds),
-                        requireForeground: true);
-                var transformed = playbackCache.GetOrLoadAndTransform(
+                var playbackPlan = playbackCache
+                    .GetOrLoadAndCreateTransform(
                     definition,
                     SessionMacroTransformKind.ClientRelative,
                     destination,
                     _exactWheelMacroStore!,
                     static (store, candidate) => store.Load(candidate),
                     static (recording, target) => ExactWheelCoordinateTransforms
-                        .TransformClientRelative(
+                        .CreateClientRelativePlaybackTransform(
                             recording,
                             target.Display,
                             target.Metadata));
-                warning = await PlayRecordingAsync(
-                    transformed,
+                playbackOutcome = await PlayRecordingAsync(
+                    playbackPlan.Recording,
                     playbackLease,
                     playbackSession,
                     playbackRate,
                     playbackText,
                     cancellationToken,
-                    pauseOnFocusLoss: true);
+                    pauseOnFocusLoss: true,
+                    coordinateTransform: playbackPlan.CoordinateTransform);
             }
             catch (Exception exception) when (
                 IsExpectedMacroArtifactFailure(exception) ||
@@ -1064,12 +1137,37 @@ public partial class MainWindow
             {
                 Trace.WriteLine(
                     $"One client macro assignment was skipped safely: {exception.GetType().Name}.");
-                playbackRetryTracker.ReportFailure(window.Key);
+                playbackRetryTracker.ReportFailure(
+                    window.Key,
+                    IsExpectedMacroArtifactFailure(exception)
+                        ? SessionMacroPlaybackRetryDisposition.Terminal
+                        : SessionMacroPlaybackRetryDisposition.Transient);
                 skipped++;
                 continue;
             }
-            if (warning is not null)
+            if (playbackOutcome.Warning is { } warning)
+            {
+                // A failed global release can leave an injected key or mouse
+                // button held. Never enter a retry cycle in that state, even
+                // when the target loss itself would normally be transient.
+                if (!playbackOutcome.Result.CleanupSucceeded)
+                    return TemplateMacroPlaybackResult.Stopped(warning);
+                if (retainedPlaybackLease?.Failure is { } playbackFailure)
+                {
+                    var disposition = ClassifyMacroPlaybackRetry(
+                        playbackFailure.Kind);
+                    playbackRetryTracker.ReportFailure(
+                        window.Key,
+                        disposition);
+                    if (disposition ==
+                        SessionMacroPlaybackRetryDisposition.Transient)
+                    {
+                        skipped++;
+                        continue;
+                    }
+                }
                 return TemplateMacroPlaybackResult.Stopped(warning);
+            }
             playbackRetryTracker.ReportSuccess(window.Key);
             completed++;
         }
@@ -1081,6 +1179,11 @@ public partial class MainWindow
         }
         if (completed == 0)
         {
+            if (playbackRetryTracker.GetDelayUntilNextAttempt() is not null)
+            {
+                return TemplateMacroPlaybackResult.Deferred(
+                    playbackText.SkippedInvalid(skipped));
+            }
             return TemplateMacroPlaybackResult.Stopped(
                 playbackText.SkippedInvalid(skipped));
         }
@@ -1088,7 +1191,8 @@ public partial class MainWindow
             ? TemplateMacroPlaybackResult.Completed
             : new TemplateMacroPlaybackResult(
                 playbackText.SkippedInvalid(skipped),
-                MayContinue: true);
+                MayContinue: true,
+                MadeProgress: true);
     }
 
     internal static IReadOnlyList<SessionTemplateClientSlot>
@@ -1110,7 +1214,7 @@ public partial class MainWindow
         IReadOnlyDictionary<string, string> processBasenamesByKey,
         SessionMacroPlaybackCache playbackCache,
         SessionMacroPlaybackLeaseCache playbackLeases,
-        ExactWheelDisplayTopology destinationDisplay,
+        SessionMacroPlaybackRetryTracker playbackRetryTracker,
         ExactWheelSession playbackSession,
         ExactWheelPlaybackRate playbackRate,
         MacroPlaybackText playbackText,
@@ -1126,6 +1230,12 @@ public partial class MainWindow
             return TemplateMacroPlaybackResult.Stopped(
                 playbackText.InvalidAssignment);
         }
+        if (!playbackRetryTracker.CanAttempt(
+                WholeLayoutMacroRetryTargetKey))
+        {
+            return TemplateMacroPlaybackResult.Deferred(
+                playbackText.FocusDenied);
+        }
 
         var first = windows[0];
         var leaseResult = playbackLeases.GetOrAcquire(
@@ -1135,69 +1245,136 @@ public partial class MainWindow
         {
             Trace.WriteLine(
                 $"Whole-session macro target lease was rejected: {leaseResult.Failure?.Kind}.");
-            return TemplateMacroPlaybackResult.Stopped(
+            return ReportMacroPlaybackRetryFailure(
+                playbackRetryTracker,
+                WholeLayoutMacroRetryTargetKey,
+                ClassifyMacroPlaybackRetry(
+                    leaseResult.Failure?.Kind),
                 leaseResult.Failure?.Error ?? playbackText.FocusDenied);
         }
         var playbackLease = leaseResult.Lease;
+        var focusTransition = await playbackSession
+            .WaitForFocusTransitionAsync(
+                playbackLease.GetDispatchAuthorization,
+                cancellationToken);
+        if (focusTransition != ExactWheelFocusTransitionWaitResult.Ready)
+        {
+            if (focusTransition is
+                ExactWheelFocusTransitionWaitResult.PhysicalInputHeld or
+                ExactWheelFocusTransitionWaitResult
+                    .InterventionMonitorUnavailable)
+            {
+                return TemplateMacroPlaybackResult.Stopped(
+                    playbackText.StoppedByPhysicalInput);
+            }
+
+            if (playbackLease.Failure is { } transitionFailure)
+            {
+                return ReportMacroPlaybackRetryFailure(
+                    playbackRetryTracker,
+                    WholeLayoutMacroRetryTargetKey,
+                    ClassifyMacroPlaybackRetry(transitionFailure.Kind),
+                    transitionFailure.Error);
+            }
+
+            return TemplateMacroPlaybackResult.Stopped(
+                playbackText.FocusDenied);
+        }
         var focused = await _robloxWindowService.FocusAsync(
             playbackLease,
             first.Identity,
             first.Handle,
             timeout: null,
-            cancellationToken);
+            cancellationToken: cancellationToken,
+            canProgrammaticallyActivate:
+                playbackSession.IsProgrammaticFocusAllowed);
         if (!focused.Success)
         {
-            return TemplateMacroPlaybackResult.Stopped(
+            return ReportMacroPlaybackRetryFailure(
+                playbackRetryTracker,
+                WholeLayoutMacroRetryTargetKey,
+                ClassifyMacroPlaybackRetry(
+                    playbackLease.Failure?.Kind,
+                    focused.Status),
                 focused.Error ?? playbackText.FocusDenied);
         }
-        if (!playbackLease.IsDispatchAuthorized())
+        ExactWheelRecordingTarget destination;
+        try
         {
-            return TemplateMacroPlaybackResult.Stopped(
-                playbackLease.Failure?.Error ??
-                    playbackText.FocusDenied);
+            var windowClass = playbackLeases.GetOrCaptureWindowClass(first);
+            var destinationDisplay = playbackCache.GetDisplayTopology(
+                ExactWheelDesktopCapture.CaptureDisplayTopology);
+            destination = ExactWheelDesktopCapture.CapturePlaybackTarget(
+                first.Handle,
+                destinationDisplay,
+                processBasenamesByKey[first.Key],
+                windowClass,
+                ToExactWheelRect(focused.Window!.OuterBounds),
+                ToExactWheelRect(focused.Window.ClientBounds),
+                // Playback authorization owns foreground changes after the
+                // verified focus snapshot and pauses without stealing focus.
+                requireForeground: false);
         }
-
-        var windowClass = playbackLeases.GetOrCaptureWindowClass(first);
-        var destination = ExactWheelDesktopCapture.CapturePlaybackTarget(
-            first.Handle,
-            destinationDisplay,
-            processBasenamesByKey[first.Key],
-            windowClass,
-            ToExactWheelRect(focused.Window!.OuterBounds),
-            ToExactWheelRect(focused.Window.ClientBounds),
-            requireForeground: true);
-        var transformed = playbackCache.GetOrLoadAndTransform(
+        catch (Exception exception) when (
+            IsExpectedMacroTargetCaptureFailure(exception))
+        {
+            Trace.WriteLine(
+                $"Whole-session macro target snapshot was deferred: {exception.GetType().Name}.");
+            return ReportMacroPlaybackRetryFailure(
+                playbackRetryTracker,
+                WholeLayoutMacroRetryTargetKey,
+                SessionMacroPlaybackRetryDisposition.Transient,
+                playbackText.FocusDenied);
+        }
+        var playbackPlan = playbackCache.GetOrLoadAndCreateTransform(
             definition,
             SessionMacroTransformKind.WholeLayout,
             destination,
             _exactWheelMacroStore!,
             static (store, candidate) => store.Load(candidate),
             static (recording, target) => ExactWheelCoordinateTransforms
-                .TransformVirtualDesktopNormalized(
+                .CreateVirtualDesktopNormalizedPlaybackTransform(
                     recording,
                     target.Display,
                     target.Metadata));
-        var warning = await PlayRecordingAsync(
-            transformed,
+        var playbackOutcome = await PlayRecordingAsync(
+            playbackPlan.Recording,
             playbackLease,
             playbackSession,
             playbackRate,
             playbackText,
             cancellationToken,
-            pauseOnFocusLoss: true);
-        return warning is null
-            ? TemplateMacroPlaybackResult.Completed
-            : TemplateMacroPlaybackResult.Stopped(warning);
+            pauseOnFocusLoss: true,
+            coordinateTransform: playbackPlan.CoordinateTransform);
+        if (playbackOutcome.Warning is not { } warning)
+        {
+            playbackRetryTracker.ReportSuccess(
+                WholeLayoutMacroRetryTargetKey);
+            return TemplateMacroPlaybackResult.Completed;
+        }
+        if (!playbackOutcome.Result.CleanupSucceeded)
+            return TemplateMacroPlaybackResult.Stopped(warning);
+        if (playbackLease.Failure is { } playbackFailure)
+        {
+            return ReportMacroPlaybackRetryFailure(
+                playbackRetryTracker,
+                WholeLayoutMacroRetryTargetKey,
+                ClassifyMacroPlaybackRetry(playbackFailure.Kind),
+                warning);
+        }
+
+        return TemplateMacroPlaybackResult.Stopped(warning);
     }
 
-    private async Task<string?> PlayRecordingAsync(
+    private async Task<MacroRecordingPlaybackOutcome> PlayRecordingAsync(
         ExactWheelRecording recording,
         RobloxPlaybackTargetLease playbackLease,
         ExactWheelSession playbackSession,
         ExactWheelPlaybackRate playbackRate,
         MacroPlaybackText playbackText,
         CancellationToken cancellationToken,
-        bool pauseOnFocusLoss = false)
+        bool pauseOnFocusLoss = false,
+        ExactWheelPlaybackCoordinateTransform? coordinateTransform = null)
     {
         var result = await playbackSession.PlayAsync(
             recording,
@@ -1209,6 +1386,7 @@ public partial class MainWindow
                 StopOnPhysicalInput = !pauseOnFocusLoss,
                 PauseOnPhysicalInput = pauseOnFocusLoss,
                 EnforcePhysicalInputRelease = true,
+                CoordinateTransform = coordinateTransform,
                 EventDispatchAuthorization = inputEvent =>
                 {
                     var authorization = playbackLease
@@ -1223,11 +1401,16 @@ public partial class MainWindow
         SessionMacroPlaybackCancellation.ThrowIfCleanCancellation(
             result,
             cancellationToken);
-        if (result.Succeeded)
-            return null;
-        return result.Reason == ExactWheelPlaybackStopReason.PhysicalIntervention
-            ? playbackText.StoppedByPhysicalInput
-            : playbackText.PlaybackFailure(result.Message);
+        string? warning = null;
+        if (!result.Succeeded)
+        {
+            warning = result.Reason ==
+                    ExactWheelPlaybackStopReason.PhysicalIntervention &&
+                result.CleanupSucceeded
+                ? playbackText.StoppedByPhysicalInput
+                : playbackText.PlaybackFailure(result.Message);
+        }
+        return new MacroRecordingPlaybackOutcome(result, warning);
     }
 
     private void ReportMacroPlaybackProgress(int clientNumber)
@@ -1292,20 +1475,66 @@ public partial class MainWindow
             ArgumentException or NotSupportedException or OverflowException or
             System.Security.SecurityException;
 
+    private static bool IsExpectedMacroTargetCaptureFailure(
+        Exception exception) =>
+        exception is InvalidOperationException or ArgumentException or
+            OverflowException or System.ComponentModel.Win32Exception;
+
+    private static SessionMacroPlaybackRetryDisposition
+        ClassifyMacroPlaybackRetry(
+        RobloxPlaybackTargetLeaseFailureKind? leaseFailureKind,
+        RobloxWindowOperationStatus? windowStatus = null)
+    {
+        if (windowStatus == RobloxWindowOperationStatus.IdentityRejected ||
+            leaseFailureKind is
+                RobloxPlaybackTargetLeaseFailureKind.InvalidTargetSet or
+                RobloxPlaybackTargetLeaseFailureKind.ConflictingTargetSet or
+                RobloxPlaybackTargetLeaseFailureKind.ProcessExited or
+                RobloxPlaybackTargetLeaseFailureKind.IdentityRejected or
+                RobloxPlaybackTargetLeaseFailureKind.WindowOwnershipChanged or
+                RobloxPlaybackTargetLeaseFailureKind.Disposed)
+        {
+            return SessionMacroPlaybackRetryDisposition.Terminal;
+        }
+
+        return SessionMacroPlaybackRetryDisposition.Transient;
+    }
+
+    private static TemplateMacroPlaybackResult
+        ReportMacroPlaybackRetryFailure(
+        SessionMacroPlaybackRetryTracker playbackRetryTracker,
+        string targetKey,
+        SessionMacroPlaybackRetryDisposition disposition,
+        string warning)
+    {
+        playbackRetryTracker.ReportFailure(targetKey, disposition);
+        return disposition == SessionMacroPlaybackRetryDisposition.Terminal
+            ? TemplateMacroPlaybackResult.Stopped(warning)
+            : TemplateMacroPlaybackResult.Deferred(warning);
+    }
+
     private sealed record SessionPostLaunchResult(string? Warning)
     {
         internal static SessionPostLaunchResult Completed { get; } =
             new((string?)null);
     }
 
+    private sealed record MacroRecordingPlaybackOutcome(
+        ExactWheelPlaybackResult Result,
+        string? Warning);
+
     private sealed record TemplateMacroPlaybackResult(
         string? Warning,
-        bool MayContinue)
+        bool MayContinue,
+        bool MadeProgress)
     {
         internal static TemplateMacroPlaybackResult Completed { get; } =
-            new(null, MayContinue: true);
+            new(null, MayContinue: true, MadeProgress: true);
+
+        internal static TemplateMacroPlaybackResult Deferred(string warning) =>
+            new(warning, MayContinue: true, MadeProgress: false);
 
         internal static TemplateMacroPlaybackResult Stopped(string warning) =>
-            new(warning, MayContinue: false);
+            new(warning, MayContinue: false, MadeProgress: false);
     }
 }

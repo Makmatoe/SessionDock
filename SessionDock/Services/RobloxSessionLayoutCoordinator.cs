@@ -64,6 +64,7 @@ internal sealed class RobloxSessionLayoutCoordinator
     private const int MaximumLogicalDimension = 1_000_000;
 
     private readonly RobloxWindowService _windows;
+    private readonly Func<RobloxExecutableTrustContext> _createTrustContext;
 
     internal RobloxSessionLayoutCoordinator()
         : this(new RobloxWindowService())
@@ -71,8 +72,19 @@ internal sealed class RobloxSessionLayoutCoordinator
     }
 
     internal RobloxSessionLayoutCoordinator(RobloxWindowService windows)
+        : this(
+            windows,
+            static () => new RobloxExecutableTrustContext())
+    {
+    }
+
+    internal RobloxSessionLayoutCoordinator(
+        RobloxWindowService windows,
+        Func<RobloxExecutableTrustContext> createTrustContext)
     {
         _windows = windows ?? throw new ArgumentNullException(nameof(windows));
+        _createTrustContext = createTrustContext ??
+            throw new ArgumentNullException(nameof(createTrustContext));
     }
 
     internal async Task<RobloxSessionLayoutResult> ArrangeAsync(
@@ -111,12 +123,14 @@ internal sealed class RobloxSessionLayoutCoordinator
         var results = new Dictionary<string, RobloxSessionLayoutItemResult>(
             StringComparer.OrdinalIgnoreCase);
         var prepared = new List<PreparedWindow>(orderedWindows.Count);
+        using var trustContext = CreateTrustContext();
         foreach (var window in orderedWindows)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var captured = await _windows.CaptureAsync(
                 window.Identity,
                 window.Handle,
+                trustContext,
                 cancellationToken);
             if (!captured.Success)
             {
@@ -200,6 +214,7 @@ internal sealed class RobloxSessionLayoutCoordinator
                 window.Handle,
                 placement.OuterBounds,
                 realizeTimeout: null,
+                trustContext,
                 cancellationToken);
             if (!moved.Success)
             {
@@ -219,6 +234,7 @@ internal sealed class RobloxSessionLayoutCoordinator
             var realized = await _windows.CaptureAsync(
                 window.Identity,
                 window.Handle,
+                trustContext,
                 cancellationToken);
             if (!realized.Success)
             {
@@ -263,6 +279,7 @@ internal sealed class RobloxSessionLayoutCoordinator
             plan,
             orderedWindows,
             results,
+            trustContext,
             cancellationToken);
         return BuildResult(
             orderedWindows,
@@ -300,12 +317,14 @@ internal sealed class RobloxSessionLayoutCoordinator
 
         var results = new Dictionary<string, RobloxSessionLayoutItemResult>(
             StringComparer.OrdinalIgnoreCase);
+        using var trustContext = CreateTrustContext();
         foreach (var window in orderedWindows)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var captured = await _windows.CaptureAsync(
                 window.Identity,
                 window.Handle,
+                trustContext,
                 cancellationToken);
             if (!captured.Success)
             {
@@ -414,6 +433,7 @@ internal sealed class RobloxSessionLayoutCoordinator
         var results = new Dictionary<string, RobloxSessionLayoutItemResult>(
             StringComparer.OrdinalIgnoreCase);
         var restoredPlacements = new List<RobloxCascadePlacement>();
+        using var trustContext = CreateTrustContext();
         for (var index = 0; index < orderedWindows.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -445,6 +465,7 @@ internal sealed class RobloxSessionLayoutCoordinator
             var captured = await _windows.CaptureAsync(
                 window.Identity,
                 window.Handle,
+                trustContext,
                 cancellationToken);
             if (!captured.Success)
             {
@@ -500,6 +521,7 @@ internal sealed class RobloxSessionLayoutCoordinator
                 window.Handle,
                 restored.Bounds,
                 realizeTimeout: null,
+                trustContext,
                 cancellationToken);
             if (!moved.Success)
             {
@@ -515,6 +537,7 @@ internal sealed class RobloxSessionLayoutCoordinator
             var realized = await _windows.CaptureAsync(
                 window.Identity,
                 window.Handle,
+                trustContext,
                 cancellationToken);
             if (!realized.Success)
             {
@@ -545,6 +568,7 @@ internal sealed class RobloxSessionLayoutCoordinator
                     window.Handle,
                     safeRealizedBounds,
                     realizeTimeout: null,
+                    trustContext,
                     cancellationToken);
                 if (!refitted.Success)
                 {
@@ -615,6 +639,7 @@ internal sealed class RobloxSessionLayoutCoordinator
             restorePlan,
             orderedWindows,
             results,
+            trustContext,
             cancellationToken);
         return BuildResult(
             orderedWindows,
@@ -626,10 +651,15 @@ internal sealed class RobloxSessionLayoutCoordinator
             zOrder.Error);
     }
 
+    private RobloxExecutableTrustContext CreateTrustContext() =>
+        _createTrustContext() ?? throw new InvalidOperationException(
+            "The executable trust context factory returned null.");
+
     private async Task<ZOrderOutcome> ApplySuccessfulZOrderAsync(
         RobloxCascadeLayoutPlan plan,
         IReadOnlyList<RobloxSessionLayoutWindow> orderedWindows,
         Dictionary<string, RobloxSessionLayoutItemResult> results,
+        RobloxExecutableTrustContext trustContext,
         CancellationToken cancellationToken)
     {
         var successfulKeys = results
@@ -657,6 +687,7 @@ internal sealed class RobloxSessionLayoutCoordinator
         var applied = await _windows.ApplyZOrderAsync(
             filteredPlan,
             targets,
+            trustContext,
             cancellationToken);
         return new ZOrderOutcome(true, applied.Success, applied.Error);
     }

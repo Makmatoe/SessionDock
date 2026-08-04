@@ -56,381 +56,520 @@ public sealed class SessionMacroPlaybackCacheTests
     }
 
     [Fact]
-    public void GetOrTransform_ReusesOnlyAnExactWindowAndDisplayGeometry()
+    public void GetOrLoad_SamePhysicalArtifactIsSharedAcrossDefinitions()
+    {
+        var cache = new SessionMacroPlaybackCache();
+        var firstDefinition = Definition(contentId: "first");
+        var aliasDefinition = Definition(contentId: "alias");
+        var recording = Recording(eventCount: 2);
+        var loadCount = 0;
+
+        var first = cache.GetOrLoad(firstDefinition, _ =>
+        {
+            loadCount++;
+            return recording;
+        });
+        var alias = cache.GetOrLoad(aliasDefinition, _ =>
+        {
+            loadCount++;
+            return Recording(eventCount: 1);
+        });
+
+        Assert.Same(first, alias);
+        Assert.Equal(1, loadCount);
+        Assert.Equal(1, cache.CachedSourceCount);
+    }
+
+    [Fact]
+    public void GetOrLoad_MoreThanSixtyFourTinySourcesFitByEventBudget()
+    {
+        const int sourceCount = 128;
+        var cache = new SessionMacroPlaybackCache();
+        var recording = Recording(eventCount: 1);
+        var definitions = Enumerable.Range(0, sourceCount)
+            .Select(index => Definition(
+                contentId: $"macro-{index}",
+                hashCharacter: (char)('A' + index % 26),
+                safeFileName: $"macro-{index}.ewmacro"))
+            .ToArray();
+        var loadCount = 0;
+
+        foreach (var definition in definitions)
+        {
+            _ = cache.GetOrLoad(definition, _ =>
+            {
+                loadCount++;
+                return recording;
+            });
+        }
+        foreach (var definition in definitions)
+        {
+            _ = cache.GetOrLoad(definition, _ =>
+            {
+                loadCount++;
+                return recording;
+            });
+        }
+
+        Assert.Equal(sourceCount, loadCount);
+        Assert.Equal(sourceCount, cache.CachedSourceCount);
+    }
+
+    [Fact]
+    public void GetOrLoad_AggregateBeyondOneMillionEventsPagesOncePerRun()
+    {
+        const int sourceCount = 3;
+        var modeledEventsPerSource = checked(
+            (int)ExactWheelLimits.MaximumEventCount);
+        using var cache = new SessionMacroPlaybackCache(
+            _ => modeledEventsPerSource);
+        var recording = Recording(eventCount: 2);
+        var definitions = Enumerable.Range(0, sourceCount)
+            .Select(index => Definition(
+                contentId: $"macro-{index}",
+                hashCharacter: (char)('A' + index),
+                safeFileName: $"macro-{index}.ewmacro"))
+            .ToArray();
+        var loadCount = 0;
+
+        for (var cycle = 0; cycle < 2; cycle++)
+        {
+            foreach (var definition in definitions)
+            {
+                _ = cache.GetOrLoad(definition, _ =>
+                {
+                    loadCount++;
+                    return recording;
+                });
+            }
+        }
+
+        Assert.Equal(sourceCount, loadCount);
+        Assert.Equal(sourceCount, cache.CachedSourceCount);
+        Assert.Equal(
+            SessionMacroPlaybackCache.MaximumSourceEvents,
+            cache.CachedResidentSourceEventCount);
+        Assert.Equal(1, cache.CachedPageableSourceCount);
+        Assert.Equal(80, cache.CachedPageableSourceBytes);
+    }
+
+    [Fact]
+    public void Dispose_ReleasesPageableSourceAndDeletesBackingFile()
+    {
+        var cache = new SessionMacroPlaybackCache(
+            _ => checked((int)ExactWheelLimits.MaximumEventCount));
+        _ = cache.GetOrLoad(
+            Definition(contentId: "first", safeFileName: "first.ewmacro"),
+            _ => Recording(eventCount: 2));
+        _ = cache.GetOrLoad(
+            Definition(
+                contentId: "second",
+                hashCharacter: 'B',
+                safeFileName: "second.ewmacro"),
+            _ => Recording(eventCount: 2));
+        var pageableSource = Recording(eventCount: 1_025);
+        var pageable = cache.GetOrLoad(
+            Definition(
+                contentId: "pageable",
+                hashCharacter: 'C',
+                safeFileName: "pageable.ewmacro"),
+            _ => pageableSource);
+        var backingPath = Assert.Single(cache.PageableSourcePaths);
+
+        Assert.True(File.Exists(backingPath));
+        Assert.Equal(pageableSource.Events[0], pageable.Events[0]);
+        Assert.Equal(pageableSource.Events[511], pageable.Events[511]);
+        Assert.Equal(pageableSource.Events[512], pageable.Events[512]);
+        Assert.Equal(pageableSource.Events[1_024], pageable.Events[1_024]);
+
+        cache.Dispose();
+
+        Assert.False(File.Exists(backingPath));
+        Assert.Throws<ObjectDisposedException>(
+            () => _ = pageable.Events[0]);
+        Assert.Equal(0, cache.CachedSourceCount);
+        cache.Dispose();
+    }
+
+    [Fact]
+    public void GetOrLoad_RejectsArtifactBeyondRunLimitBeforeLoading()
+    {
+        using var cache = new SessionMacroPlaybackCache();
+        var recording = Recording(eventCount: 1);
+        for (var index = 0;
+             index < SessionMacroPlaybackCache.MaximumSourceArtifacts;
+             index++)
+        {
+            _ = cache.GetOrLoad(
+                Definition(
+                    contentId: $"macro-{index}",
+                    hashCharacter: (char)('A' + index % 26),
+                    safeFileName: $"macro-{index}.ewmacro"),
+                _ => recording);
+        }
+
+        var loadCount = 0;
+        Assert.Throws<InvalidDataException>(() => cache.GetOrLoad(
+            Definition(
+                contentId: "one-too-many",
+                hashCharacter: 'Z',
+                safeFileName: "one-too-many.ewmacro"),
+            _ =>
+            {
+                loadCount++;
+                return recording;
+            }));
+        Assert.Equal(0, loadCount);
+    }
+
+    [Fact]
+    public void GetOrLoad_PageableBudgetRejectsBeforeNextSourceLoad()
+    {
+        const int eventCount = 1_025;
+        const long sourceBytes = eventCount * 40L;
+        using var cache = new SessionMacroPlaybackCache(
+            _ => checked((int)ExactWheelLimits.MaximumEventCount),
+            maximumPageableSourceBytes: sourceBytes);
+        var recording = Recording(eventCount);
+        for (var index = 0; index < 3; index++)
+        {
+            _ = cache.GetOrLoad(
+                Definition(
+                    contentId: $"budget-{index}",
+                    hashCharacter: (char)('G' + index),
+                    safeFileName: $"budget-{index}.ewmacro",
+                    eventCount: eventCount),
+                _ => recording);
+        }
+        var existingPath = Assert.Single(cache.PageableSourcePaths);
+        var loadCount = 0;
+
+        Assert.Throws<InvalidDataException>(() => cache.GetOrLoad(
+            Definition(
+                contentId: "budget-rejected",
+                hashCharacter: 'J',
+                safeFileName: "budget-rejected.ewmacro",
+                eventCount: eventCount),
+            _ =>
+            {
+                loadCount++;
+                return recording;
+            }));
+
+        Assert.Equal(0, loadCount);
+        Assert.Equal(sourceBytes, cache.CachedPageableSourceBytes);
+        Assert.Equal([existingPath], cache.PageableSourcePaths);
+    }
+
+    [Fact]
+    public void Reservation_CancelOrErrorBeforeTransferReleasesPageableCache()
+    {
+        var cache = CreateCacheWithPageableSource(out var pageable);
+        var backingPath = Assert.Single(cache.PageableSourcePaths);
+        var reservation = new SessionMacroPlaybackCacheReservation(cache);
+
+        reservation.Dispose();
+
+        Assert.False(File.Exists(backingPath));
+        Assert.Throws<ObjectDisposedException>(
+            () => _ = pageable.Events[0]);
+    }
+
+    [Fact]
+    public void Reservation_TransferredCacheLivesUntilRunDisposesIt()
+    {
+        var cache = CreateCacheWithPageableSource(out var pageable);
+        var backingPath = Assert.Single(cache.PageableSourcePaths);
+        using var reservation = new SessionMacroPlaybackCacheReservation(cache);
+
+        var transferred = Assert.IsType<SessionMacroPlaybackCache>(
+            reservation.Take());
+        reservation.Dispose();
+
+        Assert.True(File.Exists(backingPath));
+        _ = pageable.Events[0];
+
+        transferred.Dispose();
+        Assert.False(File.Exists(backingPath));
+    }
+
+    [Fact]
+    public void FailedPublishedTransfer_ClearsFieldBeforeDisposingCache()
+    {
+        var transferred = new SessionMacroPlaybackCache();
+        SessionMacroPlaybackCache? published = transferred;
+
+        SessionMacroPlaybackCacheReservation.ReleaseFailedTransfer(
+            ref published,
+            transferred,
+            wasPublished: true);
+
+        Assert.Null(published);
+        Assert.Throws<ObjectDisposedException>(() =>
+            transferred.GetDisplayTopology(
+                static () => Display(),
+                timestamp: 0,
+                frequency: 1));
+    }
+
+    [Fact]
+    public void FailedPublishedTransfer_DoesNotDisposeConsumedCache()
+    {
+        var transferred = new SessionMacroPlaybackCache();
+        SessionMacroPlaybackCache? published = null;
+
+        SessionMacroPlaybackCacheReservation.ReleaseFailedTransfer(
+            ref published,
+            transferred,
+            wasPublished: true);
+
+        Assert.Null(published);
+        _ = transferred.GetDisplayTopology(
+            static () => Display(),
+            timestamp: 0,
+            frequency: 1);
+        transferred.Dispose();
+    }
+
+    [Fact]
+    public void PageableSource_SequentialPlaybackAllocatesNoManagedMemory()
+    {
+        using var cache = CreateCacheWithPageableSource(out var pageable);
+        _ = pageable.Events[0];
+        ulong observed = 0;
+
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
+        {
+            for (var index = 0; index < pageable.Events.Count; index++)
+                observed ^= pageable.Events[index].Sequence;
+        });
+
+        Assert.Equal(0, allocated);
+        Assert.NotEqual(ulong.MaxValue, observed);
+    }
+
+    [Fact]
+    public void CoordinatePlan_ReusesExactGeometryAndReplacesMovedHandle()
     {
         var cache = new SessionMacroPlaybackCache();
         var definition = Definition();
+        var source = Recording(eventCount: 2);
         var firstTarget = Target(windowLeft: 40);
         var movedTarget = Target(windowLeft: 80);
         var transformCount = 0;
 
-        ExactWheelRecording Transform()
+        ExactWheelPlaybackCoordinateTransform Create(
+            ExactWheelRecording recording,
+            ExactWheelRecordingTarget target)
         {
             transformCount++;
-            return Recording(eventCount: 2);
+            return ExactWheelCoordinateTransforms
+                .CreateClientRelativePlaybackTransform(
+                    recording,
+                    target.Display,
+                    target.Metadata);
         }
 
-        var first = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            firstTarget,
-            Transform);
-        var repeated = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            firstTarget,
-            Transform);
-        var moved = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            movedTarget,
-            Transform);
-        var movedRepeated = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            movedTarget,
-            Transform);
+        var first = Get(firstTarget);
+        var repeated = Get(firstTarget);
+        var moved = Get(movedTarget);
+        var movedRepeated = Get(movedTarget);
 
-        Assert.Same(first, repeated);
-        Assert.Same(moved, movedRepeated);
-        Assert.NotSame(first, moved);
+        Assert.Same(source, first.Recording);
+        Assert.Same(first.CoordinateTransform, repeated.CoordinateTransform);
+        Assert.NotSame(
+            first.CoordinateTransform,
+            moved.CoordinateTransform);
+        Assert.Same(
+            moved.CoordinateTransform,
+            movedRepeated.CoordinateTransform);
         Assert.Equal(2, transformCount);
-        // Only the current geometry for one HWND is retained.
-        Assert.Equal(1, cache.CachedTransformedCount);
+        Assert.Equal(1, cache.CachedCoordinateTransformCount);
+
+        SessionMacroPlaybackPlan Get(ExactWheelRecordingTarget target) =>
+            cache.GetOrLoadAndCreateTransform(
+                definition,
+                SessionMacroTransformKind.ClientRelative,
+                target,
+                source,
+                static (loaded, _) => loaded,
+                Create);
     }
 
     [Fact]
-    public void GetOrTransform_MonitorDpiParticipatesInStructuralCacheKey()
+    public void CoordinatePlan_MonitorDpiParticipatesInStructuralKey()
     {
         var cache = new SessionMacroPlaybackCache();
         var definition = Definition();
+        var source = Recording(eventCount: 2);
         var standard = Target(windowLeft: 40, dpiX: 96);
         var structurallyEqual = Target(windowLeft: 40, dpiX: 96);
         var scaled = Target(windowLeft: 40, dpiX: 144);
         var transformCount = 0;
 
-        ExactWheelRecording Transform()
-        {
-            transformCount++;
-            return Recording(eventCount: 2);
-        }
+        var first = Get(standard);
+        var equal = Get(structurallyEqual);
+        var differentDpi = Get(scaled);
 
-        var first = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            standard,
-            Transform);
-        var equal = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            structurallyEqual,
-            Transform);
-        var differentDpi = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            scaled,
-            Transform);
-
-        Assert.Same(first, equal);
-        Assert.NotSame(first, differentDpi);
+        Assert.Same(first.CoordinateTransform, equal.CoordinateTransform);
+        Assert.NotSame(
+            first.CoordinateTransform,
+            differentDpi.CoordinateTransform);
         Assert.Equal(2, transformCount);
-    }
 
-    [Fact]
-    public void GetOrTransform_CachedStructuralHitDoesNotAllocate()
-    {
-        var cache = new SessionMacroPlaybackCache();
-        var definition = Definition();
-        var target = Target(windowLeft: 40);
-        var recording = Recording(eventCount: 2);
-        _ = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            () => recording);
-        Func<ExactWheelRecording> unexpectedTransform = () =>
-            throw new InvalidOperationException("Cache miss.");
-        for (var index = 0; index < 100; index++)
-        {
-            _ = cache.GetOrTransform(
+        SessionMacroPlaybackPlan Get(ExactWheelRecordingTarget target) =>
+            cache.GetOrLoadAndCreateTransform(
                 definition,
                 SessionMacroTransformKind.ClientRelative,
                 target,
-                unexpectedTransform);
-        }
-        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
-        {
-            for (var index = 0; index < 10_000; index++)
-            {
-                _ = cache.GetOrTransform(
-                    definition,
-                    SessionMacroTransformKind.ClientRelative,
-                    target,
-                    unexpectedTransform);
-            }
-        });
-        Assert.Equal(0, allocated);
+                source,
+                static (loaded, _) => loaded,
+                (recording, destination) =>
+                {
+                    transformCount++;
+                    return ExactWheelCoordinateTransforms
+                        .CreateClientRelativePlaybackTransform(
+                            recording,
+                            destination.Display,
+                            destination.Metadata);
+                });
     }
 
-    [Fact]
-    public void StatefulSourceAndTransformHits_DoNotAllocateCallbacks()
-    {
-        var cache = new SessionMacroPlaybackCache();
-        var definition = Definition();
-        var target = Target(windowLeft: 40);
-        var recording = Recording(eventCount: 2);
-        _ = cache.GetOrLoad(
-            definition,
-            recording,
-            static (loaded, _) => loaded);
-        _ = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            recording,
-            static (transformed, _) => transformed);
-        Func<ExactWheelRecording, MacroDefinition, ExactWheelRecording>
-            sourceHit = static (loaded, _) => loaded;
-        Func<ExactWheelRecording, ExactWheelRecordingTarget, ExactWheelRecording>
-            transformHit = static (transformed, _) => transformed;
-        for (var index = 0; index < 100; index++)
-        {
-            _ = cache.GetOrLoad(
-                definition,
-                recording,
-                sourceHit);
-            _ = cache.GetOrTransform(
-                definition,
-                SessionMacroTransformKind.ClientRelative,
-                target,
-                recording,
-                transformHit);
-        }
-        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
-        {
-            for (var index = 0; index < 10_000; index++)
-            {
-                _ = cache.GetOrLoad(
-                    definition,
-                    recording,
-                    sourceHit);
-                _ = cache.GetOrTransform(
-                    definition,
-                    SessionMacroTransformKind.ClientRelative,
-                    target,
-                    recording,
-                    transformHit);
-            }
-        });
-        Assert.Equal(0, allocated);
-    }
-
-    [Fact]
-    public void GetOrLoadAndTransform_TransformHitSkipsUncachedLargeSource()
-    {
-        var cache = new SessionMacroPlaybackCache();
-        var firstDefinition = Definition("ew-client-first", 'A');
-        var secondDefinition = Definition("ew-client-second", 'B');
-        var target = Target(windowLeft: 40);
-        var largeSource = Recording(eventCount: 400_000);
-        var transformed = Recording(eventCount: 2);
-        _ = cache.GetOrLoad(
-            firstDefinition,
-            largeSource,
-            static (recording, _) => recording);
-        var loadCount = 0;
-        var transformCount = 0;
-
-        ExactWheelRecording LoadLarge(
-            MacroDefinition _)
-        {
-            loadCount++;
-            return largeSource;
-        }
-
-        ExactWheelRecording Transform(
-            ExactWheelRecording _,
-            ExactWheelRecordingTarget __)
-        {
-            transformCount++;
-            return transformed;
-        }
-
-        var first = cache.GetOrLoadAndTransform(
-            secondDefinition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            (Func<MacroDefinition, ExactWheelRecording>)LoadLarge,
-            static (loader, definition) => loader(definition),
-            Transform);
-        var repeated = cache.GetOrLoadAndTransform(
-            secondDefinition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            (Func<MacroDefinition, ExactWheelRecording>)LoadLarge,
-            static (loader, definition) => loader(definition),
-            Transform);
-
-        Assert.Same(transformed, first);
-        Assert.Same(first, repeated);
-        Assert.Equal(1, loadCount);
-        Assert.Equal(1, transformCount);
-        Assert.Equal(1, cache.CachedSourceCount);
-        Assert.Equal(1, cache.CachedTransformedCount);
-    }
-
-    [Fact]
-    public void GetOrTransform_RetainsValidMacroAboveOldHundredThousandLimit()
-    {
-        var cache = new SessionMacroPlaybackCache();
-        var definition = Definition();
-        var target = Target(windowLeft: 40);
-        var large = Recording(eventCount: 100_001);
-        var transformCount = 0;
-
-        var first = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            () =>
-            {
-                transformCount++;
-                return large;
-            });
-        var repeated = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            () =>
-            {
-                transformCount++;
-                return Recording(eventCount: 1);
-            });
-
-        Assert.Same(first, repeated);
-        Assert.Equal(1, transformCount);
-        Assert.Equal(1, cache.CachedTransformedCount);
-    }
-
-    [Fact]
-    public void GetOrTransform_EightClientWorkingSetHitsOnSecondCycle()
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public void CoordinatePlan_ArbitraryClientWorkingSetIsWarmOnCycleTwo(
+        int clientCount)
     {
         const int eventCount = 100_001;
         var cache = new SessionMacroPlaybackCache();
         var definition = Definition();
-        var large = Recording(eventCount);
-        var targets = Enumerable.Range(0, 8)
+        var source = Recording(eventCount);
+        var targets = Enumerable.Range(0, clientCount)
             .Select(index => Target(
                 windowLeft: 40 + index,
-                windowHandle: 1234 + index))
+                windowHandle: 1_234 + index))
             .ToArray();
-        var transformCount = 0;
-
-        foreach (var target in targets)
-        {
-            _ = cache.GetOrTransform(
-                definition,
-                SessionMacroTransformKind.ClientRelative,
-                target,
-                () =>
-                {
-                    transformCount++;
-                    return large;
-                });
-        }
-        foreach (var target in targets)
-        {
-            _ = cache.GetOrTransform(
-                definition,
-                SessionMacroTransformKind.ClientRelative,
-                target,
-                () =>
-                {
-                    transformCount++;
-                    return large;
-                });
-        }
-
-        Assert.Equal(8, transformCount);
-        Assert.Equal(8, cache.CachedTransformedCount);
-    }
-
-    [Fact]
-    public void GetOrTransform_OverBudgetScanKeepsAdmittedEntries()
-    {
-        const int eventCount = 400_000;
-        var cache = new SessionMacroPlaybackCache();
-        var definition = Definition();
-        var large = Recording(eventCount);
-        var targets = Enumerable.Range(0, 3)
-            .Select(index => Target(
-                windowLeft: 40 + index,
-                windowHandle: 1234 + index))
-            .ToArray();
+        var loadCount = 0;
         var transformCount = 0;
 
         for (var cycle = 0; cycle < 2; cycle++)
         {
             foreach (var target in targets)
             {
-                _ = cache.GetOrTransform(
+                var plan = cache.GetOrLoadAndCreateTransform(
                     definition,
                     SessionMacroTransformKind.ClientRelative,
                     target,
-                    () =>
+                    source,
+                    (loaded, _) =>
+                    {
+                        loadCount++;
+                        return loaded;
+                    },
+                    (recording, destination) =>
                     {
                         transformCount++;
-                        return large;
+                        return ExactWheelCoordinateTransforms
+                            .CreateClientRelativePlaybackTransform(
+                                recording,
+                                destination.Display,
+                                destination.Metadata);
                     });
+                Assert.Same(source, plan.Recording);
             }
         }
 
-        Assert.Equal(4, transformCount);
-        Assert.Equal(2, cache.CachedTransformedCount);
+        Assert.Equal(1, loadCount);
+        Assert.Equal(clientCount, transformCount);
+        Assert.Equal(clientCount, cache.CachedCoordinateTransformCount);
     }
 
     [Fact]
-    public void GetOrTransform_DoesNotRetainAnOversizedRecording()
+    public void CoordinatePlan_CachedHitDoesNotAllocateOrInvokeCallbacks()
     {
         var cache = new SessionMacroPlaybackCache();
         var definition = Definition();
         var target = Target(windowLeft: 40);
-        var oversized = Recording(
-            SessionMacroPlaybackCache.MaximumEventsPerTransformedEntry + 1);
-        var transformCount = 0;
-
-        _ = cache.GetOrTransform(
+        var source = Recording(eventCount: 2);
+        _ = cache.GetOrLoadAndCreateTransform(
             definition,
             SessionMacroTransformKind.ClientRelative,
             target,
-            () =>
-            {
-                transformCount++;
-                return oversized;
-            });
-        _ = cache.GetOrTransform(
-            definition,
-            SessionMacroTransformKind.ClientRelative,
-            target,
-            () =>
-            {
-                transformCount++;
-                return oversized;
-            });
+            source,
+            static (loaded, _) => loaded,
+            static (recording, destination) => ExactWheelCoordinateTransforms
+                .CreateClientRelativePlaybackTransform(
+                    recording,
+                    destination.Display,
+                    destination.Metadata));
+        Func<ExactWheelRecording, MacroDefinition, ExactWheelRecording>
+            unexpectedLoad = static (_, _) =>
+                throw new InvalidOperationException("Source cache miss.");
+        Func<ExactWheelRecording, ExactWheelRecordingTarget,
+            ExactWheelPlaybackCoordinateTransform> unexpectedTransform =
+            static (_, _) =>
+                throw new InvalidOperationException("Plan cache miss.");
 
-        Assert.Equal(2, transformCount);
-        Assert.Equal(0, cache.CachedTransformedCount);
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
+        {
+            for (var index = 0; index < 10_000; index++)
+            {
+                _ = cache.GetOrLoadAndCreateTransform(
+                    definition,
+                    SessionMacroTransformKind.ClientRelative,
+                    target,
+                    source,
+                    unexpectedLoad,
+                    unexpectedTransform);
+            }
+        });
+
+        Assert.Equal(0, allocated);
     }
 
     private static MacroDefinition Definition(
         string contentId = "macro-content",
-        char hashCharacter = 'A') => new()
+        char hashCharacter = 'A',
+        string safeFileName = "macro.ewmacro",
+        int eventCount = 0) => new()
         {
             ContentId = contentId,
-            SafeFileName = "macro.ewmacro",
+            SafeFileName = safeFileName,
             Sha256 = new string(hashCharacter, 64),
-            Kind = SessionMacroKind.Client
+            Kind = SessionMacroKind.Client,
+            EventCount = eventCount
         };
+
+    private static SessionMacroPlaybackCache CreateCacheWithPageableSource(
+        out ExactWheelRecording pageable)
+    {
+        var cache = new SessionMacroPlaybackCache(
+            _ => checked((int)ExactWheelLimits.MaximumEventCount));
+        var recording = Recording(eventCount: 1_025);
+        for (var index = 0; index < 3; index++)
+        {
+            var loaded = cache.GetOrLoad(
+                Definition(
+                    contentId: $"reservation-{index}",
+                    hashCharacter: (char)('D' + index),
+                    safeFileName: $"reservation-{index}.ewmacro"),
+                _ => recording);
+            if (index == 2)
+                pageable = loaded;
+        }
+
+        pageable = cache.GetOrLoad(
+            Definition(
+                contentId: "reservation-2",
+                hashCharacter: 'F',
+                safeFileName: "reservation-2.ewmacro"),
+            _ => throw new InvalidOperationException());
+        return cache;
+    }
 
     private static ExactWheelRecordingTarget Target(
         int windowLeft,
@@ -462,8 +601,8 @@ public sealed class SessionMacroPlaybackCacheTests
                 (ulong)index,
                 (ulong)index,
                 ExactWheelInputEventType.MouseMove,
-                index,
-                index,
+                48 + index % 700,
+                72 + index % 500,
                 0,
                 0));
         return new ExactWheelRecording(

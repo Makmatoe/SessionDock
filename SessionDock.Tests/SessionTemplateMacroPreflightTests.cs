@@ -38,6 +38,60 @@ public sealed class SessionTemplateMacroPreflightTests
     }
 
     [Fact]
+    public void Validate_PreloadedCacheServesFirstAndLaterPlaybackCycles()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = CreateStore(directory.Path);
+        var definition = store.Save(
+            "Preloaded",
+            SessionMacroKind.Client,
+            ExactWheelTestData.Recording());
+        using var cache = new SessionMacroPlaybackCache();
+
+        var result = SessionTemplateMacroPreflight.Validate(
+            PerClientTemplate(("account_1", definition.ContentId)),
+            Catalog(definition),
+            store,
+            cache);
+        var firstCycle = cache.GetOrLoad(
+            definition,
+            _ => throw new InvalidOperationException(
+                "Preflight source was loaded twice."));
+        var laterCycle = cache.GetOrLoad(
+            definition,
+            _ => throw new InvalidOperationException(
+                "Loop source was loaded twice."));
+
+        Assert.True(result.Success);
+        Assert.Same(firstCycle, laterCycle);
+        Assert.Equal(1, cache.CachedSourceCount);
+    }
+
+    [Fact]
+    public void Validate_CancellationStopsBeforeTheNextUniqueArtifact()
+    {
+        var first = Definition("first", SessionMacroKind.Client);
+        var second = Definition("second", SessionMacroKind.Client);
+        using var cancellation = new CancellationTokenSource();
+        var validated = 0;
+
+        Assert.Throws<OperationCanceledException>(() =>
+            SessionTemplateMacroPreflight.ValidateCancellable(
+                PerClientTemplate(
+                    ("account_1", first.ContentId),
+                    ("account_2", second.ContentId)),
+                Catalog(first, second),
+                (_, _) =>
+                {
+                    validated++;
+                    cancellation.Cancel();
+                },
+                cancellation.Token));
+
+        Assert.Equal(1, validated);
+    }
+
+    [Fact]
     public void Validate_StaleReference_FailsAsInvalidAssignmentWithoutLoading()
     {
         var loadCalled = false;
@@ -426,7 +480,7 @@ public sealed class SessionTemplateMacroPreflightTests
     }
 
     [Fact]
-    public void ExplicitPlayback_RevalidatesOnlyAfterPlayAndNeverPostLaunch()
+    public void ExplicitPlayback_LoadsOnlyUncachedSourcesAndNeverPostLaunch()
     {
         var root = FindRepositoryRoot();
         var templatesSource = File.ReadAllText(Path.Combine(
@@ -471,7 +525,7 @@ public sealed class SessionTemplateMacroPreflightTests
         Assert.True(prepareCall > playEntry);
         Assert.True(playCall > prepareCall);
         Assert.Contains(
-            "playbackCache.GetOrLoad(",
+            "playbackCache.GetOrLoadCancellable(",
             playbackSource,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -499,8 +553,21 @@ public sealed class SessionTemplateMacroPreflightTests
         Assert.True(runEnd > runStart);
         var runSource = templatesSource[runStart..runEnd];
 
+        var normalizedSnapshot = runSource.IndexOf(
+            "SessionTemplatePolicy.Normalize(catalog)",
+            StringComparison.Ordinal);
+        var storeCapture = runSource.IndexOf(
+            "var preflightStore = _exactWheelMacroStore",
+            StringComparison.Ordinal);
+        var busyGate = runSource.IndexOf(
+            "SetOperationBusy(true)",
+            StringComparison.Ordinal);
+        var worker = runSource.IndexOf(
+            "await Task.Run(",
+            StringComparison.Ordinal);
         var preflight = runSource.IndexOf(
-            "PreflightTemplateMacros(template)",
+            "SessionTemplateMacroPreflight.ValidateCancellable(",
+            worker,
             StringComparison.Ordinal);
         var failureGate = runSource.IndexOf(
             "if (!macroPreflight.Success)",
@@ -524,13 +591,33 @@ public sealed class SessionTemplateMacroPreflightTests
             "RunBatchLaunchAsync(",
             StringComparison.Ordinal);
 
-        Assert.True(preflight >= 0);
+        Assert.True(normalizedSnapshot >= 0);
+        Assert.True(storeCapture > normalizedSnapshot);
+        Assert.True(busyGate > storeCapture);
+        Assert.True(worker > busyGate);
+        Assert.True(preflight > worker);
         Assert.True(failureGate > preflight);
         Assert.True(failureResult > failureGate);
         Assert.True(failureReturn > failureResult);
         Assert.True(destinationFlush > failureReturn);
         Assert.True(mutation > failureReturn);
         Assert.True(runBatch > mutation);
+        Assert.Contains(
+            "macroPlaybackCacheReservation.Cache",
+            runSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "using var macroPlaybackCacheReservation",
+            runSource[..worker],
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "TryLoadSessionTemplateCatalog",
+            runSource[worker..failureGate],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "macroPlaybackCacheReservation",
+            runSource[runBatch..],
+            StringComparison.Ordinal);
 
         var batchSource = File.ReadAllText(Path.Combine(
             root,

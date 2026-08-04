@@ -111,6 +111,53 @@ public sealed class SessionMacroPlaybackLoopTests
     }
 
     [Fact]
+    public async Task CycleBoundary_RetryDeadlinePreventsDeferredHotLoop()
+    {
+        var cycleCount = 0;
+        var delays = new List<TimeSpan>();
+
+        await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
+            _ => Task.FromResult(++cycleCount == 1
+                ? SessionMacroPlaybackCycleResult.Continue(
+                    TimeSpan.FromMilliseconds(250))
+                : SessionMacroPlaybackCycleResult.Stop),
+            static () => 100,
+            static _ => TimeSpan.FromMilliseconds(4),
+            (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal(2, cycleCount);
+        Assert.Equal([TimeSpan.FromMilliseconds(250)], delays);
+    }
+
+    [Fact]
+    public async Task CycleBoundary_MinimumFloorStillWinsOverShortRetryDelay()
+    {
+        var cycleCount = 0;
+        var delays = new List<TimeSpan>();
+
+        await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
+            _ => Task.FromResult(++cycleCount == 1
+                ? SessionMacroPlaybackCycleResult.Continue(
+                    TimeSpan.FromMilliseconds(2))
+                : SessionMacroPlaybackCycleResult.Stop),
+            static () => 100,
+            static _ => TimeSpan.FromMilliseconds(4),
+            (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromMilliseconds(6)], delays);
+    }
+
+    [Fact]
     public void CleanCancellation_IsTheOnlyCancellationTreatedAsUserStop()
     {
         using var cancellation = new CancellationTokenSource();
@@ -179,14 +226,17 @@ public sealed class SessionMacroPlaybackLoopTests
             2,
             CountOccurrences(
                 playback,
-                "playbackCache.GetOrLoadAndTransform("));
+                "GetOrLoadAndCreateTransform("));
         Assert.Contains("playbackLeases.GetOrAcquire(", playback);
         Assert.Contains(
             "_singleTargetLeases.TryGetValue(key",
             leaseCache);
         Assert.Contains("_targetSetLeases", leaseCache);
         Assert.Contains(
-            "windowService.AcquirePlaybackTargetLease(targets)",
+            "windowService.AcquirePlaybackTargetLease(",
+            leaseCache);
+        Assert.Contains(
+            "trustContext: _trustContext",
             leaseCache);
         Assert.Contains("prepared.PlaybackLeases.Dispose()", host);
         Assert.DoesNotContain(
@@ -195,8 +245,91 @@ public sealed class SessionMacroPlaybackLoopTests
         Assert.Equal(
             2,
             CountOccurrences(playback, "pauseOnFocusLoss: true"));
+        Assert.Equal(
+            2,
+            CountOccurrences(playback, "requireForeground: false"));
+        Assert.Contains(
+            "IsExpectedMacroTargetCaptureFailure(exception)",
+            playback);
+        Assert.Contains(
+            "SessionMacroPlaybackRetryDisposition.Transient",
+            playback);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playback,
+                "coordinateTransform: playbackPlan.CoordinateTransform"));
         Assert.Contains("var completed = 0;", playback);
         Assert.Contains("if (completed == 0)", playback);
+        Assert.Contains(
+            "TemplateMacroPlaybackResult.Deferred(",
+            playback);
+        Assert.Contains(
+            "private async Task<MacroRecordingPlaybackOutcome> PlayRecordingAsync(",
+            playback);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playback,
+                "!playbackOutcome.Result.CleanupSucceeded"));
+        Assert.True(
+            playback.IndexOf(
+                "!playbackOutcome.Result.CleanupSucceeded",
+                StringComparison.Ordinal) <
+            playback.IndexOf(
+                "retainedPlaybackLease?.Failure",
+                StringComparison.Ordinal));
+        Assert.Contains(
+            "GetDelayUntilNextAttempt()",
+            host);
+        Assert.Contains(
+            "SessionMacroPlaybackRetryDisposition.Terminal",
+            playback);
+        Assert.Equal(
+            3,
+            CountOccurrences(
+                playback,
+                "plan.PlaybackRetryTracker,"));
+        var wholeLayoutPlayback = playback[playback.IndexOf(
+            "PlayWholeLayoutMacroAsync(",
+            playback.IndexOf(
+                "private async Task<TemplateMacroPlaybackResult>",
+                StringComparison.Ordinal),
+            StringComparison.Ordinal)..];
+        Assert.Contains(
+            "WholeLayoutMacroRetryTargetKey",
+            wholeLayoutPlayback);
+        Assert.Contains(
+            "playbackRetryTracker.CanAttempt(",
+            wholeLayoutPlayback);
+        Assert.Contains(
+            "ReportMacroPlaybackRetryFailure(",
+            wholeLayoutPlayback);
+        Assert.Contains(
+            "TemplateMacroPlaybackResult.Deferred(",
+            wholeLayoutPlayback);
+        var wholeCompletion = wholeLayoutPlayback.IndexOf(
+            "if (playbackOutcome.Warning is not { } warning)",
+            StringComparison.Ordinal);
+        var wholeSuccess = wholeLayoutPlayback.IndexOf(
+            "playbackRetryTracker.ReportSuccess(",
+            wholeCompletion,
+            StringComparison.Ordinal);
+        var wholeCleanup = wholeLayoutPlayback.IndexOf(
+            "!playbackOutcome.Result.CleanupSucceeded",
+            wholeCompletion,
+            StringComparison.Ordinal);
+        var wholeRetry = wholeLayoutPlayback.IndexOf(
+            "if (playbackLease.Failure is { } playbackFailure)",
+            wholeCompletion,
+            StringComparison.Ordinal);
+        Assert.True(wholeCompletion >= 0);
+        Assert.True(wholeSuccess > wholeCompletion);
+        Assert.True(wholeCleanup > wholeCompletion);
+        Assert.True(wholeCleanup < wholeRetry);
+        Assert.Contains(
+            "? TemplateMacroPlaybackResult.Stopped(warning)",
+            playback);
         Assert.Contains(
             "SessionMacroPlaybackCancellation.ThrowIfCleanCancellation(",
             playback);

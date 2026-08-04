@@ -5,8 +5,9 @@ namespace SessionDock.Services;
 
 /// <summary>
 /// Retains exact process/window playback proofs for one macro run. Successful
-/// leases are reused across loop iterations; failed acquisitions are not
-/// cached, so a client that is still starting can recover on the next pass.
+/// leases are reused across loop iterations. Failed acquisitions are not
+/// cached, and a retained lease with a sticky failure is evicted before the
+/// next acquisition so a transient target can recover on a later retry.
 /// </summary>
 internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
 {
@@ -16,21 +17,32 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
         new(ExactTargetKeyComparer.Instance);
     private readonly List<TargetSetLease> _targetSetLeases = [];
     private readonly Func<nint, string> _captureWindowClass;
+    private readonly RobloxExecutableTrustContext _trustContext;
     private bool _disposed;
 
     internal SessionMacroPlaybackLeaseCache()
         : this(windowHandle =>
             ExactWheelDesktopCapture.CapturePlaybackWindowClass(
                 windowHandle,
-                requireForeground: true))
+                requireForeground: true),
+            new RobloxExecutableTrustContext())
     {
     }
 
     internal SessionMacroPlaybackLeaseCache(
         Func<nint, string> captureWindowClass)
+        : this(captureWindowClass, new RobloxExecutableTrustContext())
+    {
+    }
+
+    internal SessionMacroPlaybackLeaseCache(
+        Func<nint, string> captureWindowClass,
+        RobloxExecutableTrustContext trustContext)
     {
         _captureWindowClass = captureWindowClass ??
             throw new ArgumentNullException(nameof(captureWindowClass));
+        _trustContext = trustContext ??
+            throw new ArgumentNullException(nameof(trustContext));
     }
 
     internal RobloxPlaybackTargetLeaseAcquisitionResult GetOrAcquire(
@@ -42,11 +54,22 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
         ArgumentNullException.ThrowIfNull(window);
         var key = new ExactTargetKey(window.Handle, window.Identity);
         if (_singleTargetLeases.TryGetValue(key, out var cached))
-            return ResultFor(cached);
+        {
+            if (cached.Failure is null)
+            {
+                return RobloxPlaybackTargetLeaseAcquisitionResult.Succeeded(
+                    cached);
+            }
+
+            _singleTargetLeases.Remove(key);
+            _windowClasses.Remove(key);
+            cached.Dispose();
+        }
 
         var acquired = windowService.AcquirePlaybackTargetLease(
             window.Identity,
-            window.Handle);
+            window.Handle,
+            trustContext: _trustContext);
         if (acquired.Success && acquired.Lease is { } lease)
             _singleTargetLeases.Add(key, lease);
         return acquired;
@@ -62,10 +85,22 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
         if (windows.Count == 1)
             return GetOrAcquire(windowService, windows[0]);
 
-        foreach (var entry in _targetSetLeases)
+        for (var index = 0; index < _targetSetLeases.Count; index++)
         {
+            var entry = _targetSetLeases[index];
             if (entry.Matches(windows))
-                return ResultFor(entry.Lease);
+            {
+                if (entry.Lease.Failure is null)
+                {
+                    return RobloxPlaybackTargetLeaseAcquisitionResult
+                        .Succeeded(entry.Lease);
+                }
+
+                _targetSetLeases.RemoveAt(index);
+                entry.RemoveCachedWindowClasses(_windowClasses);
+                entry.Lease.Dispose();
+                break;
+            }
         }
 
         var targets = new RobloxPlaybackTarget[windows.Count];
@@ -77,10 +112,15 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
                 window.Handle);
         }
 
-        var acquired = windowService.AcquirePlaybackTargetLease(targets);
+        var acquired = windowService.AcquirePlaybackTargetLease(
+            targets,
+            trustContext: _trustContext);
         if (acquired.Success && acquired.Lease is { } lease)
         {
-            _targetSetLeases.Add(new TargetSetLease(targets, lease));
+            _targetSetLeases.Add(new TargetSetLease(
+                windows,
+                targets,
+                lease));
         }
         return acquired;
     }
@@ -127,6 +167,7 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
         _singleTargetLeases.Clear();
         _windowClasses.Clear();
         _targetSetLeases.Clear();
+        _trustContext.Dispose();
     }
 
     private bool ContainsRetainedTarget(ExactTargetKey key)
@@ -143,12 +184,6 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
         }
         return false;
     }
-
-    private static RobloxPlaybackTargetLeaseAcquisitionResult ResultFor(
-        RobloxPlaybackTargetLease cached) =>
-        cached.Failure is { } failure
-            ? RobloxPlaybackTargetLeaseAcquisitionResult.Failed(failure)
-            : RobloxPlaybackTargetLeaseAcquisitionResult.Succeeded(cached);
 
     private readonly record struct ExactTargetKey(
         nint Handle,
@@ -173,13 +208,17 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
 
     private sealed class TargetSetLease
     {
+        private readonly IReadOnlyList<RobloxSessionLayoutWindow>
+            _sourceWindows;
         private readonly Dictionary<nint, RobloxClientProcessIdentity>
             _identitiesByHandle;
 
         internal TargetSetLease(
+            IReadOnlyList<RobloxSessionLayoutWindow> sourceWindows,
             IReadOnlyList<RobloxPlaybackTarget> targets,
             RobloxPlaybackTargetLease lease)
         {
+            _sourceWindows = sourceWindows;
             Lease = lease;
             _identitiesByHandle = new Dictionary<
                 nint,
@@ -200,9 +239,23 @@ internal sealed class SessionMacroPlaybackLeaseCache : IDisposable
                 identity,
                 key.Identity);
 
+        internal void RemoveCachedWindowClasses(
+            IDictionary<ExactTargetKey, string> windowClasses)
+        {
+            foreach (var (handle, identity) in _identitiesByHandle)
+            {
+                windowClasses.Remove(new ExactTargetKey(handle, identity));
+            }
+        }
+
         internal bool Matches(
             IReadOnlyList<RobloxSessionLayoutWindow> windows)
         {
+            // RuntimeMacroPlan owns one immutable window snapshot for the
+            // complete run. Its repeated whole-layout lookup can therefore
+            // bypass an otherwise linear set comparison safely.
+            if (ReferenceEquals(_sourceWindows, windows))
+                return true;
             if (windows.Count != _identitiesByHandle.Count)
                 return false;
             for (var index = 0; index < windows.Count; index++)

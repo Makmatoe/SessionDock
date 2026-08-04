@@ -244,12 +244,19 @@ public static class ExactWheelDesktopCapture
         return topology;
     }
 
+    /// <summary>
+    /// Captures the current foreground top-level window with one foreground
+    /// query. Callers comparing against many known top-level HWNDs should take
+    /// one snapshot and use their own lookup instead of querying once per
+    /// candidate.
+    /// </summary>
+    public static nint GetForegroundRootWindow() =>
+        GetRootWindow(ExactWheelNativeMethods.GetForegroundWindow());
+
     public static bool IsForeground(nint windowHandle)
     {
         var expected = GetRootWindow(windowHandle);
-        var foreground = GetRootWindow(
-            ExactWheelNativeMethods.GetForegroundWindow());
-        return expected != 0 && expected == foreground;
+        return expected != 0 && expected == GetForegroundRootWindow();
     }
 
     internal static nint GetRootWindow(nint windowHandle) =>

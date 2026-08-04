@@ -60,18 +60,21 @@ internal sealed partial class RobloxWindowService
         AcquirePlaybackTargetLease(
         RobloxClientProcessIdentity identity,
         nint windowHandle,
-        TimeSpan? identityRevalidationInterval = null)
+        TimeSpan? identityRevalidationInterval = null,
+        RobloxExecutableTrustContext? trustContext = null)
     {
         ArgumentNullException.ThrowIfNull(identity);
         return AcquirePlaybackTargetLease(
             [new RobloxPlaybackTarget(identity, windowHandle)],
-            identityRevalidationInterval);
+            identityRevalidationInterval,
+            trustContext);
     }
 
     internal RobloxPlaybackTargetLeaseAcquisitionResult
         AcquirePlaybackTargetLease(
         IReadOnlyList<RobloxPlaybackTarget> allowedTargets,
-        TimeSpan? identityRevalidationInterval = null)
+        TimeSpan? identityRevalidationInterval = null,
+        RobloxExecutableTrustContext? trustContext = null)
     {
         ArgumentNullException.ThrowIfNull(allowedTargets);
         var interval = identityRevalidationInterval ??
@@ -86,7 +89,8 @@ internal sealed partial class RobloxWindowService
         return RobloxPlaybackTargetLease.Acquire(
             _native,
             allowedTargets,
-            interval);
+            interval,
+            trustContext);
     }
 }
 
@@ -134,7 +138,8 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
     internal static RobloxPlaybackTargetLeaseAcquisitionResult Acquire(
         IRobloxWindowNativeAdapter native,
         IReadOnlyList<RobloxPlaybackTarget> allowedTargets,
-        TimeSpan identityRevalidationInterval)
+        TimeSpan identityRevalidationInterval,
+        RobloxExecutableTrustContext? trustContext)
     {
         ArgumentNullException.ThrowIfNull(native);
         ArgumentNullException.ThrowIfNull(allowedTargets);
@@ -150,10 +155,29 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
         {
             foreach (var target in allowedTargets)
             {
-                var verification = native.TryPinProcessLifetime(
-                    target.Identity,
-                    forceTrustRefresh: true,
-                    out var pin);
+                var trustClaim = trustContext?.AcquireVerification(
+                    target.Identity.ExecutablePath);
+                if (trustClaim?.ExecutableTrustRejected == true)
+                {
+                    return FailAcquisition(
+                        pinnedTargets,
+                        VerificationFailure(
+                            RobloxProcessVerificationStatus
+                                .ExecutableNotTrusted,
+                            duringAcquisition: true));
+                }
+                RobloxProcessVerificationStatus verification;
+                IRobloxProcessLifetimePin? pin;
+                using (trustClaim)
+                {
+                    verification = native.TryPinProcessLifetime(
+                        target.Identity,
+                        trustClaim?.ForceTrustRefresh ?? true,
+                        trustClaim?.VerifyExecutableTrust ?? true,
+                        trustClaim?.ExecutableHandle,
+                        out pin);
+                    trustClaim?.ReportVerification(verification);
+                }
                 if (verification != RobloxProcessVerificationStatus.Verified ||
                     pin is null)
                 {

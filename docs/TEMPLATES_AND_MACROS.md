@@ -339,12 +339,12 @@ dedicated worker, and SessionDock runs the surrounding playback orchestration
 off the WPF UI thread. Progress sent back to the interface is coalesced to at
 most four updates per second without repeated UI Automation announcements.
 
-One low-level physical-input intervention hook is retained and reused for one
-complete client cycle instead of being recreated for every client. A paused or
-long recording can keep that cycle, and therefore that hook, open. The hook
-takes one physical-input baseline when the cycle starts and then tracks key and
-button transitions, avoiding repeated full native key-state scans during
-playback. SessionDock fails closed if the monitor thread exits; Windows does not
+One low-level physical-input intervention hook is retained for the complete
+macro run instead of being recreated for every client or complete loop. The
+hook takes one physical-input baseline when the run starts and then tracks key
+and button transitions. This removes hook-thread and full key-state setup churn
+even for a very short one-client macro. ExactWheel checks the monitor before
+each serial playback and fails closed if its thread exits; Windows does not
 provide a direct liveness query for silent hook removal.
 
 Canonical recordings are validated once and then reused without another sort
@@ -353,24 +353,56 @@ Recording capture grows through small pooled segments instead of reserving the
 500,000-event safety ceiling at Start. The final immutable macro array is still
 created once when recording stops, and the pool is cleared before return.
 
-Controller readiness resolves catalog and assignment metadata only. Selecting
-**Play** performs the sole fresh, authoritative validation of macro payloads and
-exact Roblox targets. An uncached macro load deserializes its payload once;
-bounded structural source and transformed caches then reuse it for the duration
-of that controller run. The transformed cache retains a common eight-client
-working set of roughly 100,000 events per client, replaces stale geometry for
-the same exact HWND, and processes anything beyond its event budget once
-without evicting the admitted working set. Steady cache and target-lease hits
-allocate no managed memory.
+Controller readiness resolves catalog and assignment metadata only. Template
+launch preflight transfers its already verified source cache into the first
+**Play**, so preflight and the first cycle do not deserialize the same artifact
+twice. A source introduced after launch is deserialized once when its playback
+run first needs it. Exact Roblox target validation still happens at playback.
+SessionDock never creates a full transformed event array per destination:
+small immutable coordinate plans map only the mouse events that the scheduler
+actually dispatches. Up to 1,000,000 source events remain in compact managed
+arrays. Additional unique sources are copied once into immutable,
+delete-on-close memory maps and read through reusable 512-event pages; later
+loops neither deserialize the artifact again nor rebuild a full event array.
+The run admits at most 128 client sources plus one whole-layout source, and
+also enforces a 256 MiB aggregate mapped-byte ceiling. Managed event memory is
+therefore hard-bounded, with small O(n) page and geometry state instead of
+O(events × clients) transformed copies. Hot source and coordinate-plan cache
+hits allocate no managed memory.
 
 An unavailable client does not pay its complete focus and trust cost on every
-short cycle: retries back off exponentially from 250 milliseconds to five
-seconds and reset after success. The 10-millisecond loop floor is a minimum
-duration for the complete cycle, not a fixed delay added after successful
-playback. Exact path-and-process-token identity proof refreshes on a five-second
-per-target schedule when that target is used, while retained-process liveness,
-exact HWND ownership, foreground, and pointer-target checks remain adjacent to
-each dispatch.
+short cycle: the base retry backoff grows exponentially from 250 milliseconds
+to five seconds and resets after success. Large failed groups retry in waves of
+at most eight clients separated by 50 milliseconds, so wave placement can add
+at most 850 milliseconds to the base delay for 128 clients plus the
+whole-layout target. If every target is temporarily unavailable, the loop
+sleeps until the earliest retry instead of stopping or rescanning at the
+10-millisecond floor. If healthy targets still
+complete, playback continues and deferred targets add only lightweight O(n)
+deadline checks per completed cycle. A sticky failed lease is disposed and
+reacquired when its retry becomes due; whole-layout lease and focus failures
+use the same transient policy. Terminal identity and artifact failures stay
+suppressed. The 10-millisecond floor remains a minimum duration for a healthy
+complete cycle, not a fixed delay after successful playback.
+
+Within one discovery, layout, or playback operation, clients using the same
+canonical Roblox path share the first successful forced Authenticode result.
+The file's SHA-256, WinVerifyTrust decision, and signer certificate are all read
+from the same non-write-shared open handle; path metadata alone is never a trust
+proof. A changed file therefore cannot inherit the cached result. Exact
+path-and-process-token proof still refreshes on a five-second per-target
+schedule when that target is used, while retained-process liveness, exact HWND
+ownership, foreground, pointer-target checks, and final event authorization
+remain adjacent to dispatch. Deterministic scalability tests cover 1, 8, 32,
+100, and 128-client cache/trust/retry paths.
+
+Joined-server attribution uses one 500-millisecond snapshot for all concurrent
+batch callers. The scanner follows up to 128 recent Roblox logs incrementally,
+keeps partial-line and join state between captures, and divides one fixed 4 MiB
+read budget fairly across the selected files. A capture reads no payload bytes
+from an unchanged log. Its latest `(user, place)` index makes each caller lookup
+constant-time without discarding a valid target merely because later user IDs
+appeared in the same log.
 
 When no browser work is active, macro playback asks the hidden WebView2 to
 suspend. Playback waits at most one second for that request; on a slower laptop

@@ -268,7 +268,9 @@ public partial class MainWindow
         IReadOnlyList<BatchLaunchPlan> launchPlans,
         TimeSpan delay,
         CancellationToken cancellationToken,
-        SessionTemplate? sessionTemplate = null)
+        SessionTemplate? sessionTemplate = null,
+        SessionMacroPlaybackCacheReservation?
+            macroPlaybackCacheReservation = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         // Once the user confirms a new batch, input from the previous batch
@@ -462,7 +464,8 @@ public partial class MainWindow
             : await ApplySessionPostLaunchAsync(
                 sessionTemplate,
                 launchedClients,
-                cancellationToken);
+                cancellationToken,
+                macroPlaybackCacheReservation);
 
         return new BatchLaunchResult(
             startedCount,

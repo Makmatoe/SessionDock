@@ -102,6 +102,78 @@ public sealed class RobloxSessionLayoutCoordinatorTests
         Assert.Equal(1936, result.Items[0].RequestedBounds.Left);
     }
 
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public async Task ArrangeAsync_ForceRefreshesSharedExecutableOnce(
+        int targetCount)
+    {
+        var (native, windows) = ReadyNative(targetCount);
+
+        var result = await CreateCoordinator(native).ArrangeAsync(
+            windows,
+            Preferences(),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.GlobalError ?? result.ZOrderError);
+        AssertOneForcedTrustRefresh(native);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public async Task CapturePlacementsAsync_ForceRefreshesSharedExecutableOnce(
+        int targetCount)
+    {
+        var (native, windows) = ReadyNative(targetCount);
+
+        var result = await CreateCoordinator(native).CapturePlacementsAsync(
+            windows,
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.GlobalError);
+        AssertOneForcedTrustRefresh(native);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(8)]
+    [InlineData(32)]
+    [InlineData(100)]
+    [InlineData(128)]
+    public async Task RestorePlacementsAsync_ForceRefreshesSharedExecutableOnce(
+        int targetCount)
+    {
+        var (native, windows) = ReadyNative(targetCount);
+        var placements = windows.ToDictionary(
+            window => window.Key,
+            _ => new NormalizedClientWindowPlacement
+            {
+                MonitorDeviceName = @"\\.\DISPLAY1",
+                MonitorIndex = 0,
+                Left = 0.1,
+                Top = 0.1,
+                Width = 0.5,
+                Height = 0.5
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+        var result = await CreateCoordinator(native).RestorePlacementsAsync(
+            windows,
+            placements,
+            Preferences(),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.GlobalError ?? result.ZOrderError);
+        AssertOneForcedTrustRefresh(native);
+    }
+
     [Fact]
     public async Task CapturePlacementsAsync_ProducesWorkAreaFractionsForFourK()
     {
@@ -401,9 +473,20 @@ public sealed class RobloxSessionLayoutCoordinatorTests
 
     private static RobloxSessionLayoutCoordinator CreateCoordinator(
         CoordinatorNative native) =>
-        new(new RobloxWindowService(
-            native,
-            TimeSpan.FromMilliseconds(1)));
+        new(
+            new RobloxWindowService(
+                native,
+                TimeSpan.FromMilliseconds(1)),
+            CreateShareableTrustContext);
+
+    private static RobloxExecutableTrustContext
+        CreateShareableTrustContext() =>
+        new(_ => File.OpenHandle(
+            typeof(RobloxSessionLayoutCoordinatorTests).Assembly.Location,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.RandomAccess));
 
     private static RobloxSessionLayoutWindow[] Windows() =>
     [
@@ -437,6 +520,48 @@ public sealed class RobloxSessionLayoutCoordinatorTests
         native.AcceptedIdentities.Add(FirstIdentity);
         native.AcceptedIdentities.Add(SecondIdentity);
         return native;
+    }
+
+    private static (CoordinatorNative Native,
+        RobloxSessionLayoutWindow[] Windows) ReadyNative(int targetCount)
+    {
+        var native = new CoordinatorNative
+        {
+            Monitors =
+            [Monitor(@"\\.\DISPLAY1", 0, true, 0, 0, 1920, 1080)]
+        };
+        var windows = Enumerable.Range(0, targetCount)
+            .Select(index =>
+            {
+                var identity = FirstIdentity with
+                {
+                    ProcessId = FirstIdentity.ProcessId + index,
+                    StartTimeUtc = FirstIdentity.StartTimeUtc.AddSeconds(index)
+                };
+                var handle = (nint)(100 + index);
+                native.Windows[handle] = State(
+                    identity.ProcessId,
+                    new RobloxPixelRect(10, 20, 816, 640));
+                native.AcceptedIdentities.Add(identity);
+                return new RobloxSessionLayoutWindow(
+                    $"account-{index}",
+                    identity,
+                    handle);
+            })
+            .ToArray();
+        return (native, windows);
+    }
+
+    private static void AssertOneForcedTrustRefresh(CoordinatorNative native)
+    {
+        Assert.NotEmpty(native.ForceTrustRefreshCalls);
+        Assert.Equal(
+            1,
+            native.ForceTrustRefreshCalls.Count(forceRefresh =>
+                forceRefresh));
+        var forcedIndex = native.ForceTrustRefreshCalls.FindIndex(
+            forceRefresh => forceRefresh);
+        Assert.NotNull(native.ExecutableTrustHandles[forcedIndex]);
     }
 
     private static CoordinatorWindowState State(
@@ -492,16 +617,28 @@ public sealed class RobloxSessionLayoutCoordinatorTests
         internal List<RobloxWindowZOrderPlacement> AppliedZOrderPlacements
         { get; } = [];
         internal IReadOnlyList<RobloxMonitor> Monitors { get; set; } = [];
+        internal List<bool> ForceTrustRefreshCalls { get; } = [];
+        internal List<Microsoft.Win32.SafeHandles.SafeFileHandle?>
+            ExecutableTrustHandles
+        { get; } = [];
 
         public DateTimeOffset UtcNow { get; private set; } =
             new(2026, 8, 3, 12, 0, 0, TimeSpan.Zero);
 
         public RobloxProcessVerificationStatus VerifyProcess(
             RobloxClientProcessIdentity identity,
-            bool forceTrustRefresh) =>
-            AcceptedIdentities.Contains(identity)
+            bool forceTrustRefresh,
+            bool verifyExecutableTrust,
+            Microsoft.Win32.SafeHandles.SafeFileHandle?
+                executableTrustHandle)
+        {
+            ForceTrustRefreshCalls.Add(forceTrustRefresh);
+            ExecutableTrustHandles.Add(executableTrustHandle);
+            _ = verifyExecutableTrust;
+            return AcceptedIdentities.Contains(identity)
                 ? RobloxProcessVerificationStatus.Verified
                 : RobloxProcessVerificationStatus.StartTimeMismatch;
+        }
 
         public IReadOnlyList<nint> EnumerateTopLevelWindows(int processId) =>
             Windows

@@ -36,7 +36,22 @@ public sealed class UiRefreshPerformanceContractTests
 
         Assert.Contains("TimeSpan.FromMilliseconds(250)", source);
         Assert.Contains("_selectableClients = _context.Snapshot().Clients", source);
-        Assert.Contains("foreach (var client in _selectableClients)", tick);
+        Assert.Contains(
+            "_selectableClientsByWindowHandle = _selectableClients",
+            source);
+        Assert.Contains(
+            "ExactWheelDesktopCapture.GetForegroundRootWindow()",
+            tick);
+        Assert.Contains(
+            "_selectableClientsByWindowHandle.TryGetValue(",
+            tick);
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                tick,
+                "ExactWheelDesktopCapture.GetForegroundRootWindow()"));
+        Assert.DoesNotContain("foreach (var client in _selectableClients)", tick);
+        Assert.DoesNotContain("ExactWheelDesktopCapture.IsForeground", tick);
         Assert.DoesNotContain("_context.Snapshot()", tick);
         Assert.DoesNotContain(".ToArray()", tick);
         Assert.Contains("UpdateForegroundPolling()", source);
@@ -187,7 +202,8 @@ public sealed class UiRefreshPerformanceContractTests
         Assert.Contains(
             "static (store, candidate) => store.Load(candidate)",
             string.Concat(host, playback));
-        Assert.Contains("GetOrLoadAndTransform(", playback);
+        Assert.Contains("GetOrLoadAndCreateTransform(", playback);
+        Assert.Contains("CoordinateTransform = coordinateTransform", playback);
         Assert.DoesNotContain(
             "var source = playbackCache.GetOrLoad(",
             playback);

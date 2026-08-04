@@ -328,6 +328,43 @@ monitor-normalized playback requires the same monitor count. Events in monitor
 gaps or outside the recorded client are rejected instead of being guessed or
 silently clamped.
 
+## Scaling to many clients
+
+SessionDock keeps one verified source event timeline per macro and a tiny
+coordinate plan per destination window. It maps coordinates immediately before
+dispatch, so adding clients adds small O(n) geometry and lease state instead of
+copying the complete recording n times. The first 1,000,000 unique-source events
+stay in compact managed arrays. Further assigned sources use run-owned,
+delete-on-close memory maps with reusable 512-event pages, so a large unique
+working set never causes deserialize-and-allocate churn on every loop. A run is
+explicitly capped at 128 client sources plus one whole-layout source and a
+256 MiB aggregate mapped-byte ceiling. Template preflight transfers this cache
+into the first playback cycle instead of loading the same artifacts twice.
+There is no eight-client cache cliff.
+
+One playback worker, one physical-input monitor, shared executable-trust proofs,
+deadline-driven retry waves, and bounded UI progress are reused for the whole
+run. Deterministic performance contracts exercise 1, 8, 32, 100, and 128-client
+paths. Retry backoff has a 250-millisecond-to-five-second base; eight-client
+waves can add at most 850 milliseconds for 128 clients plus the whole-layout
+target. While healthy targets continue, deferred targets require only
+lightweight O(n) deadline checks per completed cycle, and a due retry replaces
+any sticky failed lease before reacquiring the exact target. Within one batch operation, executable checks for
+clients using the same canonical Roblox path share one forced Authenticode
+proof. That proof hashes and verifies the same open file handle, so the reduced
+work does not rely on path metadata alone.
+
+Optional joined-server attribution is shared by the complete batch too. One
+incremental snapshot covers as many as 128 recent Roblox logs under a fixed
+4 MiB aggregate read budget; unchanged logs read zero payload bytes, and
+lookups use the latest indexed `(user, place)` observation instead of rescanning
+one log tail per client.
+
+Actual macro work still grows with the number of events that must be sent to
+each selected client, and each Roblox process has its own CPU/GPU/memory cost.
+SessionDock bounds its supporting caches and fails closed rather than removing
+identity, focus, or input-authorization checks to claim a higher client count.
+
 ## Export or import selected data
 
 Open **Export or import data** to choose templates, macros, public destinations,

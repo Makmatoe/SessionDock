@@ -69,6 +69,83 @@ public sealed class ExactWheelCoordinateTransformTests
     }
 
     [Fact]
+    public void PlaybackTransform_ClientRelativeMapsWithoutCopyingRecording()
+    {
+        var source = ExactWheelTestData.Recording();
+        var originalEvents = source.Events.ToArray();
+        var destinationDisplay = ExactWheelTestData.Display(
+            0,
+            0,
+            1_920,
+            1_080);
+        var destinationTarget = ExactWheelTestData.Target(
+            new ExactWheelRect(10, 20, 710, 430));
+
+        var transform = ExactWheelCoordinateTransforms
+            .CreateClientRelativePlaybackTransform(
+                source,
+                destinationDisplay,
+                destinationTarget);
+
+        Assert.Equal(
+            (10, 20),
+            (transform.TransformEvent(source.Events[0]).X,
+                transform.TransformEvent(source.Events[0]).Y));
+        Assert.Equal(
+            (360, 225),
+            (transform.TransformEvent(source.Events[1]).X,
+                transform.TransformEvent(source.Events[1]).Y));
+        Assert.Equal(originalEvents[5], transform.TransformEvent(source.Events[5]));
+        Assert.Equal(originalEvents, source.Events);
+        Assert.Same(destinationDisplay, transform.DestinationDisplay);
+        Assert.Same(destinationTarget, transform.DestinationTarget);
+    }
+
+    [Fact]
+    public void PlaybackTransform_OffDisplayDestinationMatchesMaterializedRejection()
+    {
+        var source = ExactWheelTestData.Recording();
+        var destinationDisplay = ExactWheelTestData.Display(
+            0,
+            0,
+            100,
+            100);
+        var destinationTarget = ExactWheelTestData.Target(
+            new ExactWheelRect(-10, 10, 10, 30));
+        var transform = ExactWheelCoordinateTransforms
+            .CreateClientRelativePlaybackTransform(
+                source,
+                destinationDisplay,
+                destinationTarget);
+
+        Assert.Throws<InvalidDataException>(() =>
+            ExactWheelCoordinateTransforms.TransformClientRelative(
+                source,
+                destinationDisplay,
+                destinationTarget));
+        Assert.Throws<InvalidDataException>(() =>
+            transform.TransformEvent(source.Events[0]));
+    }
+
+    [Fact]
+    public void PlaybackTransform_DifferentSourceGeometryIsRejected()
+    {
+        var source = ExactWheelTestData.Recording();
+        var transform = ExactWheelCoordinateTransforms
+            .CreateClientRelativePlaybackTransform(
+                source,
+                ExactWheelTestData.Display(0, 0, 1_920, 1_080),
+                ExactWheelTestData.Target(
+                    new ExactWheelRect(10, 20, 710, 430)));
+        var differentSource = ExactWheelTestData.Recording(
+            target: ExactWheelTestData.Target(
+                new ExactWheelRect(101, 80, 1_500, 900)));
+
+        Assert.Throws<InvalidDataException>(() =>
+            transform.ValidateRecording(differentSource));
+    }
+
+    [Fact]
     public void TransformVirtualDesktopNormalized_MapsNegativeOriginAndEndpoints()
     {
         var source = ExactWheelTestData.Recording(

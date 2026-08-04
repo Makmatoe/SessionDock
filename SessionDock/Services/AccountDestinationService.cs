@@ -24,13 +24,9 @@ public static class AccountDestinationService
             return false;
         }
 
-        foreach (var account in settings.Accounts.ToArray())
-        {
-            NamedDestinationPolicy.SetAccountDestination(
-                settings,
-                account.Key,
-                resolved!.AccountDestination);
-        }
+        NamedDestinationPolicy.SetAllAccountDestinations(
+            settings,
+            resolved!.AccountDestination);
         return true;
     }
 

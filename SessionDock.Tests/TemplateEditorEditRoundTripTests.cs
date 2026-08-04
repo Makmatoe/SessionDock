@@ -129,7 +129,14 @@ public sealed class TemplateEditorEditRoundTripTests
             "private MacroChoice ResolveChoice",
             "private static IReadOnlyList<TemplateEditorClient> NormalizeClients");
         Assert.Contains("IsAvailable: false", resolver, StringComparison.Ordinal);
-        Assert.Contains("choices.Add(unavailable)", resolver, StringComparison.Ordinal);
+        Assert.Contains(
+            "ReuseSharedOptionsOrAppend(",
+            resolver,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "choices.Add(unavailable)",
+            resolver,
+            StringComparison.Ordinal);
 
         var saveBlock = Slice(
             source,

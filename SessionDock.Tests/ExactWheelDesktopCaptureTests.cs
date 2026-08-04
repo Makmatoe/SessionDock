@@ -91,6 +91,39 @@ public sealed class ExactWheelDesktopCaptureTests
         Assert.DoesNotContain("ClientToScreen", overload);
     }
 
+    [Fact]
+    public void ForegroundSnapshot_ReadsForegroundOnceAndCanonicalizesTheRoot()
+    {
+        var source = File.ReadAllText(RepoFile(
+            "SessionDock.ExactWheel",
+            "ExactWheelDesktopCapture.cs"));
+        var start = source.IndexOf(
+            "public static nint GetForegroundRootWindow()",
+            StringComparison.Ordinal);
+        var end = source.IndexOf(
+            "public static bool IsForeground(",
+            start,
+            StringComparison.Ordinal);
+        Assert.True(start >= 0 && end > start);
+        var snapshot = source[start..end];
+
+        Assert.Contains("GetRootWindow", snapshot);
+        Assert.Equal(
+            1,
+            CountOccurrences(snapshot, "GetForegroundWindow()"));
+
+        var isForegroundEnd = source.IndexOf(
+            "internal static nint GetRootWindow(",
+            end,
+            StringComparison.Ordinal);
+        Assert.True(isForegroundEnd > end);
+        var isForeground = source[end..isForegroundEnd];
+        Assert.Contains("GetForegroundRootWindow()", isForeground);
+        Assert.Equal(
+            0,
+            CountOccurrences(isForeground, "GetForegroundWindow()"));
+    }
+
     private static ExactWheelDisplayTopology Display() => new(
         0,
         0,
@@ -98,6 +131,21 @@ public sealed class ExactWheelDesktopCaptureTests
         1080,
         [new ExactWheelMonitorSnapshot(
             new ExactWheelRect(0, 0, 1920, 1080))]);
+
+    private static int CountOccurrences(string source, string value)
+    {
+        var count = 0;
+        var offset = 0;
+        while ((offset = source.IndexOf(
+                   value,
+                   offset,
+                   StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            offset += value.Length;
+        }
+        return count;
+    }
 
     private static string RepoFile(params string[] components)
     {

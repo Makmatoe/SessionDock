@@ -83,7 +83,7 @@ public sealed class SessionMacroControllerStructureTests
     }
 
     [Fact]
-    public void ExplicitPlay_RevalidatesFilesAndPassesSelectedRate()
+    public void ExplicitPlay_UsesTransferredCacheAndLoadsOnlyNewSources()
     {
         var controllerSource = File.ReadAllText(RepoFile(
             "SessionDock",
@@ -106,16 +106,48 @@ public sealed class SessionMacroControllerStructureTests
             CountOccurrences(
                 playbackSource,
                 "FocusAsync("));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playbackSource,
+                ".WaitForFocusTransitionAsync("));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playbackSource,
+                "canProgrammaticallyActivate:"));
+        var normalizedPlaybackSource = playbackSource.ReplaceLineEndings("\n");
+        var perClientStart = normalizedPlaybackSource.IndexOf(
+            "private async Task<TemplateMacroPlaybackResult>\n" +
+                "        PlayPerClientMacrosAsync(",
+            StringComparison.Ordinal);
+        var wholeLayoutStart = normalizedPlaybackSource.IndexOf(
+            "private async Task<TemplateMacroPlaybackResult>\n" +
+                "        PlayWholeLayoutMacroAsync(",
+            StringComparison.Ordinal);
+        Assert.True(perClientStart >= 0);
+        Assert.True(wholeLayoutStart > perClientStart);
+        var perClientMethod = normalizedPlaybackSource[
+            perClientStart..wholeLayoutStart];
+        var wholeLayoutMethod = normalizedPlaybackSource[wholeLayoutStart..];
+        Assert.True(
+            perClientMethod.IndexOf(
+                ".WaitForFocusTransitionAsync(",
+                StringComparison.Ordinal) <
+            perClientMethod.IndexOf("FocusAsync(", StringComparison.Ordinal));
+        Assert.True(
+            wholeLayoutMethod.IndexOf(
+                ".WaitForFocusTransitionAsync(",
+                StringComparison.Ordinal) <
+            wholeLayoutMethod.IndexOf("FocusAsync(", StringComparison.Ordinal));
         Assert.Contains("playbackLease,", playbackSource);
         Assert.DoesNotContain("using var playbackLease", playbackSource);
         Assert.Contains(
             "prepared.PlaybackLeases.Dispose()",
             controllerSource);
-        Assert.Equal(
-            2,
-            CountOccurrences(
-                playbackSource,
-                "playbackLease.IsDispatchAuthorized"));
+        Assert.DoesNotContain(
+            "playbackLease.IsDispatchAuthorized",
+            playbackSource);
         Assert.Contains("pauseOnFocusLoss: true", playbackSource);
         Assert.Contains(
             "EventDispatchAuthorization = inputEvent =>",
@@ -192,7 +224,10 @@ public sealed class SessionMacroControllerStructureTests
             "exception is System.ComponentModel.Win32Exception",
             method);
         Assert.Contains(
-            "playbackRetryTracker.ReportFailure(window.Key);",
+            "playbackRetryTracker.ReportFailure(",
+            method);
+        Assert.Contains(
+            "SessionMacroPlaybackRetryDisposition.Transient",
             method);
         Assert.Contains("skipped++;", method);
         Assert.Contains("continue;", method);
