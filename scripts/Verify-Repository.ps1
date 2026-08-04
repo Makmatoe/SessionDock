@@ -649,6 +649,14 @@ try {
         -Contents $ciWorkflowContents `
         -Name 'dependency-review'
 
+    $ciCheckoutStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $ciBuildJob `
+        -Name 'Check out the repository'
+    if ($ciCheckoutStep -notmatch '(?m)^\s+persist-credentials:\s*false\s*$' -or
+        $ciCheckoutStep -notmatch '(?m)^\s+fetch-depth:\s*0\s*$') {
+        throw 'CI must check out complete Git history without persisted credentials so immutable ExactWheel commit/tree/blob provenance can be verified.'
+    }
+
     foreach ($criticalJob in @(
             @{ Name = 'build-and-test'; Contents = $ciBuildJob },
             @{ Name = 'validate-and-build'; Contents = $releaseValidateJob },

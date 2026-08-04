@@ -26,6 +26,10 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # ExactWheel provenance is pinned to an earlier immutable commit.
+          # PR merge checkouts must retain that history so the verifier can
+          # prove the commit/tree/blob relationship without a shallow bypass.
+          fetch-depth: 0
 
       - name: Anchor bundled HandleScope bytes to the immutable upstream commit
         shell: pwsh

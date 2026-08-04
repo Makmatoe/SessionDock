@@ -128,6 +128,15 @@ public sealed class ExactWheelProvenanceTests
             ".github",
             "workflows",
             "ci.yml"));
+        var ciBuildJobStart = ci.IndexOf(
+            "  build-and-test:",
+            StringComparison.Ordinal);
+        var ciDependencyJobStart = ci.IndexOf(
+            "  dependency-review:",
+            StringComparison.Ordinal);
+        Assert.True(ciBuildJobStart >= 0);
+        Assert.True(ciDependencyJobStart > ciBuildJobStart);
+        var ciBuildJob = ci[ciBuildJobStart..ciDependencyJobStart];
 
         Assert.Contains("releaseBlockedPendingLicense is true", gate);
         Assert.Contains("license is missing", gate);
@@ -184,6 +193,7 @@ public sealed class ExactWheelProvenanceTests
         Assert.DoesNotContain("source tag $($exactWheelManifest.sourceTag)", sbom);
         Assert.DoesNotContain("Verify-ExactWheelReleaseProvenance.ps1", build);
         Assert.DoesNotContain("Verify-ExactWheelReleaseProvenance.ps1", ci);
+        Assert.Contains("fetch-depth: 0", ciBuildJob, StringComparison.Ordinal);
     }
 
     [Fact]
