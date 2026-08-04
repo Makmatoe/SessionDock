@@ -154,6 +154,8 @@ public sealed class ExactWheelProvenanceTests
             gate,
             StringComparison.Ordinal);
         Assert.Contains("Get-GitBlobBytes", gate, StringComparison.Ordinal);
+        Assert.Contains("Get-FileSha256Hex", gate, StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-FileHash", gate, StringComparison.Ordinal);
         Assert.Contains("hash-object", gate, StringComparison.Ordinal);
         Assert.Contains("requires complete Git history", gate,
             StringComparison.Ordinal);
@@ -321,7 +323,7 @@ public sealed class ExactWheelProvenanceTests
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = ResolvePowerShellExecutable(),
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -345,7 +347,7 @@ public sealed class ExactWheelProvenanceTests
         var root = FindRepositoryRoot();
         var startInfo = new ProcessStartInfo
         {
-            FileName = "powershell.exe",
+            FileName = ResolvePowerShellExecutable(),
             WorkingDirectory = root,
             UseShellExecute = false,
             RedirectStandardOutput = true,
@@ -380,6 +382,16 @@ public sealed class ExactWheelProvenanceTests
             "Verified release-ready repository-native ExactWheel 1.1.0",
             standardOutput,
             StringComparison.Ordinal);
+    }
+
+    private static string ResolvePowerShellExecutable()
+    {
+        var powerShell7 = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "PowerShell",
+            "7",
+            "pwsh.exe");
+        return File.Exists(powerShell7) ? powerShell7 : "powershell.exe";
     }
 
     private static string FindRepositoryRoot()

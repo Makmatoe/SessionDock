@@ -487,12 +487,16 @@ try {
             '76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841',
             '5944250b546861e4e616de520b7d06513fec435a5651fc49d83ae92d3cf14bf2',
             'source inventory contains missing or unexpected files',
+            'Get-FileSha256Hex',
             'build-definition blob or SHA-256 differs',
             'repository MIT license bytes do not match',
             'Normal builds remain available, but a public release is blocked')) {
         if ($exactWheelProvenanceContents -notmatch $requiredExactWheelGatePattern) {
             throw "The ExactWheel release provenance gate is missing a fail-closed contract: $requiredExactWheelGatePattern"
         }
+    }
+    if ($exactWheelProvenanceContents -match '(?i)\bGet-FileHash\b') {
+        throw 'The standalone ExactWheel provenance gate must use self-contained .NET SHA-256 hashing rather than a PowerShell module cmdlet.'
     }
     if (-not $exactWheelManifest.releaseBlockedPendingLicense) {
         [void] (& $exactWheelProvenanceVerifier `

@@ -119,6 +119,23 @@ function Get-Sha256Hex([byte[]] $Bytes) {
     }
 }
 
+function Get-FileSha256Hex([string] $Path) {
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::Read)
+    $sha256 = [Security.Cryptography.SHA256]::Create()
+    try {
+        return [BitConverter]::ToString(
+            $sha256.ComputeHash($stream)).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $sha256.Dispose()
+        $stream.Dispose()
+    }
+}
+
 function Get-GitBlobBytes(
     [string] $RepositoryRoot,
     [string] $BlobId) {
@@ -176,9 +193,7 @@ if (-not [string]::IsNullOrWhiteSpace(
         [string] (Get-Item -LiteralPath $fullPath -Force).LinkType)) {
     throw 'ExactWheel provenance manifest must not be a reparse point.'
 }
-$manifestSha256 = (Get-FileHash `
-    -LiteralPath $fullPath `
-    -Algorithm SHA256).Hash.ToLowerInvariant()
+$manifestSha256 = Get-FileSha256Hex $fullPath
 if ($manifestSha256 -cne $expectedManifestSha256) {
     throw 'ExactWheel provenance manifest does not match the exact reviewed bytes.'
 }
@@ -366,9 +381,7 @@ $projectPath = Join-Path $repositoryRoot $manifest.buildDefinitionPath
 $projectBlobOutput = @(& git -C $repositoryRoot hash-object `
     "--path=$($manifest.buildDefinitionPath)" -- `
     $projectPath 2>&1)
-$projectHash = (Get-FileHash `
-    -LiteralPath $projectPath `
-    -Algorithm SHA256).Hash.ToLowerInvariant()
+$projectHash = Get-FileSha256Hex $projectPath
 if ($LASTEXITCODE -ne 0 -or $projectBlobOutput.Count -ne 1 -or
     (Get-Item -LiteralPath $projectPath).Length -ne
         [long] $manifest.buildDefinitionBytes -or
@@ -386,9 +399,7 @@ if (-not (Test-Path -LiteralPath $licensePath -PathType Leaf) -or
         [string] (Get-Item -LiteralPath $licensePath -Force).LinkType)) {
     throw 'The repository MIT license is missing or is a reparse point.'
 }
-$licenseHash = (Get-FileHash `
-    -LiteralPath $licensePath `
-    -Algorithm SHA256).Hash.ToLowerInvariant()
+$licenseHash = Get-FileSha256Hex $licensePath
 if ($licenseHash -cne $expectedLicenseSha256) {
     throw 'The repository MIT license bytes do not match the reviewed license.'
 }
