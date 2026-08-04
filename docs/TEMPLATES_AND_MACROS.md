@@ -446,10 +446,10 @@ dotnet restore .\SessionDock.slnx --locked-mode
 `SessionDock.ExactWheel/exactwheel-provenance.json` records ExactWheel as a
 repository-native component under the root MIT license. It is intentionally
 tagless and records the full source commit,
-`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, an exact 14-file implementation
+`14fef76e6639bf291c87a83db7043b91e1c3daa8`, an exact 14-file implementation
 and dependency-lock count, 157,859 canonical source bytes, and canonical
 inventory SHA-256
-`fb27ce46e3db40770cb1bfab6e25123a79aea37517ff4e5e9f5137505b44047d`.
+`2368564b533bc5b762bceefb5b27ed4273ebdf7deee6d63a2fe7108d2659405e`.
 The renamed current build definition is pinned separately as Git blob
 `07fe8f9ec14088750f6d2a0d835c86b678a0f76e` and SHA-256
 `76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841`.

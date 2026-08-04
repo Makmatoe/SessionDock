@@ -68,7 +68,7 @@ Before creating a release tag:
    contracts, notices, and SBOM inputs.
 4. Confirm ExactWheel provenance. ExactWheel provenance pins 14
    implementation/lock files at commit
-   `e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+   `14fef76e6639bf291c87a83db7043b91e1c3daa8`, the separately pinned current
    build definition, and the root MIT license. The verifier must reproduce
    every path, Git blob, byte count, SHA-256 value, canonical inventory hash,
    build-definition identity, and license identity. Any drift blocks release.
