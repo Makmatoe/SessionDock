@@ -34,8 +34,10 @@ SessionDock stores application settings and isolated browser profiles under
 - the current settings, the prior successful settings backup, and timestamped
   preserved copies of settings files that could not be read;
 - `Templates\catalog.json` and its last-known-good backup, containing versioned
-  account-slot references, launch delays, layout preferences, normalized window
-  rectangles, and macro metadata;
+  account-slot references, resolved per-slot destinations, launch delays,
+  layout preferences, normalized window rectangles, and macro metadata. A local
+  template destination can contain private-server material when the user saved
+  that launch; portable export excludes it;
 - ExactWheel payloads under `Macros\`. A recording can contain mouse/keyboard
   timing and typed key events, so it must be treated as private even though it
   contains no browser cookie or Roblox launch ticket by design;
@@ -80,11 +82,18 @@ should still review the complete preview before sharing it.
 The **Export or import data** panel creates a versioned `.sessiondock` ZIP from
 only the items selected for review: templates, their required macro
 dependencies, separately selected macros, public destinations, and launch
-presets. Selecting a template automatically selects every macro it references;
-the dependency list remains visible before export. The archive contains a
-bounded manifest and content-addressed macro entries. Macro payloads are copied
-byte for byte, recorded in the manifest by SHA-256, and never rewritten during
-export or import.
+presets. Selecting a template automatically includes every macro it references
+and any matching eligible named destination in the reviewed package. Dependency
+checkboxes do not necessarily mirror that closure, especially for a macro that
+contains keyboard input; the package review shows the effective dependencies
+and export remains blocked until the required keyboard acknowledgement. The
+pre-review screen labels its non-public named-destination count as library-wide,
+while the package review reports the exact selected-template omissions.
+Private-server and tracked-server destination values are omitted and counted
+rather than serialized. The archive contains a bounded manifest and
+content-addressed macro entries. Macro payloads are copied byte for byte,
+recorded in the manifest by SHA-256, and never rewritten during export or
+import.
 
 Packages use Roblox numeric user IDs only to match template and preset slots to
 accounts that already exist on the importing device. They do not create an

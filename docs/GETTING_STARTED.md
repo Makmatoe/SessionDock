@@ -4,13 +4,13 @@ This guide covers the current source-tree workflow that combines SessionDock,
 the included HandleScope component, ExactWheel macros, window layouts, and
 session templates.
 
-> A published installer has these features only when its own release notes say
-> so. Source and test builds are not release announcements.
+> A published release has these features only when its own notes say so. Source
+> and test builds are not release announcements.
 
-> **Distribution hold — 2026-08-04:** there is no approved production
-> installer. Do not download or run existing release assets. This guide's
-> installation steps apply only after a reviewed release explicitly lifts the
-> hold and carries a valid, timestamped SessionDock publisher signature.
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Download nothing while this hold is active.
+> The future flow below applies only after a reviewed release explicitly states
+> that it lifts the hold and has passed separate laptop validation.
 
 ## Before you start
 
@@ -18,38 +18,42 @@ You need:
 
 - Windows x64 in a normal, non-administrator desktop session;
 - Roblox Player installed for the same Windows user;
-- one SessionDock install or validated source build; and
+- one approved SessionDock portable folder or validated source build; and
 - a harmless Roblox destination for the first end-to-end test.
 
 You do **not** need:
 
 - a separate HandleScope download or `Install-HandleScopeApi.ps1`;
 - a PowerShell execution-policy bypass;
-- a separate TinyClicks or ExactWheel installation;
+- a separate macro application or ExactWheel installation;
 - a scheduled task, service, or sign-in autostart entry; or
 - an administrator PowerShell window.
 
 ## 1. Get and verify SessionDock
 
-For a published build:
+SessionDock is permanently distributed as a transparent, unsigned portable
+ZIP. There is no Setup executable. After a reviewed release explicitly lifts
+the hold:
 
-1. Confirm the distribution hold above has been removed in a reviewed commit.
-2. Open the canonical
-   [`Makmatoe/SessionDock` release page](https://github.com/Makmatoe/SessionDock/releases).
-3. Download `SessionDock-win-x64-Setup.exe`.
-4. Confirm the browser address is on `github.com/Makmatoe/SessionDock`.
-5. Follow the
-   [manual checksum steps](UPDATES.md#verify-a-manual-installer-download).
-6. Verify that Windows reports the exact reviewed SessionDock publisher and a
-   valid timestamp. **Unknown publisher** is a hard stop.
-7. Run Setup as your normal Windows user, not as administrator.
-8. Read that build's release notes. If they do not list the integrated
-   HandleScope/ExactWheel/template workflow, use a validated source build for
-   development testing instead of installing either component separately.
+1. Open only the canonical
+   [`Makmatoe/SessionDock` GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases).
+2. Download `SessionDock-win-x64-Portable.zip` and `SHA256SUMS.txt` from that
+   same release. A Discord message may link to GitHub, but never download a
+   SessionDock binary from Discord.
+3. Confirm the browser address is `github.com/Makmatoe/SessionDock` and follow
+   the [portable ZIP verification steps](UPDATES.md#verify-the-portable-zip).
+4. In File Explorer, select **Extract All** and choose a new folder. Keep all
+   extracted files together.
+5. Run `SessionDock.exe` as your normal Windows user, not as administrator.
+6. Complete the first-launch Get Started tutorial.
 
-Never continue through **Unknown publisher**, an invalid signature, a publisher
-mismatch, or a named malware detection. Do not disable Windows Security to make
-a warning disappear.
+Unsigned SessionDock may show **Unknown publisher** or a reputation warning.
+Proceed through a normal warning only after the hold is explicitly lifted, the
+GitHub source and hash match, and Windows reports no named threat. A named
+malware detection is always a hard stop. A matching checksum or attestation
+does not make detected bytes safe. Never disable Defender, restore or allow a
+detected file, add an exclusion, remove download-zone metadata, change
+PowerShell execution policy, or weaken device policy to make SessionDock run.
 
 ## 2. If the laptop says scripts are disabled or virus scan failed
 
@@ -71,8 +75,10 @@ prove that the file is trustworthy.
 Recover safely:
 
 1. Delete the incomplete download.
-2. Download SessionDock again from the canonical release page.
-3. Verify SHA-256 before opening it.
+2. Check the canonical release notes. Download nothing while the distribution
+   hold is active.
+3. After a reviewed release explicitly lifts the hold, download only its
+   portable ZIP from GitHub Releases and verify SHA-256 before extracting it.
 4. Check **Windows Security > Virus & threat protection > Protection history**.
 5. If the laptop is managed, give its administrator the canonical URL and
    checksum.
@@ -97,10 +103,10 @@ Recover safely:
    it again with **Start Get Started tour**.
 5. For the optional technical walkthrough, select **Start Advanced tour** in
    Settings. Its highlighted buttons cover **Client window layout**, **Macro
-   library and recording**, **Templates and batch setup**, **Current batch
-   macros**, the compact macro controller, and the rarely needed Advanced
-   workspace. It is separate from Get Started and never begins automatically
-   merely because Get Started finished.
+   library and recording**, **Templates and batch setup**, **Export or import
+   data**, **Current batch macros**, the compact macro controller, and the
+   rarely needed Advanced workspace. It is separate from Get Started and never
+   begins automatically merely because Get Started finished.
 6. Under **Client window layout**, select **Open automation settings**, then
    review:
 
@@ -210,8 +216,11 @@ Select a macro and choose **Rename** to change only its display name; its
 content ID, hash, type, assignments, and recorded payload remain stable. Choose
 **Remove** only for unreferenced catalog metadata. Removal is blocked and names
 the templates to edit while any per-client/shared/whole-layout reference
-remains. An allowed removal defaults its confirmation to No and retains the
-immutable local recording file. Choose **Save settings** to apply either edit.
+remains. An allowed removal defaults its confirmation to No and changes only
+the draft until you choose **Save settings**. After that catalog commit,
+SessionDock deletes the exact content-addressed payload only when no other
+macro definition uses it. A changed, shared, locked, or unverifiable payload is
+retained and cleanup failure does not undo the catalog save.
 
 ## 7. Save the session as a template
 
@@ -220,12 +229,15 @@ immutable local recording file. Choose **Save settings** to apply either edit.
    monitor work area.
 3. On Home, open **Templates**, then select **Save current session**.
 4. Enter a name and confirm the delay.
-5. Choose a layout:
+5. Review every account slot's resolved destination. The template stores those
+   values independently of the named-destination library; edit a slot now when
+   the saved session should launch somewhere else.
+6. Choose a layout:
 
    - **Saved positions** stores each monitor-relative rectangle.
    - **Clickable cascade** recalculates the staircase on every run.
 
-6. Choose a macro mode:
+7. Choose a macro mode:
 
    - **No macro**;
    - **Per client**, with different macros or **No macro** per client;
@@ -233,12 +245,12 @@ immutable local recording file. Choose **Save settings** to apply either edit.
      clients you select; or
    - **Whole layout**, using one desktop-layout macro.
 
-7. Every assigned Per client, Shared across clients, or Whole layout macro
+8. Every assigned Per client, Shared across clients, or Whole layout macro
    repeats in full cycles after **Play** until **Stop**. There is no separate
    repeat option. Keep the loop supervised: physical input, held input, or loss
    of verified focus pauses injection until safe conditions recover; replacing
    the batch or closing SessionDock cancels it.
-8. Select **Save template**.
+9. Select **Save template**.
 
 If SessionDock cannot capture every requested saved position, fix the missing
 window or choose **Clickable cascade**. Minimized and wholly off-screen windows
@@ -249,7 +261,8 @@ are rejected; SessionDock does not invent coordinates.
 1. Close the test Roblox clients.
 2. Select **Run template**.
 3. Choose the new template.
-4. Review account count, layout, macro mode, and delay.
+4. Review every account's saved destination plus the account count, layout,
+   macro mode, and delay.
 5. Resolve every missing account before continuing.
 6. Start the template.
 7. Wait for account launch and stable window placement to finish.
@@ -298,17 +311,20 @@ For a permanent template change:
 
 1. Open **Templates** on Home.
 2. Select exactly one saved template and choose **Edit**.
-3. Change its name, launch delay, layout mode, or macro assignments.
+3. Change its name, launch delay, per-slot destinations, layout mode, or macro
+   assignments.
 4. Select **Save template** in the editor.
 5. Back in the template library, select **Save settings**. Closing that focused
    dialog without saving discards the edit.
 
 Editing preserves the stable template ID and existing client slot IDs, account
-keys, destinations, saved placements, and valid macro references. It does not
-recapture live windows. Use **Save current session** in the template library to
-create a fresh capture when you need new positions. An unavailable or wrong-kind macro stays visible for
-repair, and the editor requires a valid replacement or a no-macro choice before
-it can save. Deleting a template never deletes its macro files.
+keys, unchanged destinations, saved placements, and valid macro references. A
+destination edit changes only that slot's saved launch value; it does not edit
+the named-destination library or recapture live windows. Use **Save current
+session** in the template library to create a fresh capture when you need new
+positions. An unavailable or wrong-kind macro stays visible for repair, and the
+editor requires a valid replacement or a no-macro choice before it can save.
+Deleting a template never deletes its macro files.
 
 Catalog schemas v1 and v2 remain readable. SessionDock infers omitted legacy macro
 kinds conservatively, adds 1x playback-speed and F8 recording-stop defaults,
@@ -324,12 +340,18 @@ To move only intended automation data to another SessionDock device:
 
 1. Open **Export or import data** and choose **Export selected data**.
 2. Select templates, macros, public destinations, and launch presets. Selecting
-   a template also selects its required macros; review those dependencies rather
-   than assuming the template is metadata-only.
+   a template automatically includes its required macros and any matching
+   eligible named destination in the reviewed package. A dependency checkbox
+   may remain unchanged, especially for a keyboard-bearing macro, so treat the
+   package review and manifest as the effective contents rather than assuming
+   the template is metadata-only.
 3. Review the manifest and exclusions. Private-server destinations are never
-   eligible. If any selected macro contains recorded keyboard input, inspect it
-   as potentially sensitive and select the separate acknowledgement only when
-   you intend to include it.
+   eligible. Before package review, the named-destination exclusion count is
+   explicitly library-wide; the package review then reports the exact omitted
+   template-slot and named-destination values for this export.
+   If any selected macro contains recorded keyboard input, inspect it as
+   potentially sensitive and select the separate acknowledgement only when you
+   intend to include it.
 4. Choose **Export reviewed package**, then save the versioned `.sessiondock`
    ZIP. SessionDock copies macro files byte for byte and records their SHA-256.
 
@@ -435,8 +457,10 @@ Use test accounts and reversible actions throughout:
 8. Rename a macro and confirm its existing template assignment still works.
    Try to remove it while referenced and confirm SessionDock names the blocking
    template. After removing the reference, decline removal once, accept it the
-   second time, select **Save settings**, and confirm the local recording file
-   was retained.
+   second time, select **Save settings**, and confirm the exact unreferenced
+   recording file was deleted. Repeat with a deliberately changed disposable
+   payload and confirm the changed file is retained while the catalog save
+   succeeds.
 9. Open a backed-up catalog from schema v1 or v2 in a development test. Confirm
    it loads conservatively, defaults speed to `1x` and the stop keybind to F8,
    and writes schema v3 only after an explicit save.
@@ -447,15 +471,15 @@ Use test accounts and reversible actions throughout:
     whole-layout assignment stays unassigned. In a disposable copy, alter one
     macro byte and confirm SHA-256 validation rejects the package unchanged.
 
-Do not treat this checklist or a passing source build as a public release,
-signature, or installer approval.
+Do not treat this checklist or a passing source build as public-release
+approval or as lifting the distribution hold.
 
 ## 14. Find local data
 
 SessionDock stores active user data under `%LOCALAPPDATA%\SessionDock`:
 
 - `Templates\catalog.json` and `catalog.backup.json` hold the versioned template
-  catalog and recovery copy;
+  catalog, resolved per-slot destinations, and recovery copy;
 - `Macros\` holds ExactWheel recordings;
 - `settings.json` holds account metadata, named destinations and their account
   assignments, and application preferences;

@@ -35,9 +35,9 @@
     <sys:String x:Key="Main.ReleaseNotesName">View current and previous release notes</sys:String>
     <sys:String x:Key="Main.ReleaseNotesHelp">Shows changes in the installed release and the release before it</sys:String>
     <sys:String x:Key="Main.ReleaseNotesTooltip">View included SessionDock release notes</sys:String>
-    <sys:String x:Key="Main.UpdateName">Check for signed updates</sys:String>
-    <sys:String x:Key="Main.UpdateTooltip">Check GitHub for a signed SessionDock update</sys:String>
-    <sys:String x:Key="Main.UpdateTooltipVersion">Check for signed updates (current {0})</sys:String>
+    <sys:String x:Key="Main.UpdateName">Check for verified updates</sys:String>
+    <sys:String x:Key="Main.UpdateTooltip">Check GitHub for a verified SessionDock update</sys:String>
+    <sys:String x:Key="Main.UpdateTooltipVersion">Check for verified updates (current {0})</sys:String>
     <sys:String x:Key="Main.Local">LOCAL DATA</sys:String>
     <sys:String x:Key="Main.Account">ACCOUNT</sys:String>
     <sys:String x:Key="Main.DragToReorder">Drag to reorder</sys:String>
@@ -340,7 +340,7 @@
     <sys:String x:Key="Handle.RuntimeVersionExact">Require exactly {0}</sys:String>
     <sys:String x:Key="Handle.RuntimeVersionExactUnavailable">Saved exact version {0} (no longer reviewed)</sys:String>
     <sys:String x:Key="Handle.RefreshVersions">Refresh reviewed versions</sys:String>
-    <sys:String x:Key="Handle.RefreshVersionsName">Check GitHub for a newer signed list of reviewed standalone versions</sys:String>
+    <sys:String x:Key="Handle.RefreshVersionsName">Check GitHub for a newer integrity-verified list of reviewed standalone versions</sys:String>
     <sys:String x:Key="Handle.BundledVersionLabel">INCLUDED COMPONENT VERSION</sys:String>
     <sys:String x:Key="Handle.StandaloneVersionLabel">STANDALONE VERSION</sys:String>
     <sys:String x:Key="Handle.VersionUnknown">Not detected</sys:String>
@@ -468,10 +468,10 @@
     <sys:String x:Key="Prompt.CustomName">Custom experience name</sys:String>
 
     <sys:String x:Key="Update.Title">SessionDock update</sys:String>
-    <sys:String x:Key="Update.Detail">Review the signed release details before installing.</sys:String>
-    <sys:String x:Key="Update.Verified">SIGNED RELEASE VERIFIED</sys:String>
+    <sys:String x:Key="Update.Detail">Review the verified release metadata before installing.</sys:String>
+    <sys:String x:Key="Update.Verified">RELEASE METADATA VERIFIED</sys:String>
     <sys:String x:Key="Update.ReleaseNotes">RELEASE NOTES</sys:String>
-    <sys:String x:Key="Update.NotesName">Signed release notes</sys:String>
+    <sys:String x:Key="Update.NotesName">Reviewed release notes</sys:String>
     <sys:String x:Key="Update.LocalData">App files are replaced; local account data stays outside the install folder.</sys:String>
     <sys:String x:Key="Update.Install">Install update</sys:String>
     <sys:String x:Key="Update.InstallName">Install integrity-checked update</sys:String>
@@ -479,8 +479,8 @@
     <sys:String x:Key="Update.InstallQuestion">Install SessionDock {0}?</sys:String>
     <sys:String x:Key="Update.Published">Published {0}</sys:String>
     <sys:String x:Key="Update.SizeMegabytes">{0:0.0} MB</sys:String>
-    <sys:String x:Key="Update.IntegrityDownloaded">SHA-256 {0}…  •  Signed package bytes, contents, and version verified.</sys:String>
-    <sys:String x:Key="Update.IntegrityPending">SHA-256 {0}…  •  Signed package identity authorized; bytes, contents, and version are checked after download. Windows binaries are not code-signed.</sys:String>
+    <sys:String x:Key="Update.IntegrityDownloaded">SHA-256 {0}…  •  Package bytes, contents, and version matched the verified release metadata.</sys:String>
+    <sys:String x:Key="Update.IntegrityPending">SHA-256 {0}…  •  Verified release metadata authorizes this package identity; bytes, contents, and version are checked after download. Windows binaries are not code-signed.</sys:String>
 
     <sys:String x:Key="Main.MetadataTransfer">Export or import data</sys:String>
     <sys:String x:Key="Main.MetadataTransferHelp">Select templates, macros, public destinations, and launch presets, or use legacy metadata transfer</sys:String>
@@ -944,11 +944,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">This copy of SessionDock does not contain valid notes for its installed version.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">NOTES UNAVAILABLE</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Updates require the installed app</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">This debug or portable copy cannot replace itself. Install SessionDock with the official Setup executable, then check again.</sys:String>
+    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">This copy updates manually</sys:String>
+    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">This development or portable copy cannot replace itself. Close SessionDock, download the official portable ZIP from GitHub Releases, extract it to a new folder, and start the new copy.</sys:String>
     <sys:String x:Key="Main.UpdatesUnavailableBadge">UPDATES UNAVAILABLE</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Update ready to restart</sys:String>
-    <sys:String x:Key="Main.UpdateVerifyingDetail">Verifying the signed release descriptor and downloaded package before restarting…</sys:String>
+    <sys:String x:Key="Main.UpdateVerifyingDetail">Verifying the release metadata and downloaded package before restarting…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">VERIFYING UPDATE</sys:String>
     <sys:String x:Key="Main.UpdateRestartPostponedTitle">Restart postponed</sys:String>
     <sys:String x:Key="Main.UpdateRestartPostponedDetail">The verified update remains downloaded until you choose to install it.</sys:String>
@@ -960,7 +960,7 @@
     <sys:String x:Key="Main.UpdateCurrentDetail">Version {0} is the newest stable release.</sys:String>
     <sys:String x:Key="Main.UpdateCurrentBadge">UP TO DATE</sys:String>
     <sys:String x:Key="Main.UpdateNotInstalledTitle">Update not installed</sys:String>
-    <sys:String x:Key="Main.UpdateNotInstalledDetail">The signed update is available, but no files were changed.</sys:String>
+    <sys:String x:Key="Main.UpdateNotInstalledDetail">The verified update is available, but no files were changed.</sys:String>
     <sys:String x:Key="Main.UpdateCancelledBadge">UPDATE CANCELLED</sys:String>
     <sys:String x:Key="Main.UpdateDownloadingTitle">Downloading SessionDock {0}</sys:String>
     <sys:String x:Key="Main.UpdateDownloadingDetail">Downloading the verified package from GitHub… {0}%</sys:String>
@@ -1160,14 +1160,14 @@
     <sys:String x:Key="WebSession.Error.Closed">The Roblox web session is no longer available.</sys:String>
 
     <sys:String x:Key="UpdateFailure.Trust.Title">Update was rejected</sys:String>
-    <sys:String x:Key="UpdateFailure.Trust.Detail">The signed release did not pass SessionDock's trust checks and was not installed. The installed version was left unchanged.</sys:String>
+    <sys:String x:Key="UpdateFailure.Trust.Detail">The update did not pass SessionDock's release-integrity checks and was not installed. The installed version was left unchanged.</sys:String>
     <sys:String x:Key="UpdateFailure.Busy.Title">Update files are busy</sys:String>
-    <sys:String x:Key="UpdateFailure.Busy.Detail">Another update operation is using SessionDock's update files. Close every SessionDock or Roblox One window and installer, wait a few seconds, reopen the app, and try again. The installed version was left unchanged.</sys:String>
+    <sys:String x:Key="UpdateFailure.Busy.Detail">Another update operation is using SessionDock's update files. Close every SessionDock or Roblox One window, wait a few seconds, reopen the app, and try again. The installed version was left unchanged.</sys:String>
     <sys:String x:Key="UpdateFailure.DownloadRejected.Title">Downloaded update was rejected</sys:String>
-    <sys:String x:Key="UpdateFailure.Checksum.Detail">The downloaded package did not match the release feed and was not installed. Try again; if this repeats, keep both local data directories unchanged and download the current Setup and checksum from the canonical GitHub release page.</sys:String>
-    <sys:String x:Key="UpdateFailure.InvalidData.Detail">The downloaded package did not pass integrity checks and was not installed. Try again; if this repeats, keep both local data directories unchanged and download the current Setup and checksum from the canonical GitHub release page.</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Title">Setup is required</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Detail">This copy is no longer recognized as an installed app. Keep the SessionDock and RobloxOne local data directories unchanged, then run the current verified SessionDock Setup from the canonical GitHub release page. Do not uninstall or delete local data first.</sys:String>
+    <sys:String x:Key="UpdateFailure.Checksum.Detail">The downloaded package did not match the release feed and was not installed. Try again. If this repeats, keep both local data directories unchanged, download the current portable ZIP and SHA256SUMS.txt from the canonical GitHub Releases page, verify the ZIP, extract it to a new folder, and run that copy. Do not overwrite or mix it with the current folder.</sys:String>
+    <sys:String x:Key="UpdateFailure.InvalidData.Detail">The downloaded package did not pass integrity checks and was not installed. Try again. If this repeats, keep both local data directories unchanged, download the current portable ZIP and SHA256SUMS.txt from the canonical GitHub Releases page, verify the ZIP, extract it to a new folder, and run that copy. Do not overwrite or mix it with the current folder.</sys:String>
+    <sys:String x:Key="UpdateFailure.PortableRefreshRequired.Title">Manual update is required</sys:String>
+    <sys:String x:Key="UpdateFailure.PortableRefreshRequired.Detail">This copy is no longer recognized as an installed app. Keep the SessionDock and RobloxOne local data directories unchanged. Close the app, download and verify the current portable ZIP from the canonical GitHub Releases page, extract it to a new folder, and run that copy. Do not uninstall the current copy or delete local data.</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Title">GitHub did not respond in time</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Detail">The update request timed out. Check the internet connection and try again. The installed version was left unchanged.</sys:String>
     <sys:String x:Key="UpdateFailure.Cancelled.Detail">The update request ended before GitHub responded. Check the internet connection and try again. The installed version was left unchanged.</sys:String>
@@ -1176,14 +1176,14 @@
     <sys:String x:Key="UpdateFailure.Unreachable.Title">GitHub could not be reached</sys:String>
     <sys:String x:Key="UpdateFailure.Unreachable.Detail">SessionDock could not contact the official GitHub release feed. Check the internet connection and try again. The installed version was left unchanged.</sys:String>
     <sys:String x:Key="UpdateFailure.AccessDenied.Title">Update access was denied</sys:String>
-    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock could not write its update files. Reopen it as the same Windows user that installed it and check whether security software is blocking it, then try again.</sys:String>
+    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock could not write its update files. Reopen it as the same Windows user that runs this copy and check whether security software is blocking it, then try again.</sys:String>
     <sys:String x:Key="UpdateFailure.FilesUnavailable.Title">Update files are unavailable</sys:String>
-    <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">An update file or folder is unavailable or locked. Close every SessionDock or Roblox One window and installer, reopen the app, and try again. The installed version was left unchanged.</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Title">Updater could not start</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows could not start the SessionDock updater. Close the app, keep both local data directories unchanged, and run the current verified SessionDock Setup from the canonical GitHub release page. Do not uninstall or delete local data first.</sys:String>
+    <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">An update file or folder is unavailable or locked. Close every SessionDock or Roblox One window, reopen the app, and try again. The installed version was left unchanged.</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Title">Installed-copy updater could not start</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows could not start the legacy installed-copy updater. Keep both local data directories unchanged. Close the app, download and verify the current portable ZIP from the canonical GitHub Releases page, extract it to a new folder, and run that copy. Do not uninstall the current copy or delete local data.</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Rejected">UPDATE REJECTED</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Busy">UPDATE BUSY</sys:String>
-    <sys:String x:Key="UpdateFailure.Badge.SetupRequired">SETUP REQUIRED</sys:String>
+    <sys:String x:Key="UpdateFailure.Badge.ManualUpdate">MANUAL UPDATE</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.NetworkTimeout">NETWORK TIMEOUT</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.NetworkError">NETWORK ERROR</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.AccessDenied">ACCESS DENIED</sys:String>
@@ -1297,7 +1297,7 @@
     <sys:String x:Key="SettingsHub.AboutAction">About and diagnostics</sys:String>
     <sys:String x:Key="SettingsHub.ReleaseNotesAction">Release notes</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
-    <sys:String x:Key="SettingsHub.UpdatesDetail">Check the signed release feed and review an update before installing it.</sys:String>
+    <sys:String x:Key="SettingsHub.UpdatesDetail">Check the verified release feed and review an update before installing it.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>

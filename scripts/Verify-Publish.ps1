@@ -64,7 +64,7 @@ if ($prohibitedPayloads.Count -ne 0) {
 }
 
 $componentImpostors = @($actualFiles | Where-Object {
-        $_ -match '(?i)(^|/)(?:SessionDock\.)?(?:HandleScope|ExactWheel|TinyClicks)(?:[./_-]|$)' -and
+        $_ -match '(?i)(^|/)(?:SessionDock\.)?(?:HandleScope|ExactWheel)(?:[./_-]|$)' -and
         $_ -cnotin @('SessionDock.HandleScope.dll', 'SessionDock.ExactWheel.dll')
     })
 if ($componentImpostors.Count -ne 0) {

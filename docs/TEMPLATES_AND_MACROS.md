@@ -34,11 +34,11 @@ the save action so assignments are visible before a batch is launched.
 Settings keeps two explicit actions: replay **Get Started**, or launch the
 optional **Advanced** tour. Advanced separately highlights layout and DPI
 scaling, intrinsic macro types and recording safety, template assignments,
-current-batch focus assignment, explicit controller **Play** plus safe
-client-stop/whole-session-pause behavior, the supported `0.25x`-to-`2x` range,
-and the rarely needed Advanced workspace. Completing one tour never starts the
-other. Replaying either tour changes no account, destination, template, macro,
-or playback state.
+portable export/import, current-batch focus assignment, explicit controller
+**Play** plus safe client-stop/whole-session-pause behavior, the supported
+`0.25x`-to-`2x` range, and the rarely needed Advanced workspace. Completing one
+tour never starts the other. Replaying either tour changes no account,
+destination, template, macro, or playback state.
 
 ## What a template contains
 
@@ -287,17 +287,21 @@ explicit selection rather than copying `catalog.json`. Eligible content is:
   references;
 - every macro dependency of those templates plus any separately selected
   macros;
-- public place destinations only; and
+- matching eligible named-destination dependencies plus any separately selected
+  public place destinations; and
 - selected launch presets.
 
 Selecting a template closes over its referenced macros and shows those
-dependencies in the export review. Macro payloads are stored as exact,
-content-addressed bytes with a SHA-256 in the manifest; export/import never
-rescales or rewrites an `.ewmacro` file. Account references use only the Roblox
-user ID for matching on the destination device. Local account keys and paths,
-source placement monitor IDs/device names, sign-ins, browser profiles, cookies,
-tokens, authentication tickets, usernames, private-server links/codes, server
-JobIds, integrations, and logs are excluded.
+dependencies in the export review. When an eligible named destination has the
+same resolved public value as a selected template slot, that dependency is
+included too. Private-server and tracked-server template destinations are
+omitted and counted. Macro payloads are stored as exact, content-addressed bytes
+with a SHA-256 in the manifest; export/import never rescales or rewrites an
+`.ewmacro` file. Account references use only the Roblox user ID for matching on
+the destination device. Local account keys and paths, source placement monitor
+IDs/device names, sign-ins, browser profiles, cookies, tokens, authentication
+tickets, usernames, private-server links/codes, server JobIds, integrations,
+and logs are excluded.
 
 A macro containing keyboard events is not automatically safe to share: those
 events can encode typed secrets. Export lists every selected keyboard-bearing
@@ -353,10 +357,12 @@ simply because no current template references it.
 To edit a template, open **Templates** on Home, select one template, and choose
 **Edit**. The
 editor preserves its stable template ID,
-existing slot IDs, account keys, destinations, saved placements, legacy preset
-marker, and valid macro references. The edit remains isolated until both
-**Save template** and the focused **Save settings** are selected. The editor does
-not recapture live window positions; use **Save current session** for a new capture.
+existing slot IDs, account keys, unchanged destinations, saved placements,
+legacy preset marker, and valid macro references. A per-slot destination may be
+changed in the editor without changing the named-destination library or
+recapturing that slot's saved position. The edit remains isolated until both
+**Save template** and the focused **Save settings** are selected. Use **Save
+current session** for a new live-window capture.
 Unavailable or wrong-kind macro references remain visible for repair and must
 be replaced or removed before the edit can be saved.
 
@@ -417,7 +423,7 @@ For an ordered device pass, follow the
 | Focus assignment | Only the selected current-batch client changes; the catalog and next batch stay unchanged. |
 | Named destination reassigned or removed | An account has at most one named assignment; direct edits detach it, and deleting the name retains the resolved value as a custom destination. |
 | Macro renamed | Only its display name changes; templates keep their stable macro reference. |
-| Referenced macro removal attempted | Removal is blocked and the referencing templates are named; confirmed unreferenced removal retains the payload file. |
+| Referenced macro removal attempted | Removal is blocked and the referencing templates are named. After an unreferenced removal is confirmed and Save settings succeeds, the exact unshared payload is deleted; a changed, shared, or unverifiable payload is retained. |
 | Edit existing template | Stable template/slot IDs remain; outer Save settings is required. |
 | Catalog v1/v2 opened and saved | It reads safely, defaults speed to 1x and the stop keybind to F8, and the explicit save writes v3. |
 | New physical input during any macro | Playback pauses without injection and resumes on a shifted timeline after safe input and verified focus recover. |
@@ -437,11 +443,28 @@ dotnet restore .\SessionDock.slnx --locked-mode
 
 ## Release and provenance boundary
 
-`SessionDock.ExactWheel/exactwheel-upstream.json` currently records the TinyClicks
-source as an uncommitted snapshot with no immutable tag/commit or explicit
-license grant and sets `releaseBlockedPendingLicense` to `true`. Do not publish
-the integrated binary while that block remains. Resolve ownership, licensing,
-immutable provenance, synchronized inventory, and the full test gate first.
+`SessionDock.ExactWheel/exactwheel-provenance.json` records ExactWheel as a
+repository-native component under the root MIT license. It is intentionally
+tagless and records the full source commit,
+`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, an exact 14-file implementation
+and dependency-lock count, 157,859 canonical source bytes, and canonical
+inventory SHA-256
+`fb27ce46e3db40770cb1bfab6e25123a79aea37517ff4e5e9f5137505b44047d`.
+The renamed current build definition is pinned separately as Git blob
+`07fe8f9ec14088750f6d2a0d835c86b678a0f76e` and SHA-256
+`76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841`.
+
+The manifest and `scripts/Verify-ExactWheelReleaseProvenance.ps1` together pin
+every inventory path, Git blob, byte count, and SHA-256 identity. The verifier
+rejects a missing or extra source file, worktree/blob drift, an
+inventory-summary mismatch, a different license, an invented source tag, or a
+nonmatching commit tree. A shallow CI checkout can still verify the exact
+checked-out Git blobs and their independent SHA-256 hashes; when the pinned
+commit object is available, the verifier also checks every entry directly
+against that commit and proves it is an ancestor.
+`releaseBlockedPendingLicense: false` means only that this source/license gate
+has complete evidence. It does not bypass update-descriptor verification,
+malware response, packaging, manual hardware, or reviewer approval gates.
 
 This document describes behavior under development. It does not declare that a
-public build has shipped or that unresolved licensing has been cleared.
+public build has shipped or that a release has been approved.

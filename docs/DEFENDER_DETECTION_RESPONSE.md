@@ -1,121 +1,113 @@
 # Responding to a Microsoft Defender malware detection
 
-A named Microsoft Defender Antivirus detection such as
-`Trojan:Win32/Wacatac.B!ml` is a release-blocking security event. It is not the
-same as an **Unknown publisher** or Microsoft Defender SmartScreen reputation
-warning.
+A named Microsoft Defender Antivirus result such as
+`Trojan:Win32/Wacatac.B!ml` is a security verdict, not an **Unknown publisher**
+or SmartScreen reputation warning. It blocks use and release of those exact
+bytes. A matching checksum, GitHub attestation, clean scan on another PC, or
+known source tree does not override it.
+
+SessionDock's Windows distribution is permanently unsigned. **Unknown
+publisher** may therefore appear for a clean canonical build. That status does
+not prove safety and does not authorize bypassing a named Defender detection.
+
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. No SessionDock download is approved while
+> this hold is active. A future reviewed release must explicitly lift the hold
+> after completing the transparent-build, Defender, and separate laptop gates.
 
 ## For users
 
-1. Leave the detected file quarantined or removed. Do not restore it, add an
-   exclusion, disable Defender, or strip its Internet-zone metadata.
-2. Open **Windows Security > Virus & threat protection > Protection history**
-   and record the detection name, affected path, time, action, and security
-   intelligence version.
-3. If the file ran before it was detected, disconnect that device from the
-   network and run **Microsoft Defender Offline scan** before using it again.
-4. If the file did not run, keep it quarantined and report the exact download
-   URL and file hash to the SessionDock maintainer.
-5. Install a replacement only from the canonical release page after Microsoft
-   has reviewed the detection and the replacement has a valid, trusted
-   publisher signature. Do not install executable attachments from Discord.
+1. Do not run the file. Leave it quarantined.
+2. Do not select **Allow on device**, restore it, add a file/folder/process
+   exclusion, disable real-time or cloud protection, remove Internet-zone
+   metadata, or weaken SmartScreen or managed-device policy.
+3. Open **Windows Security > Virus & threat protection > Protection history**.
+   Record the exact threat name, affected path, detection time, action, and
+   security-intelligence version. Take a screenshot that does not expose
+   private paths or account data.
+4. Confirm where the file came from. SessionDock binaries are distributed only
+   through `github.com/Makmatoe/SessionDock/releases`. Discord may contain a
+   link to that page but never a binary attachment.
+5. If the file ran before detection, disconnect the device from the network and
+   run **Microsoft Defender Offline scan**. Change important credentials from a
+   different trusted device if account or browser data may have been exposed.
+6. Report the release version, exact filename, hash if still available, Windows
+   version, and Defender details privately to the maintainer.
 
-The following commands are read-only and can be pasted directly into Windows
-PowerShell; they do not require running a downloaded script:
+Hashing a file does not execute it. In Command Prompt, use:
 
-```powershell
-Get-MpComputerStatus |
-  Select-Object AMProductVersion, AMEngineVersion, AntivirusSignatureVersion,
-    AntivirusSignatureLastUpdated, RealTimeProtectionEnabled, IsTamperProtected
-
-Get-MpThreatDetection |
-  Select-Object InitialDetectionTime, LastThreatStatusChangeTime, ActionSuccess,
-    ThreatID, Resources
+```text
+certutil -hashfile SessionDock-win-x64-Portable.zip SHA256
 ```
 
-If Defender has not removed the download, calculate its hash without opening
-it:
+If Defender has removed or quarantined the file, do not restore it merely to
+calculate a hash. The Protection History resource and original download record
+are sufficient starting evidence.
 
-```powershell
-Get-FileHash -LiteralPath .\SessionDock.exe -Algorithm SHA256
-```
-
-Microsoft documents Defender's
-[threat-response guidance](https://support.microsoft.com/windows/help-protect-my-pc-with-microsoft-defender-offline-9306d528-64bf-4668-5b80-ff533f183d6c)
-and provides the supported
-[malware-analysis submission portal](https://www.microsoft.com/en-us/wdsi/filesubmission).
+**Virus scan failed** in a browser is different: it says the download scan did
+not complete. Delete the incomplete file, inspect Protection History, and retry
+only from the canonical GitHub release if no named detection exists. Never
+disable protection to make the browser finish.
 
 ## For maintainers
 
-1. Stop distribution and preserve the exact reported bytes as evidence.
-2. Compare SHA-256 hashes between the canonical build and downloaded file.
-   A mismatch is a possible transport or artifact-selection incident. A match
-   rules out byte-level transport modification but does not by itself prove a
-   false positive.
-3. Reproduce using a real Internet-origin download on a clean, fully updated
-   Windows test device. Do not make the test pass by removing Mark of the Web.
-4. Submit the exact detected file to Microsoft as a **Software developer**,
-   choose **Incorrectly detected as malware/malicious**, include the detection
-   and security intelligence version, and retain the submission ID and final
+1. Stop distribution and announcements for the affected bytes. If they are
+   public, withdraw the affected release assets and publish a zero-asset
+   security-hold record. Preserve the release, workflow, Defender, and Discord
+   evidence without executing the sample.
+2. Record SHA-256, size, PE inventory, Authenticode state, Internet-zone state,
+   Defender product/engine/signature versions, detection source, and exact
+   resource path.
+3. Compare the reported hash with the canonical draft/public asset. A mismatch
+   is a possible transport or provenance incident. A match rules out byte
+   substitution but does not make the detection safe.
+4. Reproduce with a no-remediation custom scan on clean Windows devices and on
+   a downloaded copy that retains Internet provenance. Do not change Defender
+   settings:
+
+   ```powershell
+   & "$env:ProgramFiles\Windows Defender\MpCmdRun.exe" `
+       -Scan -ScanType 3 -File <path> -DisableRemediation
+   ```
+
+5. Submit the exact sample through the
+   [Microsoft Security Intelligence file-submission portal](https://www.microsoft.com/wdsi/filesubmission)
+   as a software developer and retain the submission ID and final
    determination.
-5. Audit the clean source commit, dependencies, build provenance, executable
-   behavior, package inventory, signatures, SBOM, and checksums.
-6. Release only from a clean reviewed commit. Every first-party PE and the
-   installer must be Authenticode-signed and RFC 3161 timestamped by the same
-   publicly trusted publisher identity. Verify those signatures again after
-   downloading the staged release.
-7. Distribute executables only through the canonical HTTPS release or Microsoft
-   Store. Discord announcements may link to that release but must not attach an
-   executable or ZIP.
+6. Audit packaging, PE structure, dependencies, network destinations, process
+   and input APIs, update behavior, and source provenance. Treat a compressed
+   or opaque layout as a design problem even if source review finds no malicious
+   behavior.
+7. Correct the responsible design or code, build a new version from a clean
+   reviewed commit, and repeat every release gate. Never replace an existing
+   public asset in place.
 
-Defender's
-[Block at First Sight](https://learn.microsoft.com/defender-endpoint/configure-block-at-first-sight-microsoft-defender-antivirus)
-uses cloud heuristics, machine learning, and automated analysis for files that
-originate from the Internet zone. Microsoft also explains that unsigned files
-start with no transferable publisher reputation in its
-[SmartScreen guidance for Windows developers](https://learn.microsoft.com/windows/apps/package-and-deploy/smartscreen-reputation).
+## 2026-08-04 incident record
 
-## 2026-08-04 r3 incident record
+A development r3 executable shared through Discord was reported on a laptop as
+`Trojan:Win32/Wacatac.B!ml`.
 
-The executable reported from the Discord CDN was streamed directly into a
-SHA-256 calculation without saving or executing it. It was byte-identical to
-the local SessionDock integrated-test r3 executable:
-
-- SHA-256:
+- Reported executable SHA-256:
   `8041C3268B698A2F964654B7B0C5F67BC2B2B1035E44AB767D9074F498612B28`
-- Size: `78,382,284` bytes
-- Authenticode status: `NotSigned`
-- Local Defender trust check: `not a known good file`
-- Laptop detection: `Trojan:Win32/Wacatac.B!ml`
+- The Discord stream matched the local r3 executable byte-for-byte, ruling out
+  Discord transport modification for that sample.
+- The executable was unsigned and used a compressed .NET self-contained
+  single-file layout. Its high-entropy bundle contained process-handle,
+  low-level input-hook, input-injection, child-process, window-control, and
+  updater behavior.
+- Defender on the build PC reported the file as not known-good but found no
+  threat with that PC's then-current definitions. The laptop result remained a
+  named detection and was not bypassed.
 
-Transport modification was therefore ruled out. The r3 binary remains blocked
-from redistribution pending Microsoft's determination. It was a compressed,
-self-extracting development bundle built from an uncommitted worktree, not a
-canonical signed release.
+That layout was retired. Current candidates use a transparent multi-file
+publish with no compressed application overlay. The portable ZIP has exactly
+six intentionally unsigned application PEs; expected Microsoft runtime files
+retain Microsoft signatures. The update-only NUPKG additionally carries the
+two recognized unsigned Velopack 1.2.0 package helpers, never as beginner
+portable content. A clean no-remediation scan is required, but it is only one
+release gate and never overrides a later named detection.
 
-## Distribution hold and replacement audit
-
-On 2026-08-04 the immutable public v3.0.0 binary release was withdrawn. Its
-files were not byte-identical to the detected r3 development build, but they
-were also unsigned and used the retired compressed single-file layout. Before
-withdrawal, all ten assets were preserved locally and matched GitHub's recorded
-SHA-256 digests. The `v3.0.0` source tag remains. GitHub's current latest entry
-is the immutable, zero-asset `security-hold-20260804` notice, so the stable
-latest-download path cannot return an executable.
-
-The current transparent local validation publish is not a release and must not
-be distributed. It contains 555 files and 545 structurally valid PE files:
-
-- 539 pinned runtime PEs have valid Microsoft Authenticode signatures;
-- exactly six reviewed application/Velopack PEs await the SessionDock publisher
-  signature;
-- there are no malformed PEs or other signature states;
-- `SessionDock.exe` is a 187,904-byte app host with no appended bundle overlay;
-- a full Microsoft Defender no-remediation scan found no threats; and
-- Defender TrustCheck still reports the app host as not known-good while it is
-  unsigned.
-
-That local scan is useful evidence, not a safety guarantee and not permission
-to bypass Defender. Public replacement remains blocked until a publicly trusted
-publisher identity signs the exact six files and final Setup, Microsoft reviews
-the reported sample, and every source-provenance and release gate passes.
+ExactWheel provenance pins 14 implementation/lock files at commit
+`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+build definition, and the root MIT license. This provenance evidence explains
+the source identity; it does not grant an antivirus exception.

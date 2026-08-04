@@ -51,9 +51,9 @@ internal sealed record UpdateFailurePresentation(
                 "UpdateFailure.Badge.Rejected",
                 StatusTone.Error),
             NotInstalledException => new(
-                "UpdateFailure.SetupRequired.Title",
-                "UpdateFailure.SetupRequired.Detail",
-                "UpdateFailure.Badge.SetupRequired",
+                "UpdateFailure.PortableRefreshRequired.Title",
+                "UpdateFailure.PortableRefreshRequired.Detail",
+                "UpdateFailure.Badge.ManualUpdate",
                 StatusTone.Error),
             TaskCanceledException => new(
                 "UpdateFailure.Timeout.Title",

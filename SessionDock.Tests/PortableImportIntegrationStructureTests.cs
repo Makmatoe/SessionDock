@@ -3,6 +3,32 @@ namespace SessionDock.Tests;
 public sealed class PortableImportIntegrationStructureTests
 {
     [Fact]
+    public void PortableExportPreview_DistinguishesLibraryEligibilityFromSelectionOmissions()
+    {
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "PortableDataDialog.xaml.cs"));
+
+        Assert.Contains(
+            "destinations in this local library are not shown because they",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Unavailable library-wide:",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Omitted from selected templates:",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Omitted from this selection:",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PortableImport_CommitsBeforeBestEffortRefreshAndCleansRollbackBlobs()
     {
         var source = File.ReadAllText(Path.Combine(

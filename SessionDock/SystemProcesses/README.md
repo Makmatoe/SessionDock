@@ -20,26 +20,33 @@ contracts. Neither HandleScope nor ExactWheel needs a separate installation in
 the integrated SessionDock path.
 
 > The integrated source described here is not a release announcement. A
-> published installer contains this behavior only when its release notes say
-> so.
+> published release contains this behavior only when its own notes say so.
 
-> **Distribution hold — 2026-08-04:** there is no approved production
-> installer. Existing unsigned packed release assets must not be downloaded or
-> run while the Defender incident is under review.
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Download nothing while this hold is active.
+> A future reviewed release must explicitly state that it lifts the hold and
+> has passed separate laptop validation before any public download is approved.
 
 ## Use one SessionDock build after the hold is lifted
 
-1. For a published build, download only from the canonical
-   `Makmatoe/SessionDock` GitHub release page.
-2. Verify the matching checksum or GitHub attestation. An unsigned build can
-   show **Unknown publisher**.
-3. Open Setup as a standard Windows user.
-4. Install SessionDock only. Do not add a HandleScope/ExactWheel installer or a
-   PowerShell bypass.
+After a reviewed release explicitly lifts the hold:
+
+1. Open only the canonical `Makmatoe/SessionDock` GitHub Releases page.
+2. Download `SessionDock-win-x64-Portable.zip` and its matching
+   `SHA256SUMS.txt`. Never obtain a SessionDock binary from Discord.
+3. Verify the ZIP checksum, then use File Explorer **Extract All** into a new
+   folder.
+4. Run `SessionDock.exe` as a standard Windows user and complete the
+   first-launch tutorial.
 5. Configure only the integration you need after SessionDock starts.
 
-Use the [root installation guide](../../README.md#install-and-launch) for the
-complete install, update, and uninstall workflow.
+An unsigned build can show **Unknown publisher**, but a named malware detection
+is always a hard stop. A matching checksum or attestation never overrides a
+detection. Do not restore, allow, exclude, unblock, or bypass the file.
+
+Use the
+[root download guide](../../README.md#download-and-launch-after-the-hold-is-lifted)
+for the complete portable, update, and removal workflow.
 
 ## Generic local API hook
 
@@ -124,10 +131,10 @@ foreach ($variableName in $variableNames) {
 ## HandleScope connector
 
 HandleScope integration is disabled by default. The integrated source carries
-the reviewed HandleScope engine with SessionDock; normal users install only
-SessionDock. The included engine is not a second application and has no
-separate download, installer, PowerShell command, UAC prompt, scheduled task,
-service, sign-in autostart, updater, or uninstall entry.
+the reviewed HandleScope engine inside SessionDock's one portable folder. The
+included engine is not a second application and has no separate download,
+package, PowerShell command, UAC prompt, scheduled task, service, sign-in
+autostart, updater, or removal entry.
 
 ### Set up through SessionDock
 
@@ -243,14 +250,15 @@ selecting or deselecting the advanced source changes none of them.
 | **HandleScope needs attention** | The chosen API is unavailable or the runtime failed a security or health check. Return to **Automatic**, select **Retry**, and verify the current SessionDock package. |
 | **Settings need repair** | An existing opt-in or source preference is malformed or nonminimal. Review it, then use **Repair settings**. |
 
-If included mode fails, close SessionDock. For a published build, verify its
-`SessionDock-win-x64-Setup.exe` against the matching `SHA256SUMS.txt`, then run
-that verified Setup as the same standard user. For a development build, rerun
-the complete repository gate. Do not fetch a HandleScope ZIP as a repair and do
-not weaken PowerShell policy, Group Policy, SmartScreen, antivirus, or
-application control. A managed device may still block an unsigned SessionDock
-executable; ask the administrator to review the canonical checksum and
-attestation.
+If included mode fails, close SessionDock. For a published portable build,
+verify the original ZIP against its matching `SHA256SUMS.txt`, then extract that
+verified ZIP into a new folder and run it as the same standard user. For a
+development build, rerun the complete repository gate. Do not fetch a
+HandleScope ZIP as a repair and do not weaken PowerShell policy, Group Policy,
+SmartScreen, antivirus, or application control. A managed device may still
+block an unsigned SessionDock executable; ask the administrator to review the
+canonical checksum and attestation. A named malware detection still blocks use
+even when those identities match.
 
 Opening the panel or changing a selector does not close a handle. **Disable**
 stops future post-launch work and the included child. In standalone mode it

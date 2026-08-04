@@ -35,9 +35,9 @@
     <sys:String x:Key="Main.ReleaseNotesName">Ver las notas de la versión actual y la anterior</sys:String>
     <sys:String x:Key="Main.ReleaseNotesHelp">Muestra los cambios de la versión instalada y de la anterior</sys:String>
     <sys:String x:Key="Main.ReleaseNotesTooltip">Ver las notas de la versión incluidas con SessionDock</sys:String>
-    <sys:String x:Key="Main.UpdateName">Buscar actualizaciones firmadas</sys:String>
-    <sys:String x:Key="Main.UpdateTooltip">Buscar en GitHub una actualización firmada de SessionDock</sys:String>
-    <sys:String x:Key="Main.UpdateTooltipVersion">Buscar actualizaciones firmadas (versión actual: {0})</sys:String>
+    <sys:String x:Key="Main.UpdateName">Buscar actualizaciones verificadas</sys:String>
+    <sys:String x:Key="Main.UpdateTooltip">Buscar en GitHub una actualización verificada de SessionDock</sys:String>
+    <sys:String x:Key="Main.UpdateTooltipVersion">Buscar actualizaciones verificadas (versión actual: {0})</sys:String>
     <sys:String x:Key="Main.Local">DATOS LOCALES</sys:String>
     <sys:String x:Key="Main.Account">CUENTA</sys:String>
     <sys:String x:Key="Main.DragToReorder">Arrastrar para reordenar</sys:String>
@@ -340,7 +340,7 @@
     <sys:String x:Key="Handle.RuntimeVersionExact">Exigir exactamente {0}</sys:String>
     <sys:String x:Key="Handle.RuntimeVersionExactUnavailable">Versión exacta guardada {0} (ya no está revisada)</sys:String>
     <sys:String x:Key="Handle.RefreshVersions">Actualizar versiones revisadas</sys:String>
-    <sys:String x:Key="Handle.RefreshVersionsName">Buscar en GitHub una lista firmada más reciente de versiones independientes revisadas</sys:String>
+    <sys:String x:Key="Handle.RefreshVersionsName">Buscar en GitHub una lista más reciente de versiones independientes revisadas y verificadas</sys:String>
     <sys:String x:Key="Handle.BundledVersionLabel">VERSIÓN DEL COMPONENTE INCLUIDO</sys:String>
     <sys:String x:Key="Handle.StandaloneVersionLabel">VERSIÓN INDEPENDIENTE</sys:String>
     <sys:String x:Key="Handle.VersionUnknown">No detectada</sys:String>
@@ -468,10 +468,10 @@
     <sys:String x:Key="Prompt.CustomName">Nombre personalizado de la experiencia</sys:String>
 
     <sys:String x:Key="Update.Title">Actualización de SessionDock</sys:String>
-    <sys:String x:Key="Update.Detail">Revisa los detalles de la versión firmada antes de instalar.</sys:String>
-    <sys:String x:Key="Update.Verified">VERSIÓN FIRMADA VERIFICADA</sys:String>
+    <sys:String x:Key="Update.Detail">Revisa los metadatos verificados de la versión antes de instalar.</sys:String>
+    <sys:String x:Key="Update.Verified">METADATOS DE VERSIÓN VERIFICADOS</sys:String>
     <sys:String x:Key="Update.ReleaseNotes">NOTAS DE LA VERSIÓN</sys:String>
-    <sys:String x:Key="Update.NotesName">Notas de la versión firmada</sys:String>
+    <sys:String x:Key="Update.NotesName">Notas de la versión revisadas</sys:String>
     <sys:String x:Key="Update.LocalData">Se sustituyen los archivos de la aplicación; los datos locales de las cuentas permanecen fuera de la carpeta de instalación.</sys:String>
     <sys:String x:Key="Update.Install">Instalar actualización</sys:String>
     <sys:String x:Key="Update.InstallName">Instalar la actualización con integridad verificada</sys:String>
@@ -479,8 +479,8 @@
     <sys:String x:Key="Update.InstallQuestion">¿Instalar SessionDock {0}?</sys:String>
     <sys:String x:Key="Update.Published">Publicada el {0}</sys:String>
     <sys:String x:Key="Update.SizeMegabytes">{0:0.0} MB</sys:String>
-    <sys:String x:Key="Update.IntegrityDownloaded">SHA-256 {0}…  •  Se verificaron los bytes, el contenido y la versión del paquete firmado.</sys:String>
-    <sys:String x:Key="Update.IntegrityPending">SHA-256 {0}…  •  La identidad del paquete firmado está autorizada; los bytes, el contenido y la versión se comprueban después de la descarga. Los binarios de Windows no tienen firma de código.</sys:String>
+    <sys:String x:Key="Update.IntegrityDownloaded">SHA-256 {0}…  •  Los bytes, el contenido y la versión del paquete coincidieron con los metadatos verificados de la versión.</sys:String>
+    <sys:String x:Key="Update.IntegrityPending">SHA-256 {0}…  •  Los metadatos verificados de la versión autorizan esta identidad de paquete; los bytes, el contenido y la versión se comprueban después de la descarga. Los binarios de Windows no tienen firma de código.</sys:String>
 
     <sys:String x:Key="Main.MetadataTransfer">Exportar o importar datos</sys:String>
     <sys:String x:Key="Main.MetadataTransferHelp">Selecciona plantillas, macros, destinos públicos y ajustes preestablecidos de inicio, o usa la transferencia de metadatos anterior</sys:String>
@@ -944,11 +944,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">Esta copia de SessionDock no contiene notas válidas para la versión instalada.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">NOTAS NO DISPONIBLES</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Las actualizaciones requieren la aplicación instalada</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Esta copia de depuración o portátil no puede sustituirse a sí misma. Instala SessionDock con el ejecutable oficial Setup y vuelve a comprobarlo.</sys:String>
+    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Esta copia se actualiza manualmente</sys:String>
+    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Esta copia de desarrollo o portátil no puede sustituirse a sí misma. Cierra SessionDock, descarga el ZIP portátil oficial desde las versiones de GitHub, extráelo en una carpeta nueva e inicia la copia nueva.</sys:String>
     <sys:String x:Key="Main.UpdatesUnavailableBadge">ACTUALIZACIONES NO DISPONIBLES</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Actualización lista para reiniciar</sys:String>
-    <sys:String x:Key="Main.UpdateVerifyingDetail">Verificando el descriptor firmado de la versión y el paquete descargado antes de reiniciar…</sys:String>
+    <sys:String x:Key="Main.UpdateVerifyingDetail">Verificando los metadatos de la versión y el paquete descargado antes de reiniciar…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">VERIFICANDO ACTUALIZACIÓN</sys:String>
     <sys:String x:Key="Main.UpdateRestartPostponedTitle">Reinicio pospuesto</sys:String>
     <sys:String x:Key="Main.UpdateRestartPostponedDetail">La actualización verificada permanece descargada hasta que elijas instalarla.</sys:String>
@@ -960,7 +960,7 @@
     <sys:String x:Key="Main.UpdateCurrentDetail">La versión {0} es la versión estable más reciente.</sys:String>
     <sys:String x:Key="Main.UpdateCurrentBadge">ACTUALIZADO</sys:String>
     <sys:String x:Key="Main.UpdateNotInstalledTitle">Actualización no instalada</sys:String>
-    <sys:String x:Key="Main.UpdateNotInstalledDetail">La actualización firmada está disponible, pero no se cambiaron archivos.</sys:String>
+    <sys:String x:Key="Main.UpdateNotInstalledDetail">La actualización verificada está disponible, pero no se cambiaron archivos.</sys:String>
     <sys:String x:Key="Main.UpdateCancelledBadge">ACTUALIZACIÓN CANCELADA</sys:String>
     <sys:String x:Key="Main.UpdateDownloadingTitle">Descargando SessionDock {0}</sys:String>
     <sys:String x:Key="Main.UpdateDownloadingDetail">Descargando el paquete verificado desde GitHub… {0}%</sys:String>
@@ -1160,14 +1160,14 @@
     <sys:String x:Key="WebSession.Error.Closed">La sesión web de Roblox ya no está disponible.</sys:String>
 
     <sys:String x:Key="UpdateFailure.Trust.Title">La actualización fue rechazada</sys:String>
-    <sys:String x:Key="UpdateFailure.Trust.Detail">La versión firmada no superó las comprobaciones de confianza de SessionDock y no se instaló. La versión instalada no cambió.</sys:String>
+    <sys:String x:Key="UpdateFailure.Trust.Detail">La actualización no superó las comprobaciones de integridad de la versión de SessionDock y no se instaló. La versión instalada no cambió.</sys:String>
     <sys:String x:Key="UpdateFailure.Busy.Title">Los archivos de actualización están ocupados</sys:String>
-    <sys:String x:Key="UpdateFailure.Busy.Detail">Otra operación de actualización está usando los archivos de actualización de SessionDock. Cierra todas las ventanas y todos los instaladores de SessionDock o Roblox One, espera unos segundos, vuelve a abrir la aplicación e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
+    <sys:String x:Key="UpdateFailure.Busy.Detail">Otra operación de actualización está usando los archivos de actualización de SessionDock. Cierra todas las ventanas de SessionDock o Roblox One, espera unos segundos, vuelve a abrir la aplicación e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
     <sys:String x:Key="UpdateFailure.DownloadRejected.Title">La actualización descargada fue rechazada</sys:String>
-    <sys:String x:Key="UpdateFailure.Checksum.Detail">El paquete descargado no coincidía con el canal de versiones y no se instaló. Inténtalo de nuevo; si vuelve a ocurrir, no cambies ninguno de los dos directorios de datos locales y descarga el Setup actual y su suma de comprobación desde la página oficial de la versión en GitHub.</sys:String>
-    <sys:String x:Key="UpdateFailure.InvalidData.Detail">El paquete descargado no superó las comprobaciones de integridad y no se instaló. Inténtalo de nuevo; si vuelve a ocurrir, no cambies ninguno de los dos directorios de datos locales y descarga el Setup actual y su suma de comprobación desde la página oficial de la versión en GitHub.</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Title">Se requiere Setup</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Detail">Esta copia ya no se reconoce como una aplicación instalada. No cambies los directorios de datos locales de SessionDock y RobloxOne; después ejecuta el Setup verificado actual de SessionDock desde la página oficial de la versión en GitHub. No desinstales ni elimines antes los datos locales.</sys:String>
+    <sys:String x:Key="UpdateFailure.Checksum.Detail">El paquete descargado no coincidía con el canal de versiones y no se instaló. Inténtalo de nuevo. Si vuelve a ocurrir, no cambies ninguno de los dos directorios de datos locales; descarga el ZIP portátil actual y SHA256SUMS.txt desde la página canónica de versiones de GitHub, verifica el ZIP, extráelo en una carpeta nueva y ejecuta esa copia. No sobrescribas ni mezcles su contenido con la carpeta actual.</sys:String>
+    <sys:String x:Key="UpdateFailure.InvalidData.Detail">El paquete descargado no superó las comprobaciones de integridad y no se instaló. Inténtalo de nuevo. Si vuelve a ocurrir, no cambies ninguno de los dos directorios de datos locales; descarga el ZIP portátil actual y SHA256SUMS.txt desde la página canónica de versiones de GitHub, verifica el ZIP, extráelo en una carpeta nueva y ejecuta esa copia. No sobrescribas ni mezcles su contenido con la carpeta actual.</sys:String>
+    <sys:String x:Key="UpdateFailure.PortableRefreshRequired.Title">Se requiere una actualización manual</sys:String>
+    <sys:String x:Key="UpdateFailure.PortableRefreshRequired.Detail">Esta copia ya no se reconoce como una aplicación instalada. No cambies los directorios de datos locales de SessionDock y RobloxOne. Cierra la aplicación, descarga y verifica el ZIP portátil actual desde la página canónica de versiones de GitHub, extráelo en una carpeta nueva y ejecuta esa copia. No desinstales la copia actual ni elimines datos locales.</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Title">GitHub no respondió a tiempo</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Detail">La solicitud de actualización agotó el tiempo de espera. Comprueba la conexión a Internet e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
     <sys:String x:Key="UpdateFailure.Cancelled.Detail">La solicitud de actualización terminó antes de que GitHub respondiera. Comprueba la conexión a Internet e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
@@ -1176,14 +1176,14 @@
     <sys:String x:Key="UpdateFailure.Unreachable.Title">No se pudo contactar con GitHub</sys:String>
     <sys:String x:Key="UpdateFailure.Unreachable.Detail">SessionDock no pudo contactar con el canal oficial de versiones de GitHub. Comprueba la conexión a Internet e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
     <sys:String x:Key="UpdateFailure.AccessDenied.Title">Se denegó el acceso para actualizar</sys:String>
-    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock no pudo escribir sus archivos de actualización. Vuelve a abrirlo con la misma cuenta de Windows que se usó para instalarlo y comprueba si el software de seguridad lo está bloqueando; después, inténtalo de nuevo.</sys:String>
+    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock no pudo escribir sus archivos de actualización. Vuelve a abrirlo con la misma cuenta de Windows que ejecuta esta copia y comprueba si el software de seguridad lo está bloqueando; después, inténtalo de nuevo.</sys:String>
     <sys:String x:Key="UpdateFailure.FilesUnavailable.Title">Los archivos de actualización no están disponibles</sys:String>
-    <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">Un archivo o una carpeta de actualización no está disponible o está bloqueado. Cierra todas las ventanas y todos los instaladores de SessionDock o Roblox One, vuelve a abrir la aplicación e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Title">El actualizador no pudo iniciarse</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows no pudo iniciar el actualizador de SessionDock. Cierra la aplicación, no cambies ninguno de los dos directorios de datos locales y ejecuta el Setup verificado actual de SessionDock desde la página oficial de la versión en GitHub. No desinstales ni elimines antes los datos locales.</sys:String>
+    <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">Un archivo o una carpeta de actualización no está disponible o está bloqueado. Cierra todas las ventanas de SessionDock o Roblox One, vuelve a abrir la aplicación e inténtalo de nuevo. La versión instalada no cambió.</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Title">No se pudo iniciar el actualizador de copias instaladas</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows no pudo iniciar el actualizador antiguo de copias instaladas. No cambies ninguno de los dos directorios de datos locales. Cierra la aplicación, descarga y verifica el ZIP portátil actual desde la página canónica de versiones de GitHub, extráelo en una carpeta nueva y ejecuta esa copia. No desinstales la copia actual ni elimines datos locales.</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Rejected">ACTUALIZACIÓN RECHAZADA</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Busy">ACTUALIZACIÓN EN USO</sys:String>
-    <sys:String x:Key="UpdateFailure.Badge.SetupRequired">SE REQUIERE SETUP</sys:String>
+    <sys:String x:Key="UpdateFailure.Badge.ManualUpdate">ACTUALIZACIÓN MANUAL</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.NetworkTimeout">TIEMPO DE ESPERA DE RED</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.NetworkError">ERROR DE RED</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.AccessDenied">ACCESO DENEGADO</sys:String>
@@ -1297,7 +1297,7 @@
     <sys:String x:Key="SettingsHub.AboutAction">About and diagnostics</sys:String>
     <sys:String x:Key="SettingsHub.ReleaseNotesAction">Release notes</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
-    <sys:String x:Key="SettingsHub.UpdatesDetail">Check the signed release feed and review an update before installing it.</sys:String>
+    <sys:String x:Key="SettingsHub.UpdatesDetail">Consulta el canal de versiones verificado y revisa una actualización antes de instalarla.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>

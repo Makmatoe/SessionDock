@@ -1,19 +1,18 @@
 # SessionDock desktop project
 
 This directory contains the Windows WPF application. Start with the
-[root README](../README.md) for installation and the
+[root README](../README.md) for the future portable download flow and the
 [first-run guide](../docs/GETTING_STARTED.md) for the integrated user workflow.
 
 > HandleScope and ExactWheel are source-tree components of one SessionDock
-> application. Normal users must not run their own installer or PowerShell
+> application. Normal users must not use a separate package or PowerShell
 > execution-policy bypass. The current integrated source is not a release
 > announcement.
 
-> **Distribution hold — 2026-08-04:** there is no approved production
-> installer. Do not use existing release binaries while the unsigned packed
-> v3.0.0 assets and the reported Defender detection are under review. The
-> [canonical release page](https://github.com/Makmatoe/SessionDock/releases) is
-> an audit record, not a current installation recommendation.
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Download nothing while this hold is active.
+> A future reviewed release must explicitly state that it lifts the hold and
+> has passed separate laptop validation before any public download is approved.
 
 ## Run from source
 
@@ -52,7 +51,7 @@ published production package.
    the target returns. Focus loss with an accepted key/button still held must
    reject the recording safely.
 7. Open **Templates**, select **Save current session**, assign layout/macro
-   behavior, and save.
+   behavior, review or edit every slot's resolved destination, and save.
 8. Restart SessionDock and select **Run template**.
 9. Confirm launch and stable window placement finish without starting a macro.
 10. In the compact controller, test `0.25x`, `1x`, and `2x`, then select
@@ -64,9 +63,12 @@ published production package.
 12. Use **Assign macros** to select a client macro and focus one current-batch
     Roblox window. Confirm a new batch discards that runtime-only assignment.
 13. Rename a macro, verify its content ID/hash stay stable, then confirm removal
-    is blocked while referenced and retains the payload when unreferenced.
+    is blocked while referenced. After removing its last reference and saving
+    settings, confirm the exact unshared payload is deleted while a changed or
+    shared payload is retained.
 14. Open **Templates** on Home and edit the saved template. Save the editor and
-    settings, then confirm stable template/slot identifiers survive.
+    settings, then confirm stable template/slot identifiers survive and a
+    per-slot destination can change without recapturing its window position.
 15. Verify 4K/1080p scaling, disconnected-monitor fallback, all-mode physical-
     intervention pause/resume, and controller Stop/close cancellation on real
     devices.
@@ -106,9 +108,10 @@ monitor fallback, and 4K-to-1080p behavior.
 
 Local production packaging is intentionally unavailable. Follow
 [`docs/RELEASING.md`](../docs/RELEASING.md) only after every automated and
-manual gate passes. `SessionDock.ExactWheel/exactwheel-upstream.json` currently
-blocks release pending explicit TinyClicks ownership/licensing and immutable
-provenance; do not publish while that block is present.
+manual gate passes. ExactWheel provenance pins 14 implementation/lock files at
+commit `e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+build definition, and the root MIT license. The release verifier must
+cryptographically confirm that complete identity before publication.
 
 ## Architecture map
 
@@ -149,7 +152,9 @@ provenance; do not publish while that block is present.
   persistence and recovery without auto-deleting macro files.
 - `Services/SessionMacroLibraryPolicy.cs` validates display-name edits and
   blocks catalog removal while any per-client/shared/whole-layout template
-  reference remains. Removal never deletes the content-addressed payload.
+  reference remains. After the outer catalog save, exact unreferenced payload
+  cleanup deletes only bytes that still match the removed definition; shared,
+  changed, or unverifiable files are retained.
 - `TemplateEditorDialog.*` creates or edits a valid template while preserving
   stable identifiers; `SessionAutomationSettingsDialog.*` commits edits;
   `RunTemplateDialog.*` selects templates or backward-compatible batch presets.
@@ -201,7 +206,7 @@ active data below `%LOCALAPPDATA%\SessionDock`, separate from application files.
 | Path | Purpose |
 | --- | --- |
 | `settings.json` and profile directories | Account metadata, named destination assignments, application preferences, and isolated WebView2 browser data |
-| `Templates\catalog.json` | Catalog schema v3: templates, macro definitions, layout preferences, and the persisted controller speed and recording-stop keybind |
+| `Templates\catalog.json` | Catalog schema v3: templates with resolved per-slot destinations, macro definitions, layout preferences, and the persisted controller speed and recording-stop keybind |
 | `Templates\catalog.backup.json` | Last known-good template catalog |
 | `Macros\` | ExactWheel macro payloads; may contain typed key input |
 | `onboarding-state.json` | Completed tutorial version only |
@@ -226,10 +231,11 @@ artifacts.
 The user-facing transfer flow writes a versioned `.sessiondock` ZIP, not a copy
 of the local catalog. Its bounded manifest contains only reviewed templates,
 public destinations, launch presets, and selected macro references. Selecting a
-template closes over its macro dependencies. Macro entries are content-addressed,
-copied as exact bytes, and verified by SHA-256 on import; archive paths,
-duplicates, versions, dependency graphs, and entry/count/size limits must fail
-closed before any catalog mutation.
+template closes over its macro dependencies and any matching eligible named
+destination. Private-server and tracked-server values are omitted and counted.
+Macro entries are content-addressed, copied as exact bytes, and verified by
+SHA-256 on import; archive paths, duplicates, versions, dependency graphs, and
+entry/count/size limits must fail closed before any catalog mutation.
 
 Portable account references use Roblox user IDs only. Never serialize sign-ins,
 cookies, tokens, tickets, usernames, local account keys or paths, private-server
@@ -247,13 +253,14 @@ matched account order, and pinned public favorites. See
 [`docs/PRIVACY.md`](../docs/PRIVACY.md#portable-selected-data-transfer) and
 [`docs/TEMPLATES_AND_MACROS.md`](../docs/TEMPLATES_AND_MACROS.md#portable-package-transfer).
 
-## Integrated install boundary
+## Integrated distribution boundary
 
-When a release containing this source is eventually approved, users install
-only `SessionDock-win-x64-Setup.exe`. HandleScope and ExactWheel must remain
+After a reviewed release explicitly lifts the hold, users download only the
+transparent `SessionDock-win-x64-Portable.zip` from the canonical GitHub
+release and extract it into a new folder. HandleScope and ExactWheel must remain
 inside the reviewed SessionDock inventory. Do not add:
 
-- a HandleScope or ExactWheel sub-installer;
+- a separate HandleScope or ExactWheel package;
 - a PowerShell install or execution-policy bypass step;
 - a service, scheduled task, or sign-in autostart entry;
 - runtime code downloaded from a compatibility catalog; or

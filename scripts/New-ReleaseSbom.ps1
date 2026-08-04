@@ -114,6 +114,7 @@ $exactWheelVerifier = Require-File `
     'ExactWheel release provenance verifier'
 $exactWheelManifest = & $exactWheelVerifier `
     -ManifestPath $exactWheelManifestPath `
+    -StagedManifestOnly `
     -PassThru
 if ($null -eq $exactWheelManifest) {
     throw 'The bundled ExactWheel provenance verifier returned no release identity.'
@@ -195,14 +196,15 @@ $exactWheelPackage = [ordered]@{
     name = 'ExactWheel'
     SPDXID = 'SPDXRef-Package-ExactWheel'
     versionInfo = [string] $exactWheelManifest.componentVersion
-    downloadLocation = 'NOASSERTION'
+    downloadLocation =
+        "https://github.com/Makmatoe/SessionDock/archive/$($exactWheelManifest.sourceCommit).tar.gz"
     filesAnalyzed = $false
     licenseConcluded = 'NOASSERTION'
     licenseDeclared = [string] $exactWheelManifest.license
-    copyrightText = 'NOASSERTION'
-    supplier = 'NOASSERTION'
+    copyrightText = 'Copyright (c) 2026 Makmatoe'
+    supplier = 'Person: Makmatoe'
     sourceInfo =
-        "Contained managed-compatible port anchored to immutable source tag $($exactWheelManifest.sourceTag) at Git commit $($exactWheelManifest.sourceCommit); canonical source manifest SHA-256 $($exactWheelManifest.canonicalManifestSha256)."
+        "Repository-native tagless ExactWheel source pinned to Git commit $($exactWheelManifest.sourceCommit); $($exactWheelManifest.sourceFileCount)-file canonical inventory SHA-256 $($exactWheelManifest.canonicalManifestSha256); build definition $($exactWheelManifest.buildDefinitionPath), $($exactWheelManifest.buildDefinitionBytes) bytes, Git blob $($exactWheelManifest.buildDefinitionGitBlob), SHA-256 $($exactWheelManifest.buildDefinitionSha256); license $($exactWheelManifest.license)."
 }
 $packages.Add($exactWheelPackage)
 

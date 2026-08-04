@@ -342,7 +342,8 @@ public partial class PortableDataDialog : Window
         DestinationEligibilityText.Text = _ineligibleDestinationCount == 0
             ? Localize("Portable.PublicOnlyDestinations")
             : $"{_ineligibleDestinationCount} private or unsupported named " +
-              "destinations are always excluded.";
+              "destinations in this local library are not shown because they " +
+              "cannot be exported.";
 
         var requiresKeyboardAcknowledgement = keyboardMacroIds.Count > 0;
         ExportKeyboardAcknowledgementCheckBox.Visibility =
@@ -388,12 +389,18 @@ public partial class PortableDataDialog : Window
             Localize("Portable.PublicOnlyDestinations"),
             Localize("Portable.ExactMacroBytes")
         };
-        if (_ineligibleDestinationCount > 0 || omittedSlotDestinations > 0)
+        if (_ineligibleDestinationCount > 0)
         {
             lines.Add(
-                $"Omitted from this selection: {_ineligibleDestinationCount} " +
-                "private or unsupported named destinations and " +
-                $"{omittedSlotDestinations} non-public template destinations.");
+                $"Unavailable library-wide: {_ineligibleDestinationCount} " +
+                "private or unsupported named destinations are not offered " +
+                "for portable export.");
+        }
+        if (omittedSlotDestinations > 0)
+        {
+            lines.Add(
+                $"Omitted from selected templates: {omittedSlotDestinations} " +
+                "non-public template destinations.");
         }
         if (keyboardMacroCount > 0)
         {

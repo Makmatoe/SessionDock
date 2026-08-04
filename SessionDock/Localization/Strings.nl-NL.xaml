@@ -35,9 +35,9 @@
     <sys:String x:Key="Main.ReleaseNotesName">Huidige en vorige releaseopmerkingen bekijken</sys:String>
     <sys:String x:Key="Main.ReleaseNotesHelp">Toont wijzigingen in de geïnstalleerde en vorige release</sys:String>
     <sys:String x:Key="Main.ReleaseNotesTooltip">Meegeleverde SessionDock-releaseopmerkingen bekijken</sys:String>
-    <sys:String x:Key="Main.UpdateName">Controleren op ondertekende updates</sys:String>
-    <sys:String x:Key="Main.UpdateTooltip">GitHub controleren op een ondertekende SessionDock-update</sys:String>
-    <sys:String x:Key="Main.UpdateTooltipVersion">Controleren op ondertekende updates (huidig {0})</sys:String>
+    <sys:String x:Key="Main.UpdateName">Controleren op geverifieerde updates</sys:String>
+    <sys:String x:Key="Main.UpdateTooltip">GitHub controleren op een geverifieerde SessionDock-update</sys:String>
+    <sys:String x:Key="Main.UpdateTooltipVersion">Controleren op geverifieerde updates (huidig {0})</sys:String>
     <sys:String x:Key="Main.Local">LOKALE DATA</sys:String>
     <sys:String x:Key="Main.Account">ACCOUNT</sys:String>
     <sys:String x:Key="Main.DragToReorder">Sleep om te ordenen</sys:String>
@@ -499,7 +499,7 @@
     <sys:String x:Key="Handle.RuntimeVersionExact">Exact {0} vereisen</sys:String>
     <sys:String x:Key="Handle.RuntimeVersionExactUnavailable">Opgeslagen exacte versie {0} (niet meer beoordeeld)</sys:String>
     <sys:String x:Key="Handle.RefreshVersions">Beoordeelde versies vernieuwen</sys:String>
-    <sys:String x:Key="Handle.RefreshVersionsName">Controleer GitHub op een nieuwere ondertekende lijst met beoordeelde zelfstandige versies</sys:String>
+    <sys:String x:Key="Handle.RefreshVersionsName">Controleer GitHub op een nieuwere, op integriteit gecontroleerde lijst met beoordeelde zelfstandige versies</sys:String>
     <sys:String x:Key="Handle.BundledVersionLabel">VERSIE VAN INBEGREPEN ONDERDEEL</sys:String>
     <sys:String x:Key="Handle.StandaloneVersionLabel">ZELFSTANDIGE VERSIE</sys:String>
     <sys:String x:Key="Handle.VersionUnknown">Niet gedetecteerd</sys:String>
@@ -628,10 +628,10 @@
     <sys:String x:Key="Prompt.CustomName">Aangepaste naam van experience</sys:String>
 
     <sys:String x:Key="Update.Title">SessionDock-update</sys:String>
-    <sys:String x:Key="Update.Detail">Bekijk de ondertekende releasedetails voordat je installeert.</sys:String>
-    <sys:String x:Key="Update.Verified">ONDERTEKENDE RELEASE GEVERIFIEERD</sys:String>
+    <sys:String x:Key="Update.Detail">Bekijk de geverifieerde releasemetadata voordat je installeert.</sys:String>
+    <sys:String x:Key="Update.Verified">RELEASEMETADATA GEVERIFIEERD</sys:String>
     <sys:String x:Key="Update.ReleaseNotes">RELEASEOPMERKINGEN</sys:String>
-    <sys:String x:Key="Update.NotesName">Ondertekende releaseopmerkingen</sys:String>
+    <sys:String x:Key="Update.NotesName">Beoordeelde releaseopmerkingen</sys:String>
     <sys:String x:Key="Update.LocalData">App-bestanden worden vervangen; lokale accountgegevens blijven buiten de installatiemap.</sys:String>
     <sys:String x:Key="Update.Install">Update installeren</sys:String>
     <sys:String x:Key="Update.InstallName">Op integriteit gecontroleerde update installeren</sys:String>
@@ -639,8 +639,8 @@
     <sys:String x:Key="Update.InstallQuestion">SessionDock {0} installeren?</sys:String>
     <sys:String x:Key="Update.Published">Gepubliceerd {0}</sys:String>
     <sys:String x:Key="Update.SizeMegabytes">{0:0.0} MB</sys:String>
-    <sys:String x:Key="Update.IntegrityDownloaded">SHA-256 {0}…  •  Ondertekende pakketbytes, inhoud en versie geverifieerd.</sys:String>
-    <sys:String x:Key="Update.IntegrityPending">SHA-256 {0}…  •  Identiteit van ondertekend pakket geautoriseerd; bytes, inhoud en versie worden na het downloaden gecontroleerd. Windows-binaire bestanden zijn niet met een codecertificaat ondertekend.</sys:String>
+    <sys:String x:Key="Update.IntegrityDownloaded">SHA-256 {0}…  •  Pakketbytes, inhoud en versie komen overeen met de geverifieerde releasemetadata.</sys:String>
+    <sys:String x:Key="Update.IntegrityPending">SHA-256 {0}…  •  De geverifieerde releasemetadata autoriseert deze pakketidentiteit; bytes, inhoud en versie worden na het downloaden gecontroleerd. Windows-binaire bestanden zijn niet met een codecertificaat ondertekend.</sys:String>
 
     <sys:String x:Key="Main.MetadataTransfer">Gegevens exporteren of importeren</sys:String>
     <sys:String x:Key="Main.MetadataTransferHelp">Selecteer sjablonen, macro’s, openbare bestemmingen en startvoorinstellingen, of gebruik de bestaande metadataoverdracht</sys:String>
@@ -911,14 +911,14 @@
     <sys:String x:Key="WebSession.Error.Closed">De Roblox-websessie is niet meer beschikbaar.</sys:String>
 
     <sys:String x:Key="UpdateFailure.Trust.Title">Update is geweigerd</sys:String>
-    <sys:String x:Key="UpdateFailure.Trust.Detail">De ondertekende release heeft de vertrouwenscontroles van SessionDock niet doorstaan en is niet geïnstalleerd. De geïnstalleerde versie is niet gewijzigd.</sys:String>
+    <sys:String x:Key="UpdateFailure.Trust.Detail">De update heeft de release-integriteitscontroles van SessionDock niet doorstaan en is niet geïnstalleerd. De geïnstalleerde versie is niet gewijzigd.</sys:String>
     <sys:String x:Key="UpdateFailure.Busy.Title">Updatebestanden zijn in gebruik</sys:String>
-    <sys:String x:Key="UpdateFailure.Busy.Detail">Een andere updatebewerking gebruikt de updatebestanden van SessionDock. Sluit alle vensters en installatieprogramma's van SessionDock of Roblox One, wacht enkele seconden, open de app opnieuw en probeer het nogmaals. De geïnstalleerde versie is niet gewijzigd.</sys:String>
+    <sys:String x:Key="UpdateFailure.Busy.Detail">Een andere updatebewerking gebruikt de updatebestanden van SessionDock. Sluit alle vensters van SessionDock of Roblox One, wacht enkele seconden, open de app opnieuw en probeer het nogmaals. De geïnstalleerde versie is niet gewijzigd.</sys:String>
     <sys:String x:Key="UpdateFailure.DownloadRejected.Title">Gedownloade update is geweigerd</sys:String>
-    <sys:String x:Key="UpdateFailure.Checksum.Detail">Het gedownloade pakket kwam niet overeen met de releasefeed en is niet geïnstalleerd. Probeer het opnieuw. Als dit blijft gebeuren, laat beide mappen met lokale gegevens ongewijzigd en download de huidige Setup en controlesom via de officiële GitHub-releasepagina.</sys:String>
-    <sys:String x:Key="UpdateFailure.InvalidData.Detail">Het gedownloade pakket heeft de integriteitscontroles niet doorstaan en is niet geïnstalleerd. Probeer het opnieuw. Als dit blijft gebeuren, laat beide mappen met lokale gegevens ongewijzigd en download de huidige Setup en controlesom via de officiële GitHub-releasepagina.</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Title">Setup is vereist</sys:String>
-    <sys:String x:Key="UpdateFailure.SetupRequired.Detail">Dit exemplaar wordt niet meer herkend als een geïnstalleerde app. Laat de lokale gegevensmappen van SessionDock en Roblox One ongewijzigd en voer vervolgens de huidige, geverifieerde SessionDock Setup uit vanaf de officiële GitHub-releasepagina. Verwijder de app of lokale gegevens niet eerst.</sys:String>
+    <sys:String x:Key="UpdateFailure.Checksum.Detail">Het gedownloade pakket kwam niet overeen met de releasefeed en is niet geïnstalleerd. Probeer het opnieuw. Als dit blijft gebeuren, laat beide mappen met lokale gegevens ongewijzigd, download het huidige draagbare ZIP-bestand en SHA256SUMS.txt via de officiële GitHub Releases-pagina, controleer het ZIP-bestand, pak het uit in een nieuwe map en start dat exemplaar. Overschrijf of vermeng het niet met de huidige map.</sys:String>
+    <sys:String x:Key="UpdateFailure.InvalidData.Detail">Het gedownloade pakket heeft de integriteitscontroles niet doorstaan en is niet geïnstalleerd. Probeer het opnieuw. Als dit blijft gebeuren, laat beide mappen met lokale gegevens ongewijzigd, download het huidige draagbare ZIP-bestand en SHA256SUMS.txt via de officiële GitHub Releases-pagina, controleer het ZIP-bestand, pak het uit in een nieuwe map en start dat exemplaar. Overschrijf of vermeng het niet met de huidige map.</sys:String>
+    <sys:String x:Key="UpdateFailure.PortableRefreshRequired.Title">Handmatige update vereist</sys:String>
+    <sys:String x:Key="UpdateFailure.PortableRefreshRequired.Detail">Dit exemplaar wordt niet meer herkend als een geïnstalleerde app. Laat de lokale gegevensmappen van SessionDock en RobloxOne ongewijzigd. Sluit de app, download en controleer het huidige draagbare ZIP-bestand via de officiële GitHub Releases-pagina, pak het uit in een nieuwe map en start dat exemplaar. Verwijder het huidige exemplaar of lokale gegevens niet.</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Title">GitHub antwoordde niet op tijd</sys:String>
     <sys:String x:Key="UpdateFailure.Timeout.Detail">Er is een time-out opgetreden bij de updateaanvraag. Controleer de internetverbinding en probeer het opnieuw. De geïnstalleerde versie is niet gewijzigd.</sys:String>
     <sys:String x:Key="UpdateFailure.Cancelled.Detail">De updateaanvraag is beëindigd voordat GitHub antwoordde. Controleer de internetverbinding en probeer het opnieuw. De geïnstalleerde versie is niet gewijzigd.</sys:String>
@@ -927,14 +927,14 @@
     <sys:String x:Key="UpdateFailure.Unreachable.Title">GitHub kon niet worden bereikt</sys:String>
     <sys:String x:Key="UpdateFailure.Unreachable.Detail">SessionDock kon geen verbinding maken met de officiële GitHub-releasefeed. Controleer de internetverbinding en probeer het opnieuw. De geïnstalleerde versie is niet gewijzigd.</sys:String>
     <sys:String x:Key="UpdateFailure.AccessDenied.Title">Toegang tot de update is geweigerd</sys:String>
-    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock kon de updatebestanden niet schrijven. Open de app opnieuw als dezelfde Windows-gebruiker die de app heeft geïnstalleerd en controleer of beveiligingssoftware de app blokkeert. Probeer het daarna opnieuw.</sys:String>
+    <sys:String x:Key="UpdateFailure.AccessDenied.Detail">SessionDock kon de updatebestanden niet schrijven. Open de app opnieuw als dezelfde Windows-gebruiker die dit exemplaar uitvoert en controleer of beveiligingssoftware de app blokkeert. Probeer het daarna opnieuw.</sys:String>
     <sys:String x:Key="UpdateFailure.FilesUnavailable.Title">Updatebestanden zijn niet beschikbaar</sys:String>
-    <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">Een updatebestand of -map is niet beschikbaar of vergrendeld. Sluit alle vensters en installatieprogramma's van SessionDock of Roblox One, open de app opnieuw en probeer het nogmaals. De geïnstalleerde versie is niet gewijzigd.</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Title">Updater kon niet starten</sys:String>
-    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows kon de SessionDock-updater niet starten. Sluit de app, laat beide mappen met lokale gegevens ongewijzigd en voer de huidige, geverifieerde SessionDock Setup uit vanaf de officiële GitHub-releasepagina. Verwijder de app of lokale gegevens niet eerst.</sys:String>
+    <sys:String x:Key="UpdateFailure.FilesUnavailable.Detail">Een updatebestand of -map is niet beschikbaar of vergrendeld. Sluit alle vensters van SessionDock of Roblox One, open de app opnieuw en probeer het nogmaals. De geïnstalleerde versie is niet gewijzigd.</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Title">Updater voor geïnstalleerde exemplaren kon niet starten</sys:String>
+    <sys:String x:Key="UpdateFailure.UpdaterStart.Detail">Windows kon de oude updater voor geïnstalleerde exemplaren niet starten. Laat beide mappen met lokale gegevens ongewijzigd. Sluit de app, download en controleer het huidige draagbare ZIP-bestand via de officiële GitHub Releases-pagina, pak het uit in een nieuwe map en start dat exemplaar. Verwijder het huidige exemplaar of lokale gegevens niet.</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Rejected">UPDATE GEWEIGERD</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.Busy">UPDATE IN GEBRUIK</sys:String>
-    <sys:String x:Key="UpdateFailure.Badge.SetupRequired">SETUP VEREIST</sys:String>
+    <sys:String x:Key="UpdateFailure.Badge.ManualUpdate">HANDMATIGE UPDATE</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.NetworkTimeout">NETWERK-TIME-OUT</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.NetworkError">NETWERKFOUT</sys:String>
     <sys:String x:Key="UpdateFailure.Badge.AccessDenied">TOEGANG GEWEIGERD</sys:String>
@@ -1242,11 +1242,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">Dit exemplaar van SessionDock bevat geen geldige opmerkingen voor de geïnstalleerde versie.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">OPMERKINGEN NIET BESCHIKBAAR</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Updates vereisen de geïnstalleerde app</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Dit debug- of draagbare exemplaar kan zichzelf niet vervangen. Installeer SessionDock met het officiële installatieprogramma Setup en controleer daarna opnieuw.</sys:String>
+    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Dit exemplaar wordt handmatig bijgewerkt</sys:String>
+    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Dit ontwikkel- of draagbare exemplaar kan zichzelf niet vervangen. Sluit SessionDock, download het officiële draagbare ZIP-bestand via GitHub Releases, pak het uit in een nieuwe map en start het nieuwe exemplaar.</sys:String>
     <sys:String x:Key="Main.UpdatesUnavailableBadge">UPDATES NIET BESCHIKBAAR</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Update gereed voor herstart</sys:String>
-    <sys:String x:Key="Main.UpdateVerifyingDetail">De ondertekende releasebeschrijving en het gedownloade pakket verifiëren voordat opnieuw wordt gestart…</sys:String>
+    <sys:String x:Key="Main.UpdateVerifyingDetail">De releasemetadata en het gedownloade pakket verifiëren voordat opnieuw wordt gestart…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">UPDATE VERIFIËREN</sys:String>
     <sys:String x:Key="Main.UpdateRestartPostponedTitle">Herstart uitgesteld</sys:String>
     <sys:String x:Key="Main.UpdateRestartPostponedDetail">De geverifieerde update blijft gedownload totdat je ervoor kiest deze te installeren.</sys:String>
@@ -1258,7 +1258,7 @@
     <sys:String x:Key="Main.UpdateCurrentDetail">Versie {0} is de nieuwste stabiele release.</sys:String>
     <sys:String x:Key="Main.UpdateCurrentBadge">BIJGEWERKT</sys:String>
     <sys:String x:Key="Main.UpdateNotInstalledTitle">Update niet geïnstalleerd</sys:String>
-    <sys:String x:Key="Main.UpdateNotInstalledDetail">De ondertekende update is beschikbaar, maar er zijn geen bestanden gewijzigd.</sys:String>
+    <sys:String x:Key="Main.UpdateNotInstalledDetail">De geverifieerde update is beschikbaar, maar er zijn geen bestanden gewijzigd.</sys:String>
     <sys:String x:Key="Main.UpdateCancelledBadge">UPDATE GEANNULEERD</sys:String>
     <sys:String x:Key="Main.UpdateDownloadingTitle">SessionDock {0} downloaden</sys:String>
     <sys:String x:Key="Main.UpdateDownloadingDetail">Het geverifieerde pakket downloaden van GitHub… {0}%</sys:String>
@@ -1292,7 +1292,7 @@
     <sys:String x:Key="SettingsHub.AboutAction">About and diagnostics</sys:String>
     <sys:String x:Key="SettingsHub.ReleaseNotesAction">Release notes</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
-    <sys:String x:Key="SettingsHub.UpdatesDetail">Check the signed release feed and review an update before installing it.</sys:String>
+    <sys:String x:Key="SettingsHub.UpdatesDetail">Controleer de geverifieerde releasefeed en bekijk een update voordat je die installeert.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>

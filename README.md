@@ -11,52 +11,51 @@ clients, arrange their windows, and restore a saved session template.
 
 > **Development status:** the integrated HandleScope, ExactWheel, clickable
 > cascade, and template workflow described here is the current source-tree
-> target. Do not assume the latest published installer contains it unless that
-> installer's release notes explicitly say so. This documentation is not a
-> release announcement.
+> target. It is not a release announcement. Use a published release only when
+> its own notes explicitly include that behavior.
 
-> **Distribution hold — 2026-08-04:** do not download, restore, or run the
-> current public binaries. The immutable v3.0.0 release is unsigned and uses the
-> retired compressed single-file layout; a separately shared development build
-> from that layout received a named Microsoft Defender detection. The exact
-> reported file remains blocked pending Microsoft's determination. There is no
-> currently approved production installer.
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Download nothing while this hold is active.
+> A future reviewed release must explicitly state that it lifts the hold and
+> has passed separate laptop validation before any public download is approved.
 
-## Install one application after the hold is lifted
+## Download and launch after the hold is lifted
 
-For a published build:
+SessionDock is permanently distributed as a transparent, unsigned portable
+ZIP. There is no Setup executable. After a reviewed release explicitly lifts
+the hold:
 
 1. Install Roblox Player on a Windows x64 PC.
-2. Confirm the distribution hold above has been removed in a reviewed commit,
-   then download `SessionDock-win-x64-Setup.exe` only from the canonical
-   [`Makmatoe/SessionDock` release page](https://github.com/Makmatoe/SessionDock/releases).
-3. Confirm the browser address is `github.com/Makmatoe/SessionDock`, then
-   [verify the download checksum](docs/UPDATES.md#verify-a-manual-installer-download).
-4. Run Setup as your normal Windows user. Do not run SessionDock as
-   administrator.
-5. Install **SessionDock only**. An integrated build carries its reviewed
-   HandleScope and ExactWheel component DLLs in the same SessionDock package.
-   Do not install either subcomponent separately for normal use.
-6. Open SessionDock. Complete the first-run tutorial, then add each Roblox
-   account through its own official Roblox sign-in page.
+2. Open only the canonical
+   [`Makmatoe/SessionDock` GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases).
+3. Download `SessionDock-win-x64-Portable.zip` and the matching
+   `SHA256SUMS.txt` from that same release. A Discord message may link to the
+   release page, but never download a SessionDock binary from Discord.
+4. [Verify the ZIP's SHA-256](docs/UPDATES.md#verify-the-portable-zip) without
+   changing PowerShell execution policy.
+5. In File Explorer, select **Extract All** and choose a new folder. Keep the
+   complete extracted folder together.
+6. Run `SessionDock.exe` as your normal Windows user, not as administrator.
+7. Complete the first-launch tutorial, then add each Roblox account through its
+   own official Roblox sign-in page.
 
-Current public releases must have a valid, timestamped Authenticode publisher
-signature. Treat **Unknown publisher**, an invalid signature, a publisher
-mismatch, or a named Defender detection as a hard stop. Verify the exact release
-checksum and signature; never disable Windows Security or add an exclusion.
-If the release page has no matching published asset, use a validated source
-build for development and testing instead of inventing an install path.
+Because SessionDock is unsigned, Windows may show **Unknown publisher** or a
+reputation warning. That is expected of an unsigned app, but it is not a safety
+verdict: proceed through a normal warning only after the hold is explicitly
+lifted, the GitHub source and hash match, and Windows reports no named threat.
+A named detection such as `Trojan:Win32/Wacatac.B!ml` is always a hard stop.
+Checksums and attestations identify bytes; they never override a malware
+detection. Never disable Defender, restore a detected file, add an exclusion,
+remove its download-zone metadata, or weaken device policy to make it run.
 
 The Windows package is intentionally a transparent self-contained folder, not
 a compressed self-extracting single executable. `SessionDock.exe` loads the
 separately inspectable `SessionDock.dll`, `SessionDock.HandleScope.dll`,
 `SessionDock.ExactWheel.dll`, and pinned runtime files beside it. Keep the
-complete extracted folder together. When transferring a test build, ZIP that
-complete folder; never upload or run a bare `SessionDock.exe` or component DLL.
-This makes every component individually scannable. Signing does not promise
-that reputation- or ML-based detection can never occur; a positive result still
-blocks use and release pending investigation. If Windows reports a named
-malware detection such as
+complete extracted folder together; never run a bare `SessionDock.exe` or
+component DLL. This makes every component individually scannable. A positive
+result still blocks use and release pending investigation. If Windows reports
+a named malware detection such as
 `Trojan:Win32/Wacatac.B!ml`, do not run or restore the file; follow the
 [Defender detection response](docs/DEFENDER_DETECTION_RESPONSE.md).
 
@@ -103,15 +102,17 @@ Use this recovery order:
 
 1. Delete the incomplete download; do not keep retrying an old standalone ZIP
    or script.
-2. Download the SessionDock installer again from the canonical release page.
-3. Verify its SHA-256 against the matching published checksum.
+2. Check the canonical release notes. Download nothing while the distribution
+   hold is active.
+3. After an approved release explicitly lifts the hold, download only its
+   portable ZIP from GitHub Releases and verify its SHA-256.
 4. Open **Windows Security > Virus & threat protection > Protection history**
    and read the exact event, if one exists.
 5. On a managed laptop, ask the administrator to review the canonical URL,
    hash, and policy. Do not disable antivirus, SmartScreen, execution policy,
    or application control.
-6. If the integrated build is not yet published, test the validated source
-   build; do not substitute a separate HandleScope installation.
+6. If no reviewed release has lifted the hold, do not invent an alternate
+   download path or substitute a separate HandleScope package.
 
 ## First run
 
@@ -202,8 +203,8 @@ explicit click on an exposed patch focuses only that selected client.
    cycle, then select **Stop** before assigning it to a template.
 
 Client recording starts only for the verified foreground target. ExactWheel
-records bounded mouse and keyboard events; it does not need a separate TinyClicks
-or ExactWheel installation. Never record a password, authentication code,
+records bounded mouse and keyboard events; it does not need a separate macro
+application or ExactWheel installation. Never record a password, authentication code,
 payment, private chat, or other secret. A macro file contains your input timing
 and may contain typed keys, so treat it as private data.
 For an individual-client recording, input is captured only while its exact
@@ -218,8 +219,11 @@ available from Settings.
 **Rename** changes only the display name; the stable content ID, hash, type,
 assignments, and payload stay unchanged. **Remove** is blocked while any
 template references the macro. Removing an unreferenced entry requires
-confirmation and removes catalog metadata only; the immutable local recording
-file remains until deliberately reviewed outside the library.
+confirmation and first changes only the catalog draft. After **Save settings**
+commits that removal, SessionDock verifies and deletes the exact
+content-addressed payload only when no remaining macro definition uses it. A
+shared, changed, locked, or unverifiable payload is retained and cleanup failure
+does not undo the saved catalog.
 
 ### 3. Save the current session as a template
 
@@ -227,9 +231,13 @@ file remains until deliberately reviewed outside the library.
    off-screen windows cannot be captured as saved positions.
 2. On Home, open **Templates**, then select **Save current session**.
 3. Enter a name and review the launch delay.
-4. Choose **Saved positions** to keep each monitor-relative window position, or
+4. Review the resolved destination shown for every account slot. A template
+   stores these per-slot values so it can reproduce the intended launches even
+   if the named-destination library later changes. Edit a slot before saving
+   when this session should launch somewhere else.
+5. Choose **Saved positions** to keep each monitor-relative window position, or
    **Clickable cascade** to rebuild the staircase dynamically when run.
-5. Choose a macro mode:
+6. Choose a macro mode:
 
    - **No macro**: launch and arrange only.
    - **Per client**: assign a different macro to each client; leave any client
@@ -244,13 +252,14 @@ file remains until deliberately reviewed outside the library.
    conditions recover. Replacing the batch or closing SessionDock cancels the
    loop.
 
-6. Select **Save template**. Existing batch presets remain available as legacy
+7. Select **Save template**. Existing batch presets remain available as legacy
    launch-only choices; they are not silently rewritten.
 
 ### 4. Run a template
 
 1. Select **Run template**.
-2. Choose the template and review its account, layout, macro, and delay summary.
+2. Choose the template and review every account's saved destination plus the
+   layout, macro, and delay summary.
 3. Resolve any missing account before continuing.
 4. Start the run. SessionDock verifies accounts, launches them in order,
    then restores saved positions or creates the cascade.
@@ -285,7 +294,8 @@ processes and windows in the current launched batch. Starting another
 successful batch or closing SessionDock replaces them. To make a change
 permanent, open **Templates** on Home, select one template, choose **Edit**, then
 save the editor and **Save settings**. Editing preserves stable template,
-slot, account, and valid macro identifiers.
+slot, account, and valid macro identifiers. The editor can change each slot's
+destination without recapturing its saved window position.
 
 Legacy batch presets remain labeled launch-only choices. Catalog versions 1
 and 2 are read conservatively and upgraded to version 3 on the next explicit
@@ -322,10 +332,12 @@ silently clamped.
 
 Open **Export or import data** to choose templates, macros, public destinations,
 and launch presets for a versioned `.sessiondock` ZIP. Template selections bring
-their required macro dependencies into the review automatically. Macro files
-are copied byte for byte and checked by SHA-256; an import validates archive
-version, paths, hashes, dependencies, and bounded entry/count/size limits before
-it offers a confirmation.
+their required macro dependencies and any matching eligible named-destination
+dependencies into the review automatically. Private-server and tracked-server
+values are omitted and counted instead of being exported. Macro files are
+copied byte for byte and checked by SHA-256; an import validates archive version,
+paths, hashes, dependencies, and bounded entry/count/size limits before it
+offers a confirmation.
 
 The package uses Roblox user IDs only to match accounts already present on the
 destination device. It excludes sign-ins, cookies, tokens, authentication
@@ -387,13 +399,13 @@ under `%LOCALAPPDATA%\SessionDock` for the current Windows user:
 
 Catalog writes are bounded and atomic. Macro files are not automatically
 deleted merely because a template stops referencing them. Review them before
-manual deletion. Uninstalling SessionDock does not automatically erase this
-directory; remove it only when you intentionally want to delete all local
-SessionDock data for that Windows user.
+manual deletion. Deleting the portable application folder does not
+automatically erase this directory; remove it only when you intentionally want
+to delete all local SessionDock data for that Windows user.
 
 ## HandleScope: included by default, standalone only by choice
 
-Normal use needs no HandleScope download or installer:
+Normal use needs no separate HandleScope download or installation:
 
 1. Open **Integrations > HandleScope integration**.
 2. Keep **Included with SessionDock (recommended)** selected.
@@ -412,16 +424,15 @@ requirements only; SessionDock does not download, install, start, stop, update,
 downgrade, or uninstall that copy. Read the
 [technical connector guide](SessionDock/SystemProcesses/README.md#handlescope-connector).
 
-## Update and uninstall
+## Update and remove
 
-For a published Setup build:
+Portable copies update manually: download the new portable ZIP from the
+canonical GitHub release, verify it, and extract it into a new folder. Do not
+overwrite a running folder. Existing copies installed by an older supported
+release may continue to consume the verified full NUPKG and update feed through
+SessionDock's in-app update control; a NUPKG is not a file users open manually.
 
-1. Use SessionDock's update control.
-2. Review the version and signed release notes.
-3. Confirm only after the package filename, size, hash, version, identity, and
-   content allowlist pass verification.
-
-To uninstall safely:
+To remove a portable copy safely:
 
 1. Disable **Open with SessionDock** if you want its owned link-handler entries
    removed.
@@ -429,7 +440,7 @@ To uninstall safely:
    SessionDock exits; an advanced standalone copy is left untouched.
 3. Delete an account inside SessionDock first only when you want its browser
    profile removed.
-4. Close SessionDock and use **Windows Settings > Apps > Installed apps**.
+4. Close SessionDock, then delete the extracted application folder.
 5. Keep or deliberately remove `%LOCALAPPDATA%\SessionDock` as described above.
 
 Users moving from Roblox One or SessionDock 2.3.0 and earlier must follow the
@@ -469,11 +480,13 @@ Before any release decision, require the complete gate and manually test:
 16. a clean machine that has never installed standalone HandleScope or
     ExactWheel.
 
-Development output is not a published release. The ExactWheel provenance file
-currently records a release block pending explicit upstream ownership and
-licensing; do not publish an integrated binary while that block remains. Follow
+Development output is not a published release. ExactWheel provenance pins 14
+implementation/lock files at commit
+`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+build definition, and the root MIT license. Follow
 [Releasing](docs/RELEASING.md) only after code, security, provenance,
-accessibility, documentation, and end-to-end tests all pass.
+accessibility, documentation, and end-to-end tests all pass; none of those
+gates overrides the live distribution hold.
 
 ## More documentation
 
@@ -490,6 +503,5 @@ is an immutable historical snapshot. It does not show the current source-tree
 Home, cascade, macro, or template workflow.
 
 The repository contains [`LICENSE.md`](LICENSE.md), component provenance, and
-third-party notices for maintainers to review. This README does not assert that
-an unpublished integrated build has been released or that unresolved component
-licensing has been cleared.
+third-party notices for maintainers to review. That evidence does not by itself
+approve or announce an unpublished integrated release.

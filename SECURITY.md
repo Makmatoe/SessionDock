@@ -2,22 +2,25 @@
 
 ## Supported versions
 
-There is currently no supported production binary. Distribution is on hold as
-of 2026-08-04: the immutable v3.0.0 assets are unsigned and use the retired
-compressed single-file layout. A separately shared development build with that
-layout received `Trojan:Win32/Wacatac.B!ml`; the reported bytes remain blocked
-pending Microsoft's determination. Do not download, restore, allow, or run any
-existing release asset. Development builds and older releases are unsupported.
+There is currently no supported production binary.
 
-Support resumes only when a later release from the canonical
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Download nothing while this hold is active.
+> A future reviewed release must explicitly state that it lifts the hold and
+> has passed separate laptop validation before any public download is approved.
+
+Development builds and older releases are unsupported. Support resumes only
+when a later release from the canonical
 [SessionDock repository](https://github.com/Makmatoe/SessionDock/releases)
-passes every source-provenance, transparent-inventory, trusted Authenticode,
-Defender-response, staging, and public re-download gate documented below.
+passes every source-provenance, transparent-inventory, Defender-response,
+staging, laptop-validation, and public re-download gate documented below.
 
 The integrated HandleScope/ExactWheel/template source documented in this tree
 is not a production release unless it appears in the canonical release feed and
-passes every provenance gate. ExactWheel is currently release-blocked pending
-explicit TinyClicks ownership/licensing and immutable provenance.
+passes every provenance gate. ExactWheel provenance pins 14
+implementation/lock files at commit
+`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+build definition, and the root MIT license. Any drift blocks release.
 
 ## Reporting a vulnerability
 
@@ -91,7 +94,7 @@ SessionDock is designed around these boundaries:
   and Microsoft has returned a clean determination; a matching hash alone does
   not make the file safe.
 - ExactWheel is compiled as a SessionDock component, not installed as a
-  separate TinyClicks toolbar/application. Client recording requires a verified
+  separate toolbar or macro application. Client recording requires a verified
   foreground target and bounded capture. Default playback refuses unrelated
   held physical input and stops on physical intervention, target loss,
   dangerous lateness, invalid timing, timer/injection failure, or cancellation.
@@ -126,13 +129,21 @@ SessionDock is designed around these boundaries:
   `roblox-singleton-event-v1` policy.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
   data, not portable release content. This includes isolated profiles,
-  templates, macro payloads, catalog backups, and onboarding state.
-- Safe metadata transfer uses a small versioned allowlist and bounded strict
-  JSON parser. Export shows the exact file first and excludes authentication,
-  local account keys/paths, destinations, private-server material, JobIds, and
-  integration data. Import requires a reviewed confirmation, matches only
-  existing accounts by Roblox user ID, and commits as one rollback-protected
-  settings mutation; a transfer file can never create a signed-in profile.
+  templates and their resolved per-slot destinations, macro payloads, catalog
+  backups, and onboarding state.
+- The legacy metadata JSON transfer uses a small versioned allowlist and bounded
+  strict parser. It carries account appearance, matched order, and eligible
+  pinned public favorites while excluding authentication, local account
+  keys/paths, raw launch destinations, private-server material, JobIds, and
+  integration data.
+- The richer versioned `.sessiondock` ZIP exports only explicitly reviewed
+  templates, exact macro payloads, public place destinations, and launch
+  presets. Selecting a template closes over its macro dependencies and matching
+  eligible named-destination dependencies. Private-server and tracked-server
+  destinations are omitted and counted. Import verifies paths, hashes,
+  dependencies, and bounds, matches only existing accounts by Roblox user ID,
+  and requires review before a rollback-protected mutation; neither transfer
+  format can create a signed-in profile.
 - The optional Windows link handler is disabled until the user explicitly
   enables its per-user `HKCU\Software\Classes` registration. SessionDock owns
   reserved ProgID/protocol keys and will neither overwrite nor remove a foreign
@@ -151,38 +162,58 @@ secret leakage, or unsafe local-API behavior.
 
 ## Authentic releases
 
-Use only assets attached to releases in
-`https://github.com/Makmatoe/SessionDock`. A production release is expected to
-include a signed release descriptor, Velopack package metadata, an SPDX SBOM,
-complete dependency notices, checksums covering every other asset, and a GitHub
-artifact attestation. The release verifier rejects unexpected package files and
-requires exact byte equality for the application files carried by the NUPKG and
-portable ZIP. Integrated HandleScope and ExactWheel code must be the reviewed
-`SessionDock.HandleScope.dll` and `SessionDock.ExactWheel.dll` files in that
-same package; an unexpected component executable, installer, script, source
-directory, toolbar, or additional component payload is a release-verification
-failure. The verifier also rejects reparse points and unexpected executables or
-scripts, validates the pinned dependency/runtime manifest, and requires a valid
-Microsoft signature on every expected runtime PE outside the exact six-file
-SessionDock publisher-signing set. It must check both component
-manifests, immutable provenance, reviewed licensing/notices, SBOM entries, macro
-format, and every explicit release-block field. The current ExactWheel block
-must be cleared through reviewed evidence before publication; this policy does
-not claim that it is cleared.
+Use only assets attached to the canonical
+[`Makmatoe/SessionDock` GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases).
+A Discord post may link to that page, but a SessionDock binary obtained from
+Discord is not an approved release asset. While the distribution hold above is
+active, no download is approved.
 
-Public releases require Authenticode on the exact first-party application PE
-set and final Setup. The reviewer-gated workflow uses GitHub OIDC with an
-externally provisioned Azure Artifact Signing Public Trust profile; no signing
-private key, PFX, self-signed fallback, or certificate password belongs in this
-repository. It signs application files before Velopack and Setup after packaging
-with SHA-256 and an RFC 3161 SHA-256 timestamp. The release fails unless every
-configured file reports `Valid`, the exact configured publisher subject,
-code-signing EKU, a timestamping certificate, and trusted chains. The same
-checks run after draft, approval, and public re-downloads. Missing signing
-configuration, an unsigned asset, a publisher mismatch, any signature/chain
-failure, or any positive malware detection blocks publication; there is no
-bypass or unsigned public-release path. Checksums, the signed update descriptor,
-SBOM, and attestations remain independent complementary controls.
+SessionDock's permanent public format is a transparent, unsigned portable ZIP;
+there is no Setup executable or application Authenticode stage. A release also
+publishes the verified full NUPKG and feed for existing installed copies, a
+signed release descriptor and HandleScope catalog, `SHA256SUMS.txt`, an SPDX
+SBOM, dependency notices inside the verified application inventories, GitHub
+artifact attestations, and release notes in the GitHub release body. Optional
+reviewed Discord images travel only in the separate announcement artifact; they
+are not GitHub release assets. Portable copies update manually by downloading
+and extracting a new verified ZIP into a new folder. Users do not open the
+NUPKG manually.
+
+The transparent portable ZIP contains exactly these six unsigned application
+PEs:
+
+- `SessionDock.exe`;
+- `SessionDock.dll`;
+- `SessionDock.HandleScope.dll`;
+- `SessionDock.ExactWheel.dll`;
+- `SessionDock.ReleaseTrust.dll`; and
+- `Velopack.dll`.
+
+The update-only full NUPKG additionally contains exactly two unsigned Velopack
+1.2.0 package helpers: `SessionDock_ExecutionStub.exe` and `Squirrel.exe`.
+They are not present in the portable ZIP, and users never download or open the
+NUPKG manually. Verification pins `Squirrel.exe` exactly and pins the generated
+execution stub's Velopack vendor code sections and version.
+
+Every expected runtime PE outside those six application PEs and two recognized
+NUPKG-only helpers must have a valid Microsoft signature. The verifier rejects
+any unexpected executable, installation script, reparse point, package file,
+component payload, or mismatch between the portable ZIP and the NUPKG's shared
+application inventory. Integrated HandleScope and ExactWheel remain reviewed
+DLLs inside that inventory, never separate downloads.
+
+Because the application PEs are unsigned, Windows may show **Unknown
+publisher** or a reputation warning. That is not the same as a named malware
+detection. A named Defender result is always a hard stop: do not run, restore,
+allow, exclude, unblock, or otherwise bypass it. A matching checksum, signed
+descriptor, SBOM, attestation, or source provenance identifies the bytes but
+never overrides the detection. Publication remains blocked until the exact
+bytes are investigated and the complete release gate and separate laptop test
+pass without remediation.
+
+ExactWheel provenance pins 14 implementation/lock files at commit
+`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+build definition, and the root MIT license.
 
 Roblox executable verification requests whole-chain Windows revocation checking
 with online retrieval and root exclusion only. Revoked, offline, unknown,

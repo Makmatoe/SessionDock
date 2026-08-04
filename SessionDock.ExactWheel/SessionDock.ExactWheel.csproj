@@ -23,7 +23,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="exactwheel-upstream.json"
-                      LogicalName="SessionDock.ExactWheel.Upstream.json" />
+    <EmbeddedResource Include="exactwheel-provenance.json"
+                      LogicalName="SessionDock.ExactWheel.Provenance.json" />
   </ItemGroup>
 </Project>

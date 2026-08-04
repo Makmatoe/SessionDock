@@ -1,286 +1,188 @@
-# Updates for regular users
+# Downloads and updates for regular users
 
-SessionDock uses a manual, one-click updater built with Velopack and backed by
-the canonical project's GitHub Releases. Updates are not silently installed.
+SessionDock's Windows distribution is permanently unsigned and portable-only.
+New users download one transparent ZIP from the canonical GitHub release. There
+is no SessionDock setup executable and no separate HandleScope or ExactWheel
+download.
 
-> The integrated HandleScope/ExactWheel/template source is not a published
-> release merely because it is documented here. A published build contains that
-> workflow only when its own release notes say so.
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. No SessionDock download is approved while
+> this hold is active. The flow below applies only after a reviewed replacement
+> explicitly lifts the hold and passes separate laptop validation before
+> publication.
 
-> **Distribution hold — 2026-08-04:** there is no approved production
-> installer or updater target. Do not download or run existing release assets.
-> The immutable v3.0.0 binaries are unsigned and use the retired packed layout;
-> the separately shared detected development build remains blocked pending
-> Microsoft's determination.
+## First download
 
-## First-time installation
+After a reviewed release explicitly lifts the hold:
 
-Wait until a reviewed commit and release explicitly remove the distribution
-hold above. Then open the canonical
-[SessionDock release page](https://github.com/Makmatoe/SessionDock/releases),
-select the release identified by the current documentation, and download its
-`SessionDock-win-x64-Setup.exe`. Do not use a Discord attachment or a bare
-executable copied from another machine.
+1. Open the canonical
+   [SessionDock Releases page](https://github.com/Makmatoe/SessionDock/releases).
+2. Open the release you intend to use and read its notes. Confirm it lists the
+   transparent portable layout.
+3. Download `SessionDock-win-x64-Portable.zip`. Never download a SessionDock
+   binary attached to Discord, email, chat, or a file-sharing mirror. A Discord
+   announcement may link to GitHub; it must not carry the binary.
+4. Download `SHA256SUMS.txt` from that same release and verify the ZIP before
+   extracting it. The verification steps below do not run a script or require
+   a PowerShell execution-policy change.
+5. In File Explorer, right-click the ZIP, select **Extract All**, and choose a
+   new folder. Do not start the application from inside the ZIP and do not mix
+   files from different versions.
+6. Open the new folder and run `SessionDock.exe` as your normal Windows user,
+   not as administrator.
+7. Complete the highlighted first-launch **Get Started** tutorial. It begins
+   with **Manage accounts** and **Destinations**, then covers launching,
+   macros, templates, and the controller. The Advanced tutorial is available
+   afterward from Settings.
 
-Confirm the download came from `github.com/Makmatoe/SessionDock`. A current
-public SessionDock release must have a valid Authenticode publisher signature
-and timestamp; **Unknown publisher** is a verification failure, not an expected
-installation step. Before opening Setup, follow
-[Verify a manual installer download](#verify-a-manual-installer-download).
+Keep the complete extracted folder together. `SessionDock.exe` loads the
+separately inspectable application, HandleScope, ExactWheel, update-trust, and
+runtime DLLs beside it.
 
-When a published build lists the integrated workflow, its reviewed HandleScope
-component and ExactWheel engine are part of SessionDock. Do not download a
-HandleScope ZIP, install TinyClicks/ExactWheel separately, run a PowerShell
-installer, approve UAC, or configure a scheduled task/autostart entry for normal
-SessionDock use.
+## Verify the portable ZIP
 
-If the browser reports **Virus scan failed**, delete the incomplete download,
-check Windows Security protection history, download again from the canonical
-release, and verify SHA-256. The message means the download scan did not finish;
-it is not a positive malware finding or proof of safety. Do not disable security
-software or policy. A managed-laptop administrator should review the canonical
-URL and hash.
+The release page and both downloaded files must be from
+`github.com/Makmatoe/SessionDock`. In Command Prompt, run:
 
-If Defender reports a named threat such as `Trojan:Win32/Wacatac.B!ml`, do not
-run or restore the file. Leave it quarantined and follow the
-[Defender detection response](DEFENDER_DETECTION_RESPONSE.md). This is a
-positive detection and blocks the artifact; do not call it a false positive
-without Microsoft's determination.
+```text
+certutil -hashfile SessionDock-win-x64-Portable.zip SHA256
+```
 
-If an old HandleScope script reports **running scripts is disabled**, Windows
-PowerShell blocked the script under execution policy before it ran. Do not add
-`-ExecutionPolicy Bypass`: the integrated build does not use that script at all.
+Compare the complete 64-character result with the line for
+`SessionDock-win-x64-Portable.zip` in `SHA256SUMS.txt`. The filename and hash
+must both match exactly. This command is built into Windows and does not change
+PowerShell execution policy.
 
-## Normal update flow
+If GitHub CLI is already installed, the release's GitHub artifact attestation
+can be checked independently:
 
-1. Select the top-right update button in SessionDock.
-2. The app contacts only the canonical SessionDock
-   GitHub release feed.
-3. If a newer stable version exists, review its version and signed release
-   notes.
-4. Confirm installation. Cancelling leaves the current version unchanged.
-5. SessionDock downloads the authorized package, checks its signed SHA-256,
-   exact contents, and version, closes, and asks Velopack to replace and reopen
-   the application.
+```text
+gh attestation verify SessionDock-win-x64-Portable.zip --repo Makmatoe/SessionDock
+```
 
-If a verified package was downloaded during an earlier attempt, the update
-button asks whether to restart and install that pending version.
+A checksum proves only that the bytes match the release manifest. An
+attestation proves the recorded GitHub build identity. Neither proves that a
+file is harmless, and neither overrides a named malware detection.
 
-The installer-based production build is the recommended updateable edition.
-Source, debug, and raw `dotnet publish` builds do not become trusted production
-installations and cannot use the production self-update path.
+SessionDock has no Authenticode publisher signature. Windows may therefore show
+**Unknown publisher** or an unrecognized-app SmartScreen prompt. That reputation
+warning is different from a named antivirus finding. After the canonical source
+and hash have been verified, and only when Windows Security reports no named
+threat, a user may continue through the normal Windows prompt. Never disable
+Defender, add an exclusion, restore a quarantined file, remove Internet-zone
+metadata, or weaken a managed-device policy to force SessionDock to run.
 
-## Moving to a build with integrated components
+If Microsoft Defender names a threat such as
+`Trojan:Win32/Wacatac.B!ml`, stop. Leave the file quarantined and follow the
+[Defender detection response](DEFENDER_DETECTION_RESPONSE.md). A matching hash,
+clean result on another PC, GitHub attestation, or **Unknown publisher** prompt
+does not cancel that verdict.
 
-Use the same SessionDock update button or the same direct
-`SessionDock-win-x64-Setup.exe` filename. The portable filename remains
-`SessionDock-win-x64-Portable.zip`, and the full Velopack package remains
-`SessionDockApp-<version>-win-x64-sessiondock-full.nupkg`. There is no companion
-HandleScope or ExactWheel download.
+## How updates work
 
-When such a build is approved and published, the verified SessionDock package
-replaces the complete transparent application inventory, including its reviewed
-`SessionDock.HandleScope.dll` and `SessionDock.ExactWheel.dll` components. Existing
-`%LOCALAPPDATA%\SessionDock\handlescope.json` opt-ins remain compatible. A fresh
-setup selects **Included with SessionDock (recommended)**. On upgrade, an old
-Keep installed/Exact preference or an enabled Automatic configuration with a
-currently verified standalone API is migrated to **Standalone HandleScope
-(advanced)**; otherwise included is selected. This migration records a source
-choice only and never changes the external installation. Users can still choose
-Automatic, Keep installed, or an exact signed-catalog-reviewed compatible
-standalone version independently from Automatic, `v2`, or `v1` API negotiation.
-A stale exact pin remains visible and can be changed in the panel; doing so never
-downloads, installs, updates, or downgrades the standalone application.
-The standalone-only **Refresh reviewed versions** action explicitly fetches and
-verifies the latest signed compatibility catalog while preserving the current
-selection. It retrieves no package; opening the panel performs no network check.
+Update behavior depends on how the existing copy was obtained:
 
-An independently installed standalone HandleScope is left exactly as it is.
-SessionDock does not remove, update, downgrade, start, stop, reconfigure, or
-uninstall its files, process, scheduled task, or preferences. Choose
-**Standalone HandleScope (advanced)** only when you intentionally continue to
-operate that external application.
+- **Existing installed copies:** older SessionDock installations that already
+  have the Velopack update machinery may continue to consume the verified full
+  NUPKG and release feed through SessionDock's in-app update control. Review the
+  release notes and confirm the update only after SessionDock verifies the
+  descriptor, package hash, version, and package inventory.
+- **Portable copies:** portable SessionDock does not update itself. Close it,
+  download the new portable ZIP from GitHub Releases, verify it, extract it to
+  a new folder, and run the new folder's `SessionDock.exe`. After testing the
+  new copy, the old application folder can be deleted.
+
+Do not manually download or open the NUPKG. It exists for already-installed
+copies and the update feed, not as a beginner installation format. Do not copy
+new binaries over an old portable directory: using a new folder prevents stale
+or mixed-version files.
+
+SessionDock user data lives under `%LOCALAPPDATA%\SessionDock`, outside the
+portable application folder. A normal update or replacement of the portable
+folder does not erase saved accounts, isolated browser profiles, destinations,
+templates, layouts, macros, sounds, or tutorial state.
 
 ## Moving from Roblox One or SessionDock 2.3.0 and earlier
 
-Do not run the 2.1.5 or 2.3.0 Setup over an existing Roblox One installation as
-an upgrade or repair. Those installers retain the historic Velopack package ID
-`RobloxOne`, which can cause Setup to replace `%LOCALAPPDATA%\RobloxOne`. Older
-Roblox One versions also stored account settings and browser profiles in that
-same directory, so Setup can remove the data before the newer application gets
-a chance to migrate it.
+Do not run an old Roblox One or SessionDock Setup as an upgrade or repair. Those
+historic installers can share the `RobloxOne` package identity with the same
+directory that older builds used for account settings and browser profiles.
+Preserve the old data until the current portable copy proves migration is
+complete.
 
-Roblox One 2.1.4 and earlier also cannot use their update button after the
-repository rename. GitHub redirects `Makmatoe/RobloxOne` to
-`Makmatoe/SessionDock`, and the older fail-closed updater reports that the
-release manifest was redirected to an untrusted address. Retrying does not
-repair that binary.
-
-SessionDock 2.3.1 uses the corrective package ID `SessionDockApp`. Its Setup is
-installed side-by-side and does not use either `%LOCALAPPDATA%\RobloxOne` or
-`%LOCALAPPDATA%\SessionDock` as its application directory. Use this corrective
-path for every installed version through 2.3.0:
+After a reviewed release explicitly lifts the distribution hold:
 
 1. Close every Roblox One and SessionDock window. Do not uninstall either app
-   and do not delete either local-data directory.
-2. After the distribution hold is lifted, use the canonical release page and
-   download Setup plus `SHA256SUMS.txt` from the same approved release.
-3. Verify the Setup with the checksum procedure below.
-4. Run the verified Setup as the same standard Windows user. On first launch,
+   and do not delete `%LOCALAPPDATA%\RobloxOne`,
+   `%LOCALAPPDATA%\SessionDock`, or a sibling `RobloxOne.<random>` rollback
+   directory.
+2. Download and verify the new `SessionDock-win-x64-Portable.zip`, then extract
+   it into a new folder. Do not overwrite or launch through an old installed
+   application directory.
+3. Run the new folder's `SessionDock.exe` as the same standard Windows user.
    SessionDock copies only recognized settings, browser profiles, sounds, and
-   local integration configuration into `%LOCALAPPDATA%\SessionDock`. It does
-   not move or delete the old `%LOCALAPPDATA%\RobloxOne` tree, and it never
-   copies installer files such as `current`, `packages`, or `Update.exe`.
-5. Confirm every expected account slot and sign-in. Automatic orphan-profile
-   cleanup remains paused after legacy profiles are copied so validation cannot
-   erase an unrecognized recovered session.
-6. Keep the old installation and its data until that validation is complete
-   **and SessionDock shows no unfinished-migration or conflicting-data warning**.
-   Seeing accounts while such a warning remains can mean SessionDock is still
-   using the preserved legacy copy. Only after both checks pass may the old app
-   be removed.
+   local integration configuration into `%LOCALAPPDATA%\SessionDock`. It leaves
+   the source tree unchanged and does not copy installer/package files.
+4. Confirm every expected account, local label, destination, and sign-in. Keep
+   both old data trees while SessionDock reports an unfinished migration,
+   conflicting data, or a paused-cleanup warning.
+5. Only after every expected account and sign-in is present and no migration
+   warning remains may you close SessionDock and remove
+   `%LOCALAPPDATA%\SessionDock\profile-cleanup-paused.txt` to re-enable bounded
+   orphan-profile cleanup. Do not remove `settings.json`,
+   `settings.backup.json`, or `Profiles` as part of this step.
+6. Keep the old application and data long enough to validate another launch.
+   Remove them only when you deliberately no longer need recovery.
 
-After every expected account and sign-in has been confirmed, close SessionDock
-and remove only `%LOCALAPPDATA%\SessionDock\profile-cleanup-paused.txt` to
-re-enable automatic orphan-profile cleanup. Do not remove that marker while an
-account is missing, and do not delete `settings.json`, `settings.backup.json`,
-or the `Profiles` directory as part of this step.
+If an account or sign-in is missing, stop. Do not add/remove accounts or change
+either data tree while recovery is assessed. Preserve any
+`RobloxOne.<random>` sibling because it may contain a useful Velopack rollback
+copy. SessionDock does not automatically trust or merge those siblings.
 
-If an account or sign-in is missing, stop using the app, keep
-`%LOCALAPPDATA%\RobloxOne` and `%LOCALAPPDATA%\SessionDock` unchanged, and do
-not add or remove accounts while recovery is being assessed. Also preserve any
-sibling directory named `RobloxOne.<random characters>`; it may be a Velopack
-rollback copy. SessionDock does not automatically trust or merge such siblings,
-but one can be valuable during supervised recovery.
+## What a release contains and verifies
 
-## Verify a manual installer download
+The public release contract includes:
 
-Download both `SessionDock-win-x64-Setup.exe` and `SHA256SUMS.txt` from
-the same entry on the canonical
-[GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases). For the
-latest release, the checksum file is also available through its stable
-[direct download link](https://github.com/Makmatoe/SessionDock/releases/latest/download/SHA256SUMS.txt).
-Do not combine an installer from one release with a checksum file from another.
+- `SessionDock-win-x64-Portable.zip` for new and portable users;
+- the full Velopack NUPKG and feed metadata for existing installed copies;
+- a signed SessionDock update descriptor;
+- `SHA256SUMS.txt` covering every published asset except itself;
+- an SPDX SBOM and complete dependency notices; and
+- GitHub artifact attestations.
 
-Open a normal PowerShell in the directory containing both files, then run:
+The portable ZIP and full NUPKG must carry byte-identical application files.
+The application inventory is transparent rather than a compressed
+self-extracting executable. Six application PEs are intentionally unsigned:
+`SessionDock.exe`, `SessionDock.dll`, `SessionDock.HandleScope.dll`,
+`SessionDock.ExactWheel.dll`, `SessionDock.ReleaseTrust.dll`, and
+`Velopack.dll`. The expected Microsoft runtime complement must retain valid
+Microsoft signatures. Unexpected executables, scripts, source directories,
+duplicate paths, reparse points, or extra component payloads are rejected.
 
-```powershell
-$asset = 'SessionDock-win-x64-Setup.exe'
-$checksumFile = '.\SHA256SUMS.txt'
-$pattern = '^(?<hash>[0-9a-fA-F]{64})  ' + [Regex]::Escape($asset) + '$'
-$matchingLines = @(Get-Content -LiteralPath $checksumFile |
-    Where-Object { $_ -match $pattern })
+ExactWheel provenance pins 14 implementation/lock files at commit
+`e1f77bd77cf9c3db708c587f17f6ea58d9d961ca`, the separately pinned current
+build definition, and the root MIT license. HandleScope has its own pinned
+upstream inventory and compatibility checks. These gates establish source
+identity; they do not bypass Windows malware detection.
 
-if ($matchingLines.Count -ne 1) {
-    throw "Expected exactly one checksum entry for $asset."
-}
+## If a download or update fails
 
-$expected = $matchingLines[0].Substring(0, 64).ToLowerInvariant()
-$actual = (Get-FileHash -LiteralPath ".\$asset" -Algorithm SHA256).Hash.ToLowerInvariant()
-if ($actual -cne $expected) {
-    throw "SHA-256 mismatch for $asset. Delete the download and do not run it."
-}
+- **Running scripts is disabled:** a standalone PowerShell script was blocked
+  before it ran. Normal SessionDock download and launch uses no script. Do not
+  change execution policy and do not install HandleScope separately.
+- **Virus scan failed:** the browser or device policy did not finish scanning.
+  Delete the incomplete file, check **Windows Security > Virus & threat
+  protection > Protection history**, and retry only from the canonical GitHub
+  release. On a managed laptop, ask its administrator to review the GitHub URL
+  and expected hash.
+- **Named malware detection:** do not retry, restore, allow, or run the file.
+  Follow the Defender response guide.
+- **Portable update does not appear in-app:** this is expected. Portable copies
+  update manually with a newly downloaded and extracted ZIP.
+- **An existing installed update fails verification:** leave the current
+  version closed or unchanged, keep its data, and report the exact error. Do
+  not substitute an asset from Discord or manually unpack the NUPKG.
 
-Write-Host "SHA-256 verified: $asset"
-```
-
-Then verify Windows publisher identity without opening the installer:
-
-```powershell
-$signature = Get-AuthenticodeSignature -LiteralPath .\SessionDock-win-x64-Setup.exe
-$signature | Select-Object Status, StatusMessage,
-  @{Name='Publisher';Expression={$_.SignerCertificate.Subject}},
-  @{Name='TimestampAuthority';Expression={$_.TimeStamperCertificate.Subject}}
-
-if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid -or
-    $null -eq $signature.SignerCertificate -or
-    $null -eq $signature.TimeStamperCertificate) {
-    throw 'SessionDock Setup does not have a valid publisher signature and timestamp.'
-}
-```
-
-Run the installer only after the checksum command prints `SHA-256 verified`,
-the Authenticode status is `Valid`, and the displayed publisher matches the
-publisher documented by that release. A missing, duplicate, malformed, or
-mismatched checksum, signature, timestamp, or publisher is a verification
-failure. Do not add an antivirus exclusion or override a named threat detection.
-
-## What is verified
-
-The updater requires a signed release descriptor whose public key is pinned in
-the application. That descriptor authorizes the exact target version, package
-filename, size, SHA-256 digest, channel, and release notes. Velopack also checks
-the downloaded package against the authorized package metadata.
-
-The protected release workflow Authenticode-signs the exact first-party
-application PEs before Velopack packaging, then signs the final Setup. Both use
-SHA-256 and an RFC 3161 SHA-256 timestamp under one externally provisioned,
-publicly trusted publisher profile. The workflow verifies the exact publisher,
-code-signing/timestamp EKUs, and trusted certificate chains before staging and
-again after draft, approval, and public re-downloads. An unsigned file or an
-**Unknown publisher** result cannot be a public release.
-
-The signed update descriptor separately protects the in-app release decision
-and exact package hash. GitHub attestations and checksums provide additional,
-manually verifiable provenance; none is a bypass for failed Authenticode or a
-positive Defender detection.
-
-Immediately before scheduling installation, SessionDock rechecks the downloaded
-full package against the signed size and SHA-256, validates its exact application
-inventory in a locked temporary directory, rejects missing, duplicate, path-like,
-oversized, or unexpected archive entries, validates the package identity/version
-metadata, and checks every expected executable structurally. The protected
-release flow also requires the installed and portable application inventories to
-match the approved publish bytes. This preserves package integrity in addition
-to the required Windows publisher identity.
-
-For an integrated candidate, HandleScope and ExactWheel must be the reviewed
-`SessionDock.HandleScope.dll` and `SessionDock.ExactWheel.dll` files in the
-approved package inventory. Validation checks HandleScope's pinned upstream
-identity/hashes and ExactWheel's source manifest, format version, inventory,
-provenance, notices, and release-block fields. A component executable, installer,
-PowerShell script, source directory, or additional component payload in the
-SessionDock package is rejected. The current ExactWheel manifest blocks release
-pending explicit TinyClicks ownership/licensing and immutable provenance; this
-document does not clear that block.
-
-Release notes are displayed as bounded, inert text. Web content from a release
-is not executed in the application.
-
-The protected workflow for an approved release also produces an SPDX SBOM,
-reviewed dependency notices, SHA-256 checksums, and GitHub attestations. These
-aid independent inspection; the in-app trust decision relies on the signed
-descriptor, exact package hash, and package allowlist. This is a required
-workflow, not a claim that the integrated candidate has been published.
-
-## User data
-
-Application files and local user data are separate. SessionDock's package ID is
-`SessionDockApp`; neither current nor legacy user data is stored in that
-installation directory. An update replaces the application, not the data under
-`%LOCALAPPDATA%\SessionDock`, so account slots,
-isolated WebView2 profiles, favorites, recent history, labels, colors, and sound
-preferences normally remain in place. Versioned templates, their catalog
-backup, local ExactWheel macro payloads, layout preferences, and onboarding
-state are also under `%LOCALAPPDATA%\SessionDock` and normally remain in place.
-
-Updates never contain another user's account profiles or settings. Removing
-SessionDock does not imply that Roblox or WebView2 data was removed; use the
-application's account removal controls first when profile deletion is desired.
-Removing or updating an integrated SessionDock build removes/replaces its
-included HandleScope and ExactWheel code. It does not delete or alter an
-independently installed standalone HandleScope copy. Uninstall does not
-automatically delete local templates or macro files.
-
-## If an update fails
-
-- Keep the existing version open if the check, signature verification, or
-  download fails.
-- Retry from a stable network, then check the canonical
-  [release page](https://github.com/Makmatoe/SessionDock/releases) for notices.
-- Do not download a replacement executable from chat, email, file-sharing, or
-  a repository fork.
-- Treat **Unknown publisher**, invalid/missing Authenticode, a publisher
-  mismatch, or a named Defender detection as a hard stop. Keep a detected file
-  quarantined and use the [Defender response guide](DEFENDER_DETECTION_RESPONSE.md).
-  A matching checksum or attestation never overrides Windows security.
+To remove a portable copy, close SessionDock and delete only its extracted
+application folder. Remove `%LOCALAPPDATA%\SessionDock` separately only when
+you intentionally want to erase all SessionDock data for that Windows user.
