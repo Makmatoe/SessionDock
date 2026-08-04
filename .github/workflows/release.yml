@@ -992,18 +992,43 @@ jobs:
       - name: Re-download and verify public release assets
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
         run: |
-          New-Item -ItemType Directory published-assets | Out-Null
-          gh release download $env:RELEASE_TAG `
-            --repo $env:GITHUB_REPOSITORY `
-            --dir ./published-assets `
-            --pattern '*'
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to re-download the public release assets.'
+          if ($env:GITHUB_REPOSITORY -cne 'Makmatoe/SessionDock') {
+            throw 'Anonymous public verification is restricted to Makmatoe/SessionDock.'
+          }
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'The public release tag is not a canonical stable version.'
           }
           $approved = @(Get-ChildItem ./approved-assets -File | Sort-Object Name)
+          if ($approved.Count -eq 0) {
+            throw 'The approved draft asset inventory is empty.'
+          }
+          New-Item -ItemType Directory published-assets | Out-Null
+          foreach ($asset in $approved) {
+            if ($asset.Name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+              throw "Approved asset name is not URL-safe: $($asset.Name)"
+            }
+            $assetUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$($asset.Name)"
+            $destination = Join-Path ./published-assets $asset.Name
+            & curl.exe --disable `
+              --fail `
+              --location `
+              --proto '=https' `
+              --proto-redir '=https' `
+              --max-redirs 5 `
+              --connect-timeout 30 `
+              --max-time 600 `
+              --silent `
+              --show-error `
+              --user-agent SessionDock-public-release-verifier `
+              --output $destination `
+              $assetUrl
+            if ($LASTEXITCODE -ne 0) {
+              Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+              throw "Unable to anonymously download public release asset: $($asset.Name)"
+            }
+          }
           $published = @(Get-ChildItem ./published-assets -File | Sort-Object Name)
           if (Compare-Object @($approved.Name) @($published.Name) -CaseSensitive) {
             throw 'Public release asset inventory differs from the approved draft.'

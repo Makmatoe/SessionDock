@@ -945,10 +945,9 @@ try {
         throw 'The protected staging job must verify the exact unsigned application PE set, build only the transparent portable ZIP plus update feed, and retain GitHub attestations without any executable-signing path.'
     }
     if ($releasePublishJob -notmatch 'Re-download and verify public release assets' -or
-        $releasePublishJob -notmatch '--pattern ''\*''' -or
         $releasePublishJob -notmatch 'Compare-Object @\(\$approved\.Name\) @\(\$published\.Name\) -CaseSensitive' -or
         $releasePublishJob -notmatch 'Public release asset hash mismatch') {
-        throw 'Approved-draft and public re-downloads must fail closed on exact inventory and SHA-256 equality.'
+        throw 'Approved-draft and anonymous public re-downloads must fail closed on exact inventory and SHA-256 equality.'
     }
     if ($releaseStageJob -match 'gh release edit|--draft=false') {
         throw 'The protected staging job must not publish the verified draft.'
@@ -1024,12 +1023,44 @@ try {
     $releaseFinalPublishStep = Get-RequiredWorkflowStepBlock `
         -JobContents $releasePublishJob `
         -Name 'Publish the reverified draft'
+    $releasePublicDownloadStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $releasePublishJob `
+        -Name 'Re-download and verify public release assets'
     Assert-WorkflowStepIsUnconditional `
         -Contents $releaseReverifyStep `
         -Name 'Re-download and verify the approved draft'
     Assert-WorkflowStepIsUnconditional `
         -Contents $releaseFinalPublishStep `
         -Name 'Publish the reverified draft'
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $releasePublicDownloadStep `
+        -Name 'Re-download and verify public release assets'
+    $requiredAnonymousPublicDownloadLiterals = @(
+        '$env:GITHUB_REPOSITORY -cne ''Makmatoe/SessionDock'''
+        '$env:RELEASE_TAG -cnotmatch ''^v[0-9]+\.[0-9]+\.[0-9]+$'''
+        '$asset.Name -cnotmatch ''^[A-Za-z0-9][A-Za-z0-9._-]*$'''
+        'https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$($asset.Name)'
+        '& curl.exe --disable'
+        '--fail'
+        '--location'
+        '--proto ''=https'''
+        '--proto-redir ''=https'''
+        '--max-redirs 5'
+        '--connect-timeout 30'
+        '--max-time 600'
+        'Unable to anonymously download public release asset'
+    )
+    foreach ($requiredLiteral in $requiredAnonymousPublicDownloadLiterals) {
+        if ($releasePublicDownloadStep.IndexOf(
+                $requiredLiteral,
+                [StringComparison]::Ordinal) -lt 0) {
+            throw "The anonymous public re-download gate is missing: $requiredLiteral"
+        }
+    }
+    if ($releasePublicDownloadStep -notmatch '(?m)^\s*& curl\.exe --disable\s+`\s*$' -or
+        $releasePublicDownloadStep -match '(?i)\$\{\{\s*github\.token\s*\}\}|\bGH_TOKEN\b|\bGITHUB_TOKEN\b|\bAuthorization\b|gh(?:\.exe)?\s|Invoke-WebRequest|--(?:user|proxy-user|netrc(?:-file)?|oauth2-bearer|header|config)(?:\s|=)|(?:^|\s)-(?:K|H|u)(?:\s|$)') {
+        throw 'The public re-download gate must fetch every approved asset through its anonymous public GitHub URL without an authentication path.'
+    }
     if ($releaseReverifyStep -notmatch '(?m)^        id:\s*verify-release\s*$' -or
         $releaseReverifyStep -notmatch '\"state=\$releaseState\"[^\r\n]*GITHUB_OUTPUT' -or
         $releaseReverifyStep -notmatch '(?s)ReleaseSigner\.exe verify\s+`.{0,300}--manifest ./approved-assets/sessiondock-release\.json.{0,300}--package "\./approved-assets/SessionDockApp-\$env:RELEASE_VERSION-win-x64-sessiondock-full\.nupkg"' -or
