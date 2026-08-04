@@ -176,6 +176,12 @@ Inspect the publish and prove:
 - the descriptor, compatibility catalog, feed, checksums, SBOM, notices, and
   attestations bind the same tag, commit, version, filenames, sizes, and hashes.
 
+The pinned Velopack 1.2.0 packer normally excludes `createdump.exe`. The
+protected workflow must pass `--noDefaultExclude true` only after the strict
+publish allowlist has rejected package files, vshost files, PDBs, and every
+other unexpected input. This keeps the reviewed Microsoft runtime file in the
+NUPKG and preserves exact application-file equality with the portable ZIP.
+
 Run Microsoft Defender against the transparent publish directory without
 changing protection or allowing remediation:
 

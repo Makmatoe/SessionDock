@@ -591,9 +591,9 @@ try {
         (Join-Path $root 'SessionDock/Resources/handlescope-compatibility-bootstrap.json') `
         -Raw | ConvertFrom-Json
     if ([long] $compatibilityBootstrap.sequence -ne 3 -or
-        $compatibilityBootstrap.sessionDockVersion -cne '3.1.1' -or
+        $compatibilityBootstrap.sessionDockVersion -cne '3.1.2' -or
         $compatibilityBootstrap.recommendedVersion -cne '0.3.0') {
-        throw 'The 3.1.1 compatibility bootstrap must retain sequence 3 and the external HandleScope 0.3.0 recommendation.'
+        throw 'The 3.1.2 compatibility bootstrap must retain sequence 3 and the external HandleScope 0.3.0 recommendation.'
     }
     $applicationIcons = @($applicationProject.SelectNodes(
             '/Project/PropertyGroup/ApplicationIcon') |
@@ -930,6 +930,9 @@ try {
         -Name 'Build Velopack assets'
     if ($releaseWorkflowContents -match '(?i)azure/login@|artifact-signing-action@|ARTIFACT_SIGNING_|AZURE_(?:CLIENT|TENANT|SUBSCRIPTION)_ID|Authenticode|--signTemplate|--signExclude|--signParallel|--signParams|--azureTrustedSignFile|VPK_SIGN_TEMPLATE|VPK_SIGN_EXCLUDE|VPK_SIGN_PARALLEL|VPK_SIGN_PARAMS|VPK_AZURE_TRUSTED_SIGN_FILE|signtool(?:\.exe)?|Set-AuthenticodeSignature' -or
         $releaseWorkflowContents -match 'SessionDock-win-x64-Setup\.exe' -or
+        @([regex]::Matches(
+                $velopackBuildStep,
+                '(?m)^\s*--noDefaultExclude true\s+`\s*$')).Count -ne 1 -or
         $releaseStageJob -notmatch '--noInst true' -or
         $releaseStageJob -match '--noPortable' -or
         $releaseStageJob -notmatch '(?m)^      id-token:\s*write\s*$' -or

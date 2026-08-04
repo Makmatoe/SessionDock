@@ -140,6 +140,11 @@ public sealed class TransparentPublishPolicyTests
             StringComparison.Ordinal);
         Assert.Contains("-ApplicationDirectory ./release-input/app", workflow,
             StringComparison.Ordinal);
+        Assert.Single(
+            System.Text.RegularExpressions.Regex.Matches(
+                    workflow,
+                    @"(?m)^\s*--noDefaultExclude true\s+`\s*$")
+                .Cast<System.Text.RegularExpressions.Match>());
         Assert.Contains("--noInst true", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("--noPortable true", workflow, StringComparison.Ordinal);
         Assert.Contains("actions/attest@", workflow, StringComparison.Ordinal);
