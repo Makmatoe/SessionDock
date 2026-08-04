@@ -481,7 +481,7 @@ try {
             'sourceCommit is missing',
             'sourceTag must be null',
             '\^\(\?:\[0-9a-f\]\{40\}\|\[0-9a-f\]\{64\}\)\$',
-            'f32799820fb4a31089523beb184314542f4fe521',
+            '40023f516fe89977a35d94cc5580e790e48d54a1',
             'd20c4933d8fcabbc9b00163ffb20868e74e7cca796344e72508c08e8b1118425',
             '07fe8f9ec14088750f6d2a0d835c86b678a0f76e',
             '76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841',
@@ -490,6 +490,8 @@ try {
             'Get-FileSha256Hex',
             'build-definition blob or SHA-256 differs',
             'repository MIT license bytes do not match',
+            'merge-base --is-ancestor \$expectedSourceCommit HEAD',
+            'ls-tree',
             'Normal builds remain available, but a public release is blocked')) {
         if ($exactWheelProvenanceContents -notmatch $requiredExactWheelGatePattern) {
             throw "The ExactWheel release provenance gate is missing a fail-closed contract: $requiredExactWheelGatePattern"

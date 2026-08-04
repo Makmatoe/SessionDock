@@ -546,7 +546,7 @@ dotnet restore .\SessionDock.slnx --locked-mode
 `SessionDock.ExactWheel/exactwheel-provenance.json` records ExactWheel as a
 repository-native component under the root MIT license. It is intentionally
 tagless and records the full source commit,
-`f32799820fb4a31089523beb184314542f4fe521`, an exact 14-file implementation
+`40023f516fe89977a35d94cc5580e790e48d54a1`, an exact 14-file implementation
 and dependency-lock count, 274,010 canonical source bytes, and canonical
 inventory SHA-256
 `d20c4933d8fcabbc9b00163ffb20868e74e7cca796344e72508c08e8b1118425`.
@@ -558,10 +558,10 @@ The manifest and `scripts/Verify-ExactWheelReleaseProvenance.ps1` together pin
 every inventory path, Git blob, byte count, and SHA-256 identity. The verifier
 rejects a missing or extra source file, worktree/blob drift, an
 inventory-summary mismatch, a different license, an invented source tag, or a
-nonmatching commit tree. A shallow CI checkout can still verify the exact
-checked-out Git blobs and their independent SHA-256 hashes; when the pinned
-commit object is available, the verifier also checks every entry directly
-against that commit and proves it is an ancestor.
+nonmatching commit tree. Release verification requires complete Git history:
+the verifier checks every entry directly against the pinned commit, proves that
+commit is an ancestor of the checkout, and blocks when the commit object is
+unavailable. There is no shallow-checkout or worktree-only release fallback.
 `releaseBlockedPendingLicense: false` means only that this source/license gate
 has complete evidence. It does not bypass update-descriptor verification,
 malware response, packaging, manual hardware, or reviewer approval gates.

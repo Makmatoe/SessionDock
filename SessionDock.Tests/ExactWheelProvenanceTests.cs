@@ -7,7 +7,7 @@ namespace SessionDock.Tests;
 public sealed class ExactWheelProvenanceTests
 {
     private const string SourceCommit =
-        "f32799820fb4a31089523beb184314542f4fe521";
+        "40023f516fe89977a35d94cc5580e790e48d54a1";
 
     private const string CanonicalInventorySha256 =
         "d20c4933d8fcabbc9b00163ffb20868e74e7cca796344e72508c08e8b1118425";
@@ -19,7 +19,7 @@ public sealed class ExactWheelProvenanceTests
         "76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841";
 
     private const string ManifestSha256 =
-        "ef99e19b70a139841385391a9065f81bdd555df4401777d495c2fdd5554c26bd";
+        "f64d149774f12a7b9240499c22f329751a6ed1f89d11fa3fc2a4dac1c41681ad";
 
     [Fact]
     public void EmbeddedProvenance_PinsRepositoryNativeMitSourceIdentity()
@@ -159,6 +159,9 @@ public sealed class ExactWheelProvenanceTests
         Assert.Contains("hash-object", gate, StringComparison.Ordinal);
         Assert.Contains("requires complete Git history", gate,
             StringComparison.Ordinal);
+        Assert.Contains("merge-base --is-ancestor $expectedSourceCommit HEAD", gate,
+            StringComparison.Ordinal);
+        Assert.Contains("ls-tree", gate, StringComparison.Ordinal);
         Assert.DoesNotContain("is-shallow-repository", gate,
             StringComparison.Ordinal);
         Assert.Contains("sourceTag must be null", gate, StringComparison.Ordinal);

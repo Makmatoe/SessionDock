@@ -108,6 +108,6 @@ portable content. A clean no-remediation scan is required, but it is only one
 release gate and never overrides a later named detection.
 
 ExactWheel provenance pins 14 implementation/lock files at commit
-`f32799820fb4a31089523beb184314542f4fe521`, the separately pinned current
+`40023f516fe89977a35d94cc5580e790e48d54a1`, the separately pinned current
 build definition, and the root MIT license. This provenance evidence explains
 the source identity; it does not grant an antivirus exception.

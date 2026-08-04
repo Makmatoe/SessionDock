@@ -8,7 +8,7 @@ public sealed class InstallationDocumentationTests
     private const string PortableFileName = "SessionDock-win-x64-Portable.zip";
     private const string RetiredSetupFileName = "SessionDock-win-x64-Setup.exe";
     private const string ExactWheelCommit =
-        "f32799820fb4a31089523beb184314542f4fe521";
+        "40023f516fe89977a35d94cc5580e790e48d54a1";
 
     [Fact]
     public void EveryProductReadmeHonorsTheDistributionHold()
@@ -212,6 +212,9 @@ public sealed class InstallationDocumentationTests
                      "separately pinned current",
                      "build definition",
                      "root MIT license",
+                     "squash-merge",
+                     "provenance-only",
+                     "do not create a release tag between",
                      "SessionDock_ExecutionStub.exe",
                      "Squirrel.exe",
                      "Velopack 1.2.0",

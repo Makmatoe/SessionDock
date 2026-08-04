@@ -532,7 +532,7 @@ Before any release decision, require the complete gate and manually test:
 
 Development output is not a published release. ExactWheel provenance pins 14
 implementation/lock files at commit
-`f32799820fb4a31089523beb184314542f4fe521`, the separately pinned current
+`40023f516fe89977a35d94cc5580e790e48d54a1`, the separately pinned current
 build definition, and the root MIT license. Follow
 [Releasing](docs/RELEASING.md) only after code, security, provenance,
 accessibility, documentation, and end-to-end tests all pass; none of those
