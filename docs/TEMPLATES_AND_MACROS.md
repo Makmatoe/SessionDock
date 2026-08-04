@@ -404,6 +404,15 @@ ownership, foreground, pointer-target checks, and final event authorization
 remain adjacent to dispatch. Deterministic scalability tests cover 1, 8, 32,
 100, and 128-client cache/trust/retry paths.
 
+Once Play has started, recoverable focus, timing, target, injection, and
+intervention-monitor failures do not end the controller run. Target failures
+yield with bounded backoff, and a failed intervention monitor is disposed and
+rebuilt before playback resumes. If every assignment becomes permanently
+invalid, or ExactWheel cannot positively release globally injected input, the
+run remains active in a zero-input safety pause until the user selects Stop.
+A failed read-only preflight for a replacement batch also leaves the existing
+macro run untouched.
+
 Joined-server attribution uses one 500-millisecond snapshot for all concurrent
 batch callers. The scanner follows up to 128 recent Roblox logs incrementally,
 keeps partial-line and join state between captures, and divides one fixed 4 MiB
@@ -537,10 +546,10 @@ dotnet restore .\SessionDock.slnx --locked-mode
 `SessionDock.ExactWheel/exactwheel-provenance.json` records ExactWheel as a
 repository-native component under the root MIT license. It is intentionally
 tagless and records the full source commit,
-`a290cdb9fb5d0c5047103a9985016cb573ea954f`, an exact 14-file implementation
-and dependency-lock count, 249,698 canonical source bytes, and canonical
+`f32799820fb4a31089523beb184314542f4fe521`, an exact 14-file implementation
+and dependency-lock count, 274,010 canonical source bytes, and canonical
 inventory SHA-256
-`3530b06a88f363f2097ae646be70d468f70d7ada968cef983861b907e14bede0`.
+`d20c4933d8fcabbc9b00163ffb20868e74e7cca796344e72508c08e8b1118425`.
 The renamed current build definition is pinned separately as Git blob
 `07fe8f9ec14088750f6d2a0d835c86b678a0f76e` and SHA-256
 `76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841`.

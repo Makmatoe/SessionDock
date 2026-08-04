@@ -8,7 +8,7 @@ public sealed class InstallationDocumentationTests
     private const string PortableFileName = "SessionDock-win-x64-Portable.zip";
     private const string RetiredSetupFileName = "SessionDock-win-x64-Setup.exe";
     private const string ExactWheelCommit =
-        "a290cdb9fb5d0c5047103a9985016cb573ea954f";
+        "f32799820fb4a31089523beb184314542f4fe521";
 
     [Fact]
     public void EveryProductReadmeHonorsTheDistributionHold()

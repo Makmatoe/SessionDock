@@ -273,10 +273,6 @@ public partial class MainWindow
             macroPlaybackCacheReservation = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        // Once the user confirms a new batch, input from the previous batch
-        // must be fully quiescent before account preflight, process cleanup,
-        // or any launch-state mutation begins.
-        await CancelAndWaitForCurrentMacroPlaybackAsync(cancellationToken);
         var preflight = await PreflightBatchAccountsAsync(
             launchPlans,
             cancellationToken);
@@ -291,6 +287,11 @@ public partial class MainWindow
                 AutomationWarning: null);
         }
 
+        // Keep a healthy existing macro alive when the requested batch cannot
+        // pass its read-only account preflight. Once preflight succeeds, input
+        // from the previous batch must be fully quiescent before clients are
+        // closed or any launch-state mutation begins.
+        await CancelAndWaitForCurrentMacroPlaybackAsync(cancellationToken);
         SetStatus(
             Localize("Main.BatchPreparingTitle"),
             Localize("Main.BatchPreparingDetail"),

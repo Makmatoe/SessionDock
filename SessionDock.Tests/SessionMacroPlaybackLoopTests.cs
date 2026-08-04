@@ -209,15 +209,23 @@ public sealed class SessionMacroPlaybackLoopTests
             host);
         Assert.Contains("var hasWarnings = warnings.Count > 0;", host);
         Assert.Contains("string.Join(\" \", warnings)", host);
-        Assert.Contains("SuppressDialog: externallyCancelled", host);
         Assert.Contains("!outcome.SuppressDialog", controller);
         Assert.Contains(
             "var clientModeActive = prepared.ClientTemplate is not null;",
             host);
         Assert.Contains(
-            "if (wholeModeActive && prepared.WholeTemplate is not null)",
-            host);
+            "if (wholeModeActive &&\n" +
+                "                            prepared.WholeTemplate is not null)",
+            host.ReplaceLineEndings("\n"));
         Assert.Contains("if (result.StopAll)", host);
+        Assert.Contains(
+            "restartPlaybackSession =\n                                    !result.RequiresSafetyPause;",
+            host.ReplaceLineEndings("\n"));
+        Assert.Contains(
+            "Timeout.InfiniteTimeSpan,\n                playbackCancellation.Token",
+            host.ReplaceLineEndings("\n"));
+        Assert.Contains("Macro.ControllerPausedTitle", host);
+        Assert.Contains("Macro.ControllerPausedDetail", host);
         Assert.Contains(
             "if (!clientModeActive && !wholeModeActive)",
             host);
@@ -296,6 +304,11 @@ public sealed class SessionMacroPlaybackLoopTests
             CountOccurrences(
                 playback,
                 "!playbackOutcome.Result.CleanupSucceeded"));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playback,
+                "requiresSafetyPause: true"));
         Assert.True(
             playback.IndexOf(
                 "!playbackOutcome.Result.CleanupSucceeded",

@@ -1325,7 +1325,7 @@
     <sys:String x:Key="Tutorial.AdvancedAssignmentsTitle">Aktuellen Stapel zuweisen</sys:String>
     <sys:String x:Key="Tutorial.AdvancedAssignmentsBody">Verfügbar, nachdem ein Stapel mit aktivierten Makros gestartet wurde. Wähle ein Client-Makro und fokussiere dann einen verifizierten Roblox-Client aus diesem Stapel. Die Zuweisung startet nichts; „Abspielen“ wiederholt alle Zuweisungen bis „Stopp“.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedControllerTitle">Makroschleife steuern</sys:String>
-    <sys:String x:Key="Tutorial.AdvancedControllerBody">Verfügbar, nachdem ein Stapel mit aktivierten Makros gestartet wurde. „Abspielen“ startet eine fortlaufende Schleife und wird währenddessen zu „Stopp“. Auch das Schließen der Steuerung beendet sie. Physische Eingaben oder Fokusverlust pausieren die Wiedergabe, bis die verifizierten Fokus- und Eingabebedingungen wiederhergestellt sind. Wähle 0,25x bis 2x.</sys:String>
+    <sys:String x:Key="Tutorial.AdvancedControllerBody">Verfügbar, nachdem ein Stapel mit aktivierten Makros gestartet wurde. „Abspielen“ startet eine fortlaufende Schleife und wird währenddessen zu „Stopp“. Auch das Schließen der Steuerung beendet sie. Physische Eingaben oder Fokusverlust pausieren die Wiedergabe, bis die verifizierten Bedingungen wiederhergestellt sind; einen ausgefallenen Eingabemonitor baut SessionDock neu auf. Eine unsichere oder dauerhaft nicht ausführbare Schleife wartet ohne Eingaben zu senden, bis du „Stopp“ wählst. Wähle 0,25x bis 2x.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferTitle">Ausgewählte Daten übertragen</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferBody">Exportiere ausgewählte Vorlagen, Makros, öffentliche Ziele und Startvorgaben in einem portablen Paket oder verwende die bisherigen Metadaten. Anmeldungen und private Daten bleiben lokal; prüfe Makros mit Tastatureingaben vor dem Export oder Import.</sys:String>
     <sys:String x:Key="Tutorial.Preview">Geführte Vorschau — hervorgehobene Steuerelemente sind nicht aktiv. Mit „Weiter“ wechselst du zur nächsten Funktion.</sys:String>
@@ -1526,7 +1526,7 @@
     <sys:String x:Key="Macro.SkippedAfterPartialLaunch">Makros wurden übersprungen, weil mindestens ein Vorlagenclient nicht gestartet wurde.</sys:String>
     <sys:String x:Key="Macro.CatalogUnavailable">Der lokale Makrokatalog ist nicht verfügbar, daher wurde die Wiedergabe nicht gestartet.</sys:String>
     <sys:String x:Key="Macro.InvalidAssignment">Ein Vorlagenmakro fehlt, hat den falschen Modus oder ist keinem gestarteten Client zugewiesen.</sys:String>
-    <sys:String x:Key="Macro.PlaybackFailure">Makrowiedergabe sicher beendet: {0}</sys:String>
+    <sys:String x:Key="Macro.PlaybackFailure">Makrowiedergabe sicher pausiert: {0}</sys:String>
     <sys:String x:Key="Macro.FocusingClientTitle">Nächster Roblox-Client wird fokussiert</sys:String>
     <sys:String x:Key="Macro.FocusingClientDetail">Client {0} wird für die clientrelative Wiedergabe vorbereitet.</sys:String>
     <sys:String x:Key="Macro.FocusDenied">Windows hat SessionDock nicht erlaubt, den verifizierten Roblox-Client zu fokussieren.</sys:String>
@@ -1557,6 +1557,8 @@
     <sys:String x:Key="Macro.ControllerNoValidAssignments">Es sind keine gültigen Makrozuweisungen mehr vorhanden. Prüfe die Zuweisungen des aktuellen Batches.</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingTitle">Makroschleife gestartet</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingDetail">Der aktuelle Batch wird mit {0}x fortlaufend wiederholt. Wähle „Stopp“ oder schließe die Steuerung, um die Schleife sicher zu beenden.</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedTitle">Makroschleife wartet sicher</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedDetail">Es werden keine weiteren Eingaben gesendet. Dieser Durchlauf bleibt aktiv, statt sich selbst zu beenden; wähle „Stopp“, wenn du ihn beenden möchtest.</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedTitle">Makroschleife beendet</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedDetail">Die fortlaufende Schleife wurde beendet. Prüfe den aktuellen Batch, bevor du erneut „Abspielen“ wählst.</sys:String>
     <sys:String x:Key="Macro.ControllerStoppedTitle">Makrowiedergabe sicher beendet</sys:String>

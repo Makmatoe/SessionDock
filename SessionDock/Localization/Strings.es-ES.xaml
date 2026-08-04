@@ -1361,7 +1361,7 @@
     <sys:String x:Key="Tutorial.AdvancedAssignmentsTitle">Asignar el lote actual</sys:String>
     <sys:String x:Key="Tutorial.AdvancedAssignmentsBody">Disponible después de iniciar un lote con macros habilitadas. Elige una macro de cliente y enfoca un cliente de Roblox verificado de ese lote. La asignación no inicia nada; Reproducir repite todas las asignaciones hasta Detener.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedControllerTitle">Controlar el bucle de macros</sys:String>
-    <sys:String x:Key="Tutorial.AdvancedControllerBody">Disponible después de iniciar un lote con macros habilitadas. Reproducir inicia un bucle continuo y se convierte en Detener mientras se ejecuta. Cerrar el controlador también lo detiene. La entrada física o la pérdida de foco pausa la reproducción hasta que se recuperan las condiciones verificadas. Elige entre 0,25x y 2x.</sys:String>
+    <sys:String x:Key="Tutorial.AdvancedControllerBody">Disponible después de iniciar un lote con macros habilitadas. Reproducir inicia un bucle continuo y se convierte en Detener mientras se ejecuta. Cerrar el controlador también lo detiene. La entrada física o la pérdida de foco pausa la reproducción hasta que se recuperan las condiciones verificadas, y SessionDock reconstruye un monitor de entrada que falle. Una ejecución insegura o permanentemente no ejecutable espera sin enviar entradas hasta que selecciones Detener. Elige entre 0,25x y 2x.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferTitle">Transferir datos seleccionados</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferBody">Exporta plantillas, macros, destinos públicos y ajustes preestablecidos de inicio seleccionados en un paquete portátil, o usa los metadatos anteriores. Los inicios de sesión y los datos privados permanecen locales; revisa las macros con entradas de teclado antes de exportarlas o importarlas.</sys:String>
     <sys:String x:Key="Tutorial.Preview">Vista previa guiada — los controles resaltados no están activos. Usa Siguiente para avanzar por las funciones.</sys:String>
@@ -1562,7 +1562,7 @@
     <sys:String x:Key="Macro.SkippedAfterPartialLaunch">Se omitieron las macros porque uno o más clientes de la plantilla no se iniciaron.</sys:String>
     <sys:String x:Key="Macro.CatalogUnavailable">El catálogo local de macros no está disponible, por lo que la reproducción no comenzó.</sys:String>
     <sys:String x:Key="Macro.InvalidAssignment">Falta una macro de la plantilla, tiene el modo incorrecto o no está asignada a un cliente iniciado.</sys:String>
-    <sys:String x:Key="Macro.PlaybackFailure">La reproducción de la macro se detuvo de forma segura: {0}</sys:String>
+    <sys:String x:Key="Macro.PlaybackFailure">La reproducción de la macro se pausó de forma segura: {0}</sys:String>
     <sys:String x:Key="Macro.FocusingClientTitle">Enfocando el siguiente cliente de Roblox</sys:String>
     <sys:String x:Key="Macro.FocusingClientDetail">Preparando el cliente {0} para la reproducción relativa al cliente.</sys:String>
     <sys:String x:Key="Macro.FocusDenied">Windows no permitió que SessionDock enfocara el cliente verificado de Roblox.</sys:String>
@@ -1593,6 +1593,8 @@
     <sys:String x:Key="Macro.ControllerNoValidAssignments">Ya no queda ninguna asignación de macro válida. Revisa las asignaciones del lote actual.</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingTitle">Comenzó el bucle de macros</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingDetail">Repitiendo continuamente el lote actual a {0}x. Selecciona Detener o cierra el controlador para finalizarlo de forma segura.</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedTitle">Bucle de macros en espera segura</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedDetail">No se envían más entradas. Esta ejecución permanece activa en vez de detenerse por sí sola; selecciona Detener cuando quieras finalizarla.</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedTitle">Terminó el bucle de macros</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedDetail">El bucle continuo terminó. Revisa el lote actual antes de seleccionar Reproducir de nuevo.</sys:String>
     <sys:String x:Key="Macro.ControllerStoppedTitle">La reproducción de macros se detuvo de forma segura</sys:String>

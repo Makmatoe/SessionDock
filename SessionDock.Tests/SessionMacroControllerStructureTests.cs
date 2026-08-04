@@ -171,8 +171,9 @@ public sealed class SessionMacroControllerStructureTests
             "var clientModeActive = prepared.ClientTemplate is not null;",
             source);
         Assert.Contains(
-            "if (wholeModeActive && prepared.WholeTemplate is not null)",
-            source);
+            "if (wholeModeActive &&\n" +
+                "                            prepared.WholeTemplate is not null)",
+            source.ReplaceLineEndings("\n"));
         Assert.DoesNotContain(
             "warnings.Count == 0 && prepared.WholeTemplate is not null",
             source);
@@ -279,10 +280,19 @@ public sealed class SessionMacroControllerStructureTests
         var stop = batchSource.IndexOf(
             "await CancelAndWaitForCurrentMacroPlaybackAsync(cancellationToken)",
             StringComparison.Ordinal);
+        var preflight = batchSource.IndexOf(
+            "await PreflightBatchAccountsAsync(",
+            StringComparison.Ordinal);
+        var preflightFailure = batchSource.IndexOf(
+            "if (preflight.Failures.Count > 0)",
+            StringComparison.Ordinal);
         var close = batchSource.IndexOf(
             "CloseAllPlayersAsync(",
             StringComparison.Ordinal);
 
+        Assert.True(preflight >= 0);
+        Assert.True(preflightFailure > preflight);
+        Assert.True(stop > preflightFailure);
         Assert.True(stop >= 0);
         Assert.True(close > stop);
 

@@ -422,8 +422,11 @@ controller also cancels an active loop before hiding it. The batch-launch Cancel
 button does not stop macro playback. Every macro mode pauses before its next
 dispatch if physical input is active or its exact verified foreground target is
 unavailable. It resumes on a shifted timeline only after the safe input and
-focus conditions recover. If it cannot safely regain that target, select
-**Stop**, close the controller, close SessionDock, or lock Windows.
+focus conditions recover. SessionDock rebuilds a failed intervention monitor.
+If every assignment becomes permanently unavailable, or globally injected
+input cannot be confirmed released, the run remains active without injecting;
+select **Stop**, close the controller, close SessionDock, or lock Windows. A
+failed replacement-batch preflight leaves the existing macro loop running.
 
 ## 13. Run the focused regression checklist
 

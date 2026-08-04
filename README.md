@@ -410,8 +410,11 @@ default safety behavior:
 - treats new physical mouse or keyboard input, held input, and verified focus
   loss as a pause condition for every macro mode; injection resumes only after
   the safe input state and exact leased Roblox foreground target recover;
-- stops if a verified process/window identity is lost, playback falls
-  dangerously late, input injection fails, or the timeline is invalid;
+- yields and retries verified-target loss, late scheduling, injection failure,
+  timer failure, and held physical input with bounded n-client backoff;
+- rebuilds a failed intervention-monitor session, while permanently invalid
+  assignments or an unconfirmed global-input cleanup enter a zero-input safety
+  pause that remains active until the user selects Stop;
 - honors cancellation when the current batch is replaced or SessionDock exits;
   and
 - attempts to release only held inputs that SessionDock successfully injected
@@ -422,9 +425,11 @@ selector. **Play** begins a continuous loop and becomes **Stop** while running;
 closing the controller also stops the active loop before hiding it. Every macro
 mode pauses without injecting while physical input is active or its verified
 foreground condition is unavailable, and resumes only after the safe input and
-focus conditions recover. The batch-launch Cancel button does not control macro
-playback. If control is not restored, select **Stop**, close the controller,
-close SessionDock, or lock the Windows session. Do not leave
+focus conditions recover. A failed replacement-batch preflight leaves the
+existing loop running. The batch-launch Cancel button does not control macro
+playback. A run that cannot safely resume stays active without injecting until
+you select **Stop**, close the controller, close SessionDock, or lock the
+Windows session. Do not leave
 macro playback unattended, and do not use it for actions whose failure could
 cost money, disclose data, or damage an account.
 
@@ -527,7 +532,7 @@ Before any release decision, require the complete gate and manually test:
 
 Development output is not a published release. ExactWheel provenance pins 14
 implementation/lock files at commit
-`a290cdb9fb5d0c5047103a9985016cb573ea954f`, the separately pinned current
+`f32799820fb4a31089523beb184314542f4fe521`, the separately pinned current
 build definition, and the root MIT license. Follow
 [Releasing](docs/RELEASING.md) only after code, security, provenance,
 accessibility, documentation, and end-to-end tests all pass; none of those

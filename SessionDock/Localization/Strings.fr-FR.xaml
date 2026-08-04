@@ -1361,7 +1361,7 @@
     <sys:String x:Key="Tutorial.AdvancedAssignmentsTitle">Attribuer le lot actuel</sys:String>
     <sys:String x:Key="Tutorial.AdvancedAssignmentsBody">Disponible après le lancement d’un lot avec macros activées. Sélectionnez une macro client, puis activez un client Roblox vérifié de ce lot. L’attribution ne démarre rien ; Lire répète toutes les affectations jusqu’à Arrêter.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedControllerTitle">Contrôler la boucle de macros</sys:String>
-    <sys:String x:Key="Tutorial.AdvancedControllerBody">Disponible après le lancement d’un lot avec macros activées. Lire démarre une boucle continue et devient Arrêter pendant son exécution. Fermer le contrôleur l’arrête aussi. Une saisie physique ou une perte du premier plan met la lecture en pause jusqu’au rétablissement des conditions vérifiées. Choisissez de 0,25x à 2x.</sys:String>
+    <sys:String x:Key="Tutorial.AdvancedControllerBody">Disponible après le lancement d’un lot avec macros activées. Lire démarre une boucle continue et devient Arrêter pendant son exécution. Fermer le contrôleur l’arrête aussi. Une saisie physique ou une perte du premier plan met la lecture en pause jusqu’au rétablissement des conditions vérifiées, et SessionDock reconstruit tout moniteur d’entrée défaillant. Une exécution dangereuse ou définitivement inexécutable attend sans envoyer d’entrée jusqu’à ce que vous sélectionniez Arrêter. Choisissez de 0,25x à 2x.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferTitle">Transférer les données sélectionnées</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferBody">Exportez les modèles, macros, destinations publiques et préréglages de lancement sélectionnés dans un paquet portable, ou utilisez les métadonnées héritées. Les connexions et données privées restent locales ; examinez les macros contenant des saisies au clavier avant de les exporter ou de les importer.</sys:String>
     <sys:String x:Key="Tutorial.Preview">Aperçu guidé — les commandes surlignées ne sont pas actives. Utilisez Suivant pour parcourir les fonctions.</sys:String>
@@ -1562,7 +1562,7 @@
     <sys:String x:Key="Macro.SkippedAfterPartialLaunch">Les macros ont été ignorées, car un ou plusieurs clients du modèle n’ont pas démarré.</sys:String>
     <sys:String x:Key="Macro.CatalogUnavailable">Le catalogue local de macros est indisponible ; la lecture n’a donc pas démarré.</sys:String>
     <sys:String x:Key="Macro.InvalidAssignment">Une macro du modèle est absente, utilise le mauvais mode ou n’est affectée à aucun client lancé.</sys:String>
-    <sys:String x:Key="Macro.PlaybackFailure">Lecture de la macro arrêtée en toute sécurité : {0}</sys:String>
+    <sys:String x:Key="Macro.PlaybackFailure">Lecture de la macro mise en pause en toute sécurité : {0}</sys:String>
     <sys:String x:Key="Macro.FocusingClientTitle">Activation du prochain client Roblox</sys:String>
     <sys:String x:Key="Macro.FocusingClientDetail">Préparation du client {0} pour la lecture relative au client.</sys:String>
     <sys:String x:Key="Macro.FocusDenied">Windows n’a pas autorisé SessionDock à activer le client Roblox vérifié.</sys:String>
@@ -1593,6 +1593,8 @@
     <sys:String x:Key="Macro.ControllerNoValidAssignments">Il ne reste aucune affectation de macro valide. Vérifiez les affectations du groupe actuel.</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingTitle">Boucle de macros démarrée</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingDetail">Répétition continue du groupe actuel à {0}x. Sélectionnez Arrêter ou fermez le contrôleur pour terminer la boucle en toute sécurité.</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedTitle">Boucle de macros en attente sécurisée</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedDetail">Aucune autre entrée n’est envoyée. Cette exécution reste active au lieu de s’arrêter d’elle-même ; sélectionnez Arrêter lorsque vous souhaitez y mettre fin.</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedTitle">Boucle de macros terminée</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedDetail">La boucle continue est terminée. Vérifiez le groupe actuel avant de sélectionner à nouveau Lire.</sys:String>
     <sys:String x:Key="Macro.ControllerStoppedTitle">Lecture de la macro arrêtée en toute sécurité</sys:String>

@@ -1164,7 +1164,11 @@ public partial class MainWindow
                 // button held. Never enter a retry cycle in that state, even
                 // when the target loss itself would normally be transient.
                 if (!playbackOutcome.Result.CleanupSucceeded)
-                    return TemplateMacroPlaybackResult.Stopped(warning);
+                {
+                    return TemplateMacroPlaybackResult.Stopped(
+                        warning,
+                        requiresSafetyPause: true);
+                }
                 if (retainedPlaybackLease?.Failure is { } playbackFailure)
                 {
                     var disposition = ClassifyMacroPlaybackRetry(
@@ -1215,7 +1219,8 @@ public partial class MainWindow
                 playbackText.SkippedInvalid(skipped),
                 MayContinue: true,
                 MadeProgress: true,
-                StopAll: false);
+                StopAll: false,
+                RequiresSafetyPause: false);
     }
 
     internal static IReadOnlyList<SessionTemplateClientSlot>
@@ -1386,7 +1391,11 @@ public partial class MainWindow
             return TemplateMacroPlaybackResult.Completed;
         }
         if (!playbackOutcome.Result.CleanupSucceeded)
-            return TemplateMacroPlaybackResult.Stopped(warning);
+        {
+            return TemplateMacroPlaybackResult.Stopped(
+                warning,
+                requiresSafetyPause: true);
+        }
         if (playbackLease.Failure is { } playbackFailure)
         {
             return ReportMacroPlaybackRetryFailure(
@@ -1600,34 +1609,41 @@ public partial class MainWindow
         string? Warning,
         bool MayContinue,
         bool MadeProgress,
-        bool StopAll)
+        bool StopAll,
+        bool RequiresSafetyPause)
     {
         internal static TemplateMacroPlaybackResult Completed { get; } =
             new(
                 null,
                 MayContinue: true,
                 MadeProgress: true,
-                StopAll: false);
+                StopAll: false,
+                RequiresSafetyPause: false);
 
         internal static TemplateMacroPlaybackResult Deferred(string warning) =>
             new(
                 warning,
                 MayContinue: true,
                 MadeProgress: false,
-                StopAll: false);
+                StopAll: false,
+                RequiresSafetyPause: false);
 
         internal static TemplateMacroPlaybackResult Retired(string warning) =>
             new(
                 warning,
                 MayContinue: false,
                 MadeProgress: false,
-                StopAll: false);
+                StopAll: false,
+                RequiresSafetyPause: false);
 
-        internal static TemplateMacroPlaybackResult Stopped(string warning) =>
+        internal static TemplateMacroPlaybackResult Stopped(
+            string warning,
+            bool requiresSafetyPause = false) =>
             new(
                 warning,
                 MayContinue: false,
                 MadeProgress: false,
-                StopAll: true);
+                StopAll: true,
+                RequiresSafetyPause: requiresSafetyPause);
     }
 }

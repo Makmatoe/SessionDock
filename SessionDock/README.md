@@ -109,7 +109,7 @@ monitor fallback, and 4K-to-1080p behavior.
 Local production packaging is intentionally unavailable. Follow
 [`docs/RELEASING.md`](../docs/RELEASING.md) only after every automated and
 manual gate passes. ExactWheel provenance pins 14 implementation/lock files at
-commit `a290cdb9fb5d0c5047103a9985016cb573ea954f`, the separately pinned current
+commit `f32799820fb4a31089523beb184314542f4fe521`, the separately pinned current
 build definition, and the root MIT license. The release verifier must
 cryptographically confirm that complete identity before publication.
 
@@ -140,7 +140,10 @@ cryptographically confirm that complete identity before publication.
   only when the safe input state and exact leased Roblox HWND return. A
   click-driven cross-client focus change receives an unscaled settle boundary;
   a target that stays unavailable yields with backoff so other clients and the
-  other macro mode continue looping.
+  other macro mode continue looping. A failed intervention monitor is rebuilt
+  with a fresh playback session. If no assignment remains runnable, or global
+  injected-input cleanup cannot be confirmed, the controller stays active in a
+  zero-input safety pause until the user selects Stop.
 - `Services/RobloxWindowLayoutPolicy.cs` computes the top-left clickable
   cascade, reveal spacing, normalized saved geometry, and monitor fallback.
 - `Services/RobloxSessionLayoutCoordinator.cs` captures and restores

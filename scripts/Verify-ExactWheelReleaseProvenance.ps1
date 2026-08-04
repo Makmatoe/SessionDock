@@ -11,12 +11,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$expectedSourceCommit = 'a290cdb9fb5d0c5047103a9985016cb573ea954f'
-$expectedManifestSha256 = '05cbe826bb17e55a7ed8fb9632dbb342fec76482bb30b228ca0e3b7422d73aa3'
+$expectedSourceCommit = 'f32799820fb4a31089523beb184314542f4fe521'
+$expectedManifestSha256 = 'ef99e19b70a139841385391a9065f81bdd555df4401777d495c2fdd5554c26bd'
 $expectedLicenseSha256 = '5944250b546861e4e616de520b7d06513fec435a5651fc49d83ae92d3cf14bf2'
 $expectedLicenseGitBlob = '730ba1584a9ef1002dfca75b3b18a8d889052fbc'
 $expectedCanonicalManifestSha256 =
-    '3530b06a88f363f2097ae646be70d468f70d7ada968cef983861b907e14bede0'
+    'd20c4933d8fcabbc9b00163ffb20868e74e7cca796344e72508c08e8b1118425'
 $expectedProjectSha256 = '76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841'
 $expectedProjectGitBlob = '07fe8f9ec14088750f6d2a0d835c86b678a0f76e'
 $expectedProjectPath = 'SessionDock.ExactWheel/SessionDock.ExactWheel.csproj'
@@ -36,27 +36,27 @@ $expectedInventory = @(
     },
     [pscustomobject]@{
         Path = 'ExactWheelMacroSerializer.cs'
-        Bytes = 18076L
-        Sha256 = 'b495a0dd078feabc5348bea40a48a9ef57445f705231a6a2ebb766d93cadc572'
-        GitBlob = 'db76b7c1c9789a59b9540f3fff796a830ee01cff'
+        Bytes = 18087L
+        Sha256 = 'f71fc9cf42c8afce0a030826bf9ad4db0da3f4f1641900b4e278e1569ff9e916'
+        GitBlob = '836c75d1d4d9f1caecab85d215d1a673878d83c4'
     },
     [pscustomobject]@{
         Path = 'ExactWheelModels.cs'
-        Bytes = 18015L
-        Sha256 = '0b88643341dfe9bb4a574d238dd057f76b6b9cd79a758272aa60bb6019310344'
-        GitBlob = '0db14d168ac8b4165556a5549e88cad5b001fe7b'
+        Bytes = 18355L
+        Sha256 = 'b6397a0737e83a036a69ded858b163c7c99f82a4ef2063fafdef8461e4bae90d'
+        GitBlob = '72280a7cc92a6bc6b083056a5bb5c4743027cdb4'
     },
     [pscustomobject]@{
         Path = 'ExactWheelPlaybackModels.cs'
-        Bytes = 3680L
-        Sha256 = '7820c31a723d0ff07fdd3fdc0732cdce86f31ba274793865a830f60447e2dfad'
-        GitBlob = 'ec3dfb6859fe73168712f5e20b6586e96267f322'
+        Bytes = 4603L
+        Sha256 = 'd395e743032fd478526c828e1799860bd8877935fc932fd822888034342809a0'
+        GitBlob = 'b2b9df6de83a032481b4fc4bb4a181d865be89ee'
     },
     [pscustomobject]@{
         Path = 'ExactWheelRecordingValidator.cs'
-        Bytes = 11289L
-        Sha256 = 'd1dc6e66cf0ecf73a2aa161bc41c0c2896f4815a8a2339d5f09f99d4053f6970'
-        GitBlob = 'b968de85b7d8cb6f47a71b7edd959e37cb2c74bd'
+        Bytes = 22553L
+        Sha256 = 'f23753e8b7bb0f6a2e4ad44cf080b1a2e5b9a54dce116794bc9bfbebb4747c64'
+        GitBlob = '4882e8eb05d386e60df764840770341fcdd21a4e'
     },
     [pscustomobject]@{
         Path = 'ExactWheelSession.cs'
@@ -78,9 +78,9 @@ $expectedInventory = @(
     },
     [pscustomobject]@{
         Path = 'Windows/ExactWheelInputInjector.cs'
-        Bytes = 19682L
-        Sha256 = '11e4d38db740a22adbed7b4c31f517f717295ac572b96a7b869031b2ef83692f'
-        GitBlob = '3e9b1e50b2780e75c2b9774c5b7dc4df19e75171'
+        Bytes = 21902L
+        Sha256 = '2201bff01f3ae4dfc76bff44fe6fc5ae3ed2096c27a3b0372cdc8c13ac4f443c'
+        GitBlob = '797137c56ece77ba7b9ffc1c3a477878c7ff9729'
     },
     [pscustomobject]@{
         Path = 'Windows/ExactWheelNativeMethods.cs'
@@ -90,9 +90,9 @@ $expectedInventory = @(
     },
     [pscustomobject]@{
         Path = 'Windows/ExactWheelPlaybackEngine.cs'
-        Bytes = 77627L
-        Sha256 = 'e28242ad4f9f889f5cb9d37ec1c5cf4e6a395144a47967fa5aa6e7b12e847ed3'
-        GitBlob = '218db40493c70259b5a1f19e83aecb5bcc679f1b'
+        Bytes = 87181L
+        Sha256 = 'a8dd08179693cabb482385034dbeb0c13d249dfa6b5058622f8746030b36f728'
+        GitBlob = '06deb2d3713065d3d536eba405d4e617b70341e6'
     },
     [pscustomobject]@{
         Path = 'Windows/LowLevelInputCapture.cs'
@@ -276,7 +276,7 @@ if ($manifest.sourcePathHint -cne 'SessionDock.ExactWheel') {
     $blockingReasons.Add('sourcePathHint is not the repository-native component path')
 }
 if ([long] $manifest.sourceFileCount -ne $expectedInventory.Count -or
-    [long] $manifest.sourceBytes -ne 249698L -or
+    [long] $manifest.sourceBytes -ne 274010L -or
     $manifest.canonicalManifestSha256 -cne $expectedCanonicalManifestSha256) {
     $blockingReasons.Add('source inventory summary does not match the pinned repository snapshot')
 }

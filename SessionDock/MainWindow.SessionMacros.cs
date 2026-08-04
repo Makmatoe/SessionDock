@@ -354,40 +354,59 @@ public partial class MainWindow
             Volatile.Write(
                 ref _macroPlaybackProgressDispatch,
                 progressDispatch);
-            await Task.Run(
-                () => RunMacroPlaybackCoreAsync(
-                    prepared,
-                    rate,
-                    playbackText,
-                    warnings,
-                    playbackCancellation.Token),
-                CancellationToken.None);
-            _ = Interlocked.CompareExchange(
-                ref _macroPlaybackProgressDispatch,
-                null,
-                progressDispatch);
+            try
+            {
+                await Task.Run(
+                    () => RunMacroPlaybackCoreAsync(
+                        prepared,
+                        rate,
+                        playbackText,
+                        warnings,
+                        playbackCancellation.Token),
+                    CancellationToken.None);
+            }
+            catch (OperationCanceledException) when (
+                playbackCancellation.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                // Unexpected runtime failures must never make the controller
+                // look as though the user stopped it. The playback session has
+                // already unwound its input cleanup; latch this run in a
+                // zero-input safety pause until the visible Stop action is used.
+                Trace.WriteLine(
+                    $"Macro playback entered a safety pause: {exception.GetType().Name}.");
+                warnings.Add(playbackText.PlaybackFailure(exception.Message));
+            }
+            finally
+            {
+                _ = Interlocked.CompareExchange(
+                    ref _macroPlaybackProgressDispatch,
+                    null,
+                    progressDispatch);
+            }
 
             var message = string.Join(" ", warnings.Distinct());
-            var externallyCancelled =
-                playbackCancellation.IsCancellationRequested &&
-                !cancellationToken.IsCancellationRequested;
-            if (externallyCancelled)
-            {
-                Trace.WriteLine(
-                    $"Externally cancelled macro playback reported a safety failure: {message}");
-            }
-            else
-            {
-                SetStatus(
-                    Localize("Macro.ControllerStoppedTitle"),
-                    message,
-                    Localize("Main.BatchPartialBadge"),
-                    StatusTone.Warning);
-            }
-            return new SessionMacroPlaybackOutcome(
-                false,
-                message,
-                SuppressDialog: externallyCancelled);
+            if (string.IsNullOrWhiteSpace(message))
+                message = noValidAssignments;
+            SetStatus(
+                Localize("Macro.ControllerPausedTitle"),
+                string.Concat(
+                    Localize("Macro.ControllerPausedDetail"),
+                    " ",
+                    message),
+                Localize("Main.BatchPartialBadge"),
+                StatusTone.Warning);
+
+            // A run that can no longer inject safely remains an active,
+            // zero-input pause. Only the controller Stop action, an explicitly
+            // requested batch replacement, or application shutdown cancels it.
+            await Task.Delay(
+                Timeout.InfiniteTimeSpan,
+                playbackCancellation.Token);
+            return new SessionMacroPlaybackOutcome(false, message);
         }
         catch (OperationCanceledException) when (
             playbackCancellation.IsCancellationRequested)
@@ -453,69 +472,136 @@ public partial class MainWindow
         HashSet<string> warnings,
         CancellationToken cancellationToken)
     {
-        await using var playbackSession = new ExactWheelSession();
-        // A macro run is one serial playback sequence, even when it loops
-        // indefinitely. Retaining one healthy intervention monitor avoids
-        // creating a hook thread and sampling every physical key again at
-        // each short n=1 cycle; every PlayAsync still verifies its health.
-        await using var playbackSequence =
-            playbackSession.BeginPlaybackSequence();
         var clientModeActive = prepared.ClientTemplate is not null;
         var wholeModeActive = prepared.WholeTemplate is not null;
-        await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
-            async cycleCancellationToken =>
+        var playbackSessionRestartDelay =
+            SessionMacroPlaybackRetryTracker.InitialDelay;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var restartPlaybackSession = false;
+            await using (var playbackSession = new ExactWheelSession())
             {
-                var madeProgress = false;
-                if (clientModeActive && prepared.ClientTemplate is not null)
+                IAsyncDisposable? playbackSequence = null;
+                try
                 {
-                    var result = await PlayTemplateMacrosAsync(
-                        prepared.ClientTemplate,
-                        prepared,
-                        playbackSession,
-                        rate,
-                        playbackText,
-                        cycleCancellationToken);
-                    if (!string.IsNullOrWhiteSpace(result.Warning))
-                        warnings.Add(result.Warning);
-                    if (result.StopAll)
-                        return SessionMacroPlaybackCycleResult.Stop;
-                    clientModeActive = result.MayContinue;
-                    madeProgress |= result.MadeProgress;
+                    playbackSequence =
+                        playbackSession.BeginPlaybackSequence();
                 }
-                if (wholeModeActive && prepared.WholeTemplate is not null)
+                catch (Exception exception) when (
+                    exception is InvalidOperationException or TimeoutException)
                 {
-                    var result = await PlayTemplateMacrosAsync(
-                        prepared.WholeTemplate,
-                        prepared,
-                        playbackSession,
-                        rate,
-                        playbackText,
-                        cycleCancellationToken);
-                    if (!string.IsNullOrWhiteSpace(result.Warning))
-                        warnings.Add(result.Warning);
-                    if (result.StopAll)
-                        return SessionMacroPlaybackCycleResult.Stop;
-                    wholeModeActive = result.MayContinue;
-                    madeProgress |= result.MadeProgress;
+                    // Hook setup has not injected anything, so a known startup
+                    // failure can safely rebuild the complete session after the
+                    // same bounded backoff as an unhealthy running monitor.
+                    Trace.WriteLine(
+                        $"Macro intervention monitor setup will retry: {exception.GetType().Name}.");
+                    warnings.Add(
+                        playbackText.PlaybackFailure(exception.Message));
+                    restartPlaybackSession = true;
                 }
 
-                // A corrupt or permanently invalid assignment retires only
-                // its own mode. The other independently valid mode keeps
-                // looping; only an unsafe global input/monitor failure sets
-                // StopAll above.
-                if (!clientModeActive && !wholeModeActive)
-                    return SessionMacroPlaybackCycleResult.Stop;
-                if (madeProgress)
-                    return SessionMacroPlaybackCycleResult.Continue();
+                if (playbackSequence is not null)
+                {
+                    await using (playbackSequence)
+                    {
+                        // A healthy session retains one intervention monitor
+                        // across short n=1 cycles. If that monitor dies, the
+                        // inner loop exits, this scope disposes it, and the
+                        // outer supervisor creates a fresh session instead of
+                        // ending the macro run.
+                        await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
+                    async cycleCancellationToken =>
+                    {
+                        var madeProgress = false;
+                        if (clientModeActive &&
+                            prepared.ClientTemplate is not null)
+                        {
+                            var result = await PlayTemplateMacrosAsync(
+                                prepared.ClientTemplate,
+                                prepared,
+                                playbackSession,
+                                rate,
+                                playbackText,
+                                cycleCancellationToken);
+                            if (!string.IsNullOrWhiteSpace(result.Warning))
+                                warnings.Add(result.Warning);
+                            if (result.StopAll)
+                            {
+                                restartPlaybackSession =
+                                    !result.RequiresSafetyPause;
+                                return SessionMacroPlaybackCycleResult.Stop;
+                            }
+                            clientModeActive = result.MayContinue;
+                            madeProgress |= result.MadeProgress;
+                            if (result.MadeProgress)
+                            {
+                                playbackSessionRestartDelay =
+                                    SessionMacroPlaybackRetryTracker
+                                        .InitialDelay;
+                            }
+                        }
+                        if (wholeModeActive &&
+                            prepared.WholeTemplate is not null)
+                        {
+                            var result = await PlayTemplateMacrosAsync(
+                                prepared.WholeTemplate,
+                                prepared,
+                                playbackSession,
+                                rate,
+                                playbackText,
+                                cycleCancellationToken);
+                            if (!string.IsNullOrWhiteSpace(result.Warning))
+                                warnings.Add(result.Warning);
+                            if (result.StopAll)
+                            {
+                                restartPlaybackSession =
+                                    !result.RequiresSafetyPause;
+                                return SessionMacroPlaybackCycleResult.Stop;
+                            }
+                            wholeModeActive = result.MayContinue;
+                            madeProgress |= result.MadeProgress;
+                            if (result.MadeProgress)
+                            {
+                                playbackSessionRestartDelay =
+                                    SessionMacroPlaybackRetryTracker
+                                        .InitialDelay;
+                            }
+                        }
 
-                var retryDelay = prepared.PlaybackRetryTracker
-                    .GetDelayUntilNextAttempt();
-                return retryDelay is null
-                    ? SessionMacroPlaybackCycleResult.Stop
-                    : SessionMacroPlaybackCycleResult.Continue(
-                        retryDelay.Value);
-            },
-            cancellationToken);
+                        // A corrupt or permanently invalid assignment retires
+                        // only its own mode. If nothing remains runnable, leave
+                        // the injection session and let the controller enter a
+                        // zero-input pause until the user selects Stop.
+                        if (!clientModeActive && !wholeModeActive)
+                            return SessionMacroPlaybackCycleResult.Stop;
+                        if (madeProgress)
+                            return SessionMacroPlaybackCycleResult.Continue();
+
+                        var retryDelay = prepared.PlaybackRetryTracker
+                            .GetDelayUntilNextAttempt();
+                        return retryDelay is null
+                            ? SessionMacroPlaybackCycleResult.Stop
+                            : SessionMacroPlaybackCycleResult.Continue(
+                                retryDelay.Value);
+                    },
+                            cancellationToken);
+                    }
+                }
+            }
+
+            if (!restartPlaybackSession)
+                return;
+
+            // Rebuilding a failed hook/session is bounded so a persistent OS
+            // failure cannot hot-loop on low-powered n-client devices.
+            await Task.Delay(
+                playbackSessionRestartDelay,
+                cancellationToken);
+            playbackSessionRestartDelay = TimeSpan.FromTicks(Math.Min(
+                SessionMacroPlaybackRetryTracker.MaximumDelay.Ticks,
+                playbackSessionRestartDelay.Ticks * 2));
+        }
     }
 
     private MacroPlaybackText CaptureMacroPlaybackText()

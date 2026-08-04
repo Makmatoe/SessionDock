@@ -1356,7 +1356,7 @@
     <sys:String x:Key="Tutorial.AdvancedAssignmentsTitle">De huidige batch toewijzen</sys:String>
     <sys:String x:Key="Tutorial.AdvancedAssignmentsBody">Beschikbaar nadat een batch met ingeschakelde macro’s is gestart. Kies een clientmacro en focus daarna een geverifieerde Roblox-client uit die batch. Toewijzen start niets; Afspelen herhaalt alle toewijzingen tot Stop.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedControllerTitle">De macrolus bedienen</sys:String>
-    <sys:String x:Key="Tutorial.AdvancedControllerBody">Beschikbaar nadat een batch met ingeschakelde macro’s is gestart. Afspelen start een voortdurende lus en verandert tijdens de uitvoering in Stop. Ook het sluiten van de bediening stopt de lus. Fysieke invoer of focusverlies pauzeert de weergave totdat de geverifieerde focus- en invoervoorwaarden zijn hersteld. Kies 0,25x tot 2x.</sys:String>
+    <sys:String x:Key="Tutorial.AdvancedControllerBody">Beschikbaar nadat een batch met ingeschakelde macro’s is gestart. Afspelen start een voortdurende lus en verandert tijdens de uitvoering in Stop. Ook het sluiten van de bediening stopt de lus. Fysieke invoer of focusverlies pauzeert de weergave totdat de geverifieerde voorwaarden zijn hersteld, en SessionDock bouwt een defecte invoermonitor opnieuw op. Een onveilige of blijvend niet-uitvoerbare lus wacht zonder invoer te verzenden totdat je Stop kiest. Kies 0,25x tot 2x.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferTitle">Geselecteerde gegevens overzetten</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferBody">Exporteer geselecteerde sjablonen, macro’s, openbare bestemmingen en startvoorinstellingen in een draagbaar pakket, of gebruik de bestaande metadata. Aanmeldingen en privégegevens blijven lokaal; controleer macro’s met toetsenbordinvoer voordat je ze exporteert of importeert.</sys:String>
     <sys:String x:Key="Tutorial.Preview">Begeleide voorvertoning — gemarkeerde knoppen zijn niet actief. Gebruik Volgende om door de functies te gaan.</sys:String>
@@ -1557,7 +1557,7 @@
     <sys:String x:Key="Macro.SkippedAfterPartialLaunch">Macro’s zijn overgeslagen omdat een of meer sjabloonclients niet zijn gestart.</sys:String>
     <sys:String x:Key="Macro.CatalogUnavailable">De lokale macrocatalogus is niet beschikbaar, waardoor het afspelen niet is gestart.</sys:String>
     <sys:String x:Key="Macro.InvalidAssignment">Een sjabloonmacro ontbreekt, heeft de verkeerde modus of is niet aan een gestarte client toegewezen.</sys:String>
-    <sys:String x:Key="Macro.PlaybackFailure">Macro veilig gestopt: {0}</sys:String>
+    <sys:String x:Key="Macro.PlaybackFailure">Macro veilig gepauzeerd: {0}</sys:String>
     <sys:String x:Key="Macro.FocusingClientTitle">Volgende Roblox-client activeren</sys:String>
     <sys:String x:Key="Macro.FocusingClientDetail">Client {0} voorbereiden voor clientrelatief afspelen.</sys:String>
     <sys:String x:Key="Macro.FocusDenied">Windows stond SessionDock niet toe om de geverifieerde Roblox-client te activeren.</sys:String>
@@ -1588,6 +1588,8 @@
     <sys:String x:Key="Macro.ControllerNoValidAssignments">Er zijn geen geldige macrotoewijzingen meer. Controleer de toewijzingen van de huidige batch.</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingTitle">Macrolus gestart</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingDetail">De huidige batch wordt voortdurend herhaald op {0}x. Kies Stop of sluit de bediening om de lus veilig te beëindigen.</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedTitle">Macrolus wacht veilig</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedDetail">Er wordt geen verdere invoer verzonden. Deze uitvoering blijft actief in plaats van zichzelf te stoppen; kies Stop wanneer je de uitvoering wilt beëindigen.</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedTitle">Macrolus beëindigd</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedDetail">De voortdurende lus is beëindigd. Controleer de huidige batch voordat je opnieuw Afspelen kiest.</sys:String>
     <sys:String x:Key="Macro.ControllerStoppedTitle">Macro veilig gestopt</sys:String>

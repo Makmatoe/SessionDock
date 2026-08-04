@@ -1361,7 +1361,7 @@
     <sys:String x:Key="Tutorial.AdvancedAssignmentsTitle">Assign the current batch</sys:String>
     <sys:String x:Key="Tutorial.AdvancedAssignmentsBody">Available after a macro-enabled batch launches. Select a client macro, then focus one verified Roblox client from that batch. Assigning it does not start playback; Play loops all assignments until Stop.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedControllerTitle">Control the macro loop</sys:String>
-    <sys:String x:Key="Tutorial.AdvancedControllerBody">Available after a macro-enabled batch launches. Play starts a continuous loop and becomes Stop while it runs. Closing the controller also stops it. Physical input or focus loss pauses playback until verified focus and input conditions recover. Choose 0.25x through 2x.</sys:String>
+    <sys:String x:Key="Tutorial.AdvancedControllerBody">Available after a macro-enabled batch launches. Play starts a continuous loop and becomes Stop while it runs. Closing the controller also stops it. Physical input or focus loss pauses playback until verified conditions recover, and SessionDock rebuilds a failed input monitor. An unsafe or permanently non-runnable run waits without injecting until you select Stop. Choose 0.25x through 2x.</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferTitle">Transfer selected data</sys:String>
     <sys:String x:Key="Tutorial.AdvancedTransferBody">Export selected templates, macros, public destinations, and launch presets in a portable package, or use legacy metadata. Sign-ins and private data stay local; review keyboard-input macros before export or import.</sys:String>
     <sys:String x:Key="Tutorial.Preview">Guided preview — highlighted controls are not active. Use Next to move between features.</sys:String>
@@ -1562,7 +1562,7 @@
     <sys:String x:Key="Macro.SkippedAfterPartialLaunch">Macros were skipped because one or more template clients did not launch.</sys:String>
     <sys:String x:Key="Macro.CatalogUnavailable">The local macro catalog is unavailable, so playback did not start.</sys:String>
     <sys:String x:Key="Macro.InvalidAssignment">A template macro is missing, has the wrong mode, or is not assigned to a launched client.</sys:String>
-    <sys:String x:Key="Macro.PlaybackFailure">Macro playback stopped safely: {0}</sys:String>
+    <sys:String x:Key="Macro.PlaybackFailure">Macro playback paused safely: {0}</sys:String>
     <sys:String x:Key="Macro.FocusingClientTitle">Focusing the next Roblox client</sys:String>
     <sys:String x:Key="Macro.FocusingClientDetail">Preparing client {0} for client-relative playback.</sys:String>
     <sys:String x:Key="Macro.FocusDenied">Windows did not allow SessionDock to focus the verified Roblox client.</sys:String>
@@ -1593,6 +1593,8 @@
     <sys:String x:Key="Macro.ControllerNoValidAssignments">No valid macro assignments remain. Review the current batch assignments.</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingTitle">Macro loop started</sys:String>
     <sys:String x:Key="Macro.ControllerPlayingDetail">Looping the current batch continuously at {0}x. Select Stop or close the controller to end it safely.</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedTitle">Macro loop waiting safely</sys:String>
+    <sys:String x:Key="Macro.ControllerPausedDetail">No further input is being sent. This run remains active instead of stopping itself; select Stop when you want to end it.</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedTitle">Macro loop ended</sys:String>
     <sys:String x:Key="Macro.ControllerFinishedDetail">The continuous loop ended. Review the current batch before selecting Play again.</sys:String>
     <sys:String x:Key="Macro.ControllerStoppedTitle">Macro playback stopped safely</sys:String>

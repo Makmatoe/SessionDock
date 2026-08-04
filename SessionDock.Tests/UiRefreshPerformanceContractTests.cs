@@ -146,7 +146,11 @@ public sealed class UiRefreshPerformanceContractTests
             "MainWindow.Templates.cs"));
 
         Assert.Contains(
-            "await using var playbackSession = new ExactWheelSession()",
+            "await using (var playbackSession = new ExactWheelSession())",
+            host);
+        Assert.Contains("var restartPlaybackSession = false;", host);
+        Assert.Contains(
+            "SessionMacroPlaybackRetryTracker.MaximumDelay.Ticks",
             host);
         Assert.Contains("Task.Run(", host);
         Assert.Contains("RunMacroPlaybackCoreAsync(", host);
