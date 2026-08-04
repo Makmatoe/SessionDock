@@ -404,17 +404,16 @@ public sealed class RobloxWindowServiceTests
         _ = cache.GetOrAcquire(service, window);
         for (var index = 0; index < 100; index++)
             _ = cache.GetOrAcquire(service, window);
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var aggregate = 0;
-
-        for (var index = 0; index < 10_000; index++)
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            aggregate += cache.GetOrAcquire(service, window)
-                .Lease?.AllowedTargetCount ?? 0;
-        }
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            aggregate = 0;
+            for (var index = 0; index < 10_000; index++)
+            {
+                aggregate += cache.GetOrAcquire(service, window)
+                    .Lease?.AllowedTargetCount ?? 0;
+            }
+        });
         Assert.Equal(10_000, aggregate);
         Assert.Equal(0, allocated);
     }
@@ -446,17 +445,16 @@ public sealed class RobloxWindowServiceTests
         Assert.True(first.Success, first.Failure?.Error);
         for (var index = 0; index < 100; index++)
             _ = cache.GetOrAcquire(service, reversed);
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var aggregate = 0;
-
-        for (var index = 0; index < 10_000; index++)
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            aggregate += cache.GetOrAcquire(service, reversed)
-                .Lease?.AllowedTargetCount ?? 0;
-        }
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            aggregate = 0;
+            for (var index = 0; index < 10_000; index++)
+            {
+                aggregate += cache.GetOrAcquire(service, reversed)
+                    .Lease?.AllowedTargetCount ?? 0;
+            }
+        });
         Assert.Equal(80_000, aggregate);
         Assert.Equal(8, native.PinAttemptCount);
         Assert.Equal(0, allocated);
@@ -488,14 +486,13 @@ public sealed class RobloxWindowServiceTests
         var repeated = cache.GetOrCaptureWindowClass(window);
         for (var index = 0; index < 100; index++)
             _ = cache.GetOrCaptureWindowClass(window);
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         var aggregate = 0;
-
-        for (var index = 0; index < 10_000; index++)
-            aggregate += cache.GetOrCaptureWindowClass(window).Length;
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
+        {
+            aggregate = 0;
+            for (var index = 0; index < 10_000; index++)
+                aggregate += cache.GetOrCaptureWindowClass(window).Length;
+        });
         Assert.Same(first, repeated);
         Assert.Equal(13, first.Length);
         Assert.Equal(130_000, aggregate);

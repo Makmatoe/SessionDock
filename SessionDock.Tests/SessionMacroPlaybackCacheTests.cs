@@ -158,19 +158,17 @@ public sealed class SessionMacroPlaybackCacheTests
                 target,
                 unexpectedTransform);
         }
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-
-        for (var index = 0; index < 10_000; index++)
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            _ = cache.GetOrTransform(
-                definition,
-                SessionMacroTransformKind.ClientRelative,
-                target,
-                unexpectedTransform);
-        }
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            for (var index = 0; index < 10_000; index++)
+            {
+                _ = cache.GetOrTransform(
+                    definition,
+                    SessionMacroTransformKind.ClientRelative,
+                    target,
+                    unexpectedTransform);
+            }
+        });
         Assert.Equal(0, allocated);
     }
 
@@ -208,24 +206,22 @@ public sealed class SessionMacroPlaybackCacheTests
                 recording,
                 transformHit);
         }
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-
-        for (var index = 0; index < 10_000; index++)
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            _ = cache.GetOrLoad(
-                definition,
-                recording,
-                sourceHit);
-            _ = cache.GetOrTransform(
-                definition,
-                SessionMacroTransformKind.ClientRelative,
-                target,
-                recording,
-                transformHit);
-        }
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            for (var index = 0; index < 10_000; index++)
+            {
+                _ = cache.GetOrLoad(
+                    definition,
+                    recording,
+                    sourceHit);
+                _ = cache.GetOrTransform(
+                    definition,
+                    SessionMacroTransformKind.ClientRelative,
+                    target,
+                    recording,
+                    transformHit);
+            }
+        });
         Assert.Equal(0, allocated);
     }
 

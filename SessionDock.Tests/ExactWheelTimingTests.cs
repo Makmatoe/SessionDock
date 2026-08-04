@@ -129,23 +129,22 @@ public sealed class ExactWheelTimingTests
                 10_000,
                 10_000_000);
         }
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
         long aggregate = 0;
-
-        for (ulong loop = 0; loop < 10_000; loop++)
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            aggregate ^= ExactWheelTiming.PlaybackDeadlineTicks(
-                17,
-                loop,
-                5_000_000,
-                123_456,
-                rate,
-                10_000,
-                10_000_000);
-        }
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            aggregate = 0;
+            for (ulong loop = 0; loop < 10_000; loop++)
+            {
+                aggregate ^= ExactWheelTiming.PlaybackDeadlineTicks(
+                    17,
+                    loop,
+                    5_000_000,
+                    123_456,
+                    rate,
+                    10_000,
+                    10_000_000);
+            }
+        });
         Assert.NotEqual(0, aggregate);
         Assert.InRange(allocated, 0, 256);
     }

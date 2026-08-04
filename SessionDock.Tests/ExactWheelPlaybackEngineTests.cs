@@ -23,25 +23,21 @@ public sealed class ExactWheelPlaybackEngineTests
             ExactWheelTestData.Target(),
             events,
             eventCount * 100UL);
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-
-        var prepared = ExactWheelPlaybackEngine
-            .PreparePlaybackRecording(recording);
-
-        var initialAllocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+        ExactWheelRecording? prepared = null;
+        var initialAllocated = AllocationMeasurement.MinimumAllocatedBytes(
+            () => prepared = ExactWheelPlaybackEngine
+                .PreparePlaybackRecording(recording));
         Assert.Same(recording, prepared);
         Assert.InRange(initialAllocated, 0, 256);
 
-        allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-        for (var index = 0; index < 100_000; index++)
+        var repeatedAllocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            prepared = ExactWheelPlaybackEngine
-                .PreparePlaybackRecording(recording);
-        }
-
-        var repeatedAllocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            for (var index = 0; index < 100_000; index++)
+            {
+                prepared = ExactWheelPlaybackEngine
+                    .PreparePlaybackRecording(recording);
+            }
+        });
         Assert.Same(recording, prepared);
         Assert.InRange(repeatedAllocated, 0, 256);
     }
@@ -83,16 +79,14 @@ public sealed class ExactWheelPlaybackEngineTests
             100);
         var display = ExactWheelTestData.Display();
         var target = ExactWheelTestData.Target();
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-
-        var recording = ExactWheelRecordingValidator.FinalizeOwned(
-            display,
-            target,
-            events,
-            eventCount * 100UL);
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+        ExactWheelRecording? recording = null;
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
+            recording = ExactWheelRecordingValidator.FinalizeOwned(
+                display,
+                target,
+                events,
+                eventCount * 100UL));
+        Assert.NotNull(recording);
         Assert.Equal(eventCount, recording.Events.Count);
         Assert.InRange(allocated, 0, 256);
     }

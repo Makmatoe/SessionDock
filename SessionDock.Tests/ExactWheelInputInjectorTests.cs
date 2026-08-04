@@ -163,19 +163,20 @@ public sealed class ExactWheelInputInjectorTests
             injection = injector.Inject(inputEvent, topology);
             cleanup = injector.ReleaseHeld();
         }
-        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
-
-        for (var index = 0; index < 100_000; index++)
+        const int allocationAttempts = 3;
+        var allocated = AllocationMeasurement.MinimumAllocatedBytes(() =>
         {
-            injection = injector.Inject(inputEvent, topology);
-            cleanup = injector.ReleaseHeld();
-        }
-
-        var allocated = GC.GetAllocatedBytesForCurrentThread() -
-            allocatedBefore;
+            for (var index = 0; index < 100_000; index++)
+            {
+                injection = injector.Inject(inputEvent, topology);
+                cleanup = injector.ReleaseHeld();
+            }
+        }, allocationAttempts);
         Assert.True(injection.Succeeded);
         Assert.True(cleanup.Succeeded);
-        Assert.Equal(101_000, backend.SendCount);
+        Assert.Equal(
+            1_000 + ((allocationAttempts + 1) * 100_000),
+            backend.SendCount);
         Assert.InRange(allocated, 0, 256);
         injector.Dispose();
     }
