@@ -114,6 +114,42 @@ public sealed class ExactWheelTimingTests
         Assert.Equal(expected, actual);
     }
 
+    [Fact]
+    public void PlaybackDeadlineTicks_CommonTimelineMath_IsAllocationFree()
+    {
+        var rate = ExactWheelPlaybackRate.FromRatio(3, 2);
+        for (ulong loop = 0; loop < 100; loop++)
+        {
+            _ = ExactWheelTiming.PlaybackDeadlineTicks(
+                17,
+                loop,
+                5_000_000,
+                123_456,
+                rate,
+                10_000,
+                10_000_000);
+        }
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        long aggregate = 0;
+
+        for (ulong loop = 0; loop < 10_000; loop++)
+        {
+            aggregate ^= ExactWheelTiming.PlaybackDeadlineTicks(
+                17,
+                loop,
+                5_000_000,
+                123_456,
+                rate,
+                10_000,
+                10_000_000);
+        }
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() -
+            allocatedBefore;
+        Assert.NotEqual(0, aggregate);
+        Assert.InRange(allocated, 0, 256);
+    }
+
     [Theory]
     [InlineData(1_000_000UL, 1UL, 1UL, 1_000_000UL)]
     [InlineData(1_000_000UL, 2UL, 1UL, 500_000UL)]

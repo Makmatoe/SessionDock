@@ -113,6 +113,10 @@ public sealed class SessionMacroPlaybackLoopTests
             "SessionDock",
             "Services",
             "SessionMacroPlaybackLoop.cs"));
+        var leaseCache = File.ReadAllText(RepoFile(
+            "SessionDock",
+            "Services",
+            "SessionMacroPlaybackLeaseCache.cs"));
 
         Assert.Contains(
             "SessionMacroPlaybackLoop.RunUntilStoppedAsync(",
@@ -133,6 +137,19 @@ public sealed class SessionMacroPlaybackLoopTests
             host);
         Assert.Contains("LoopCount = 1", playback);
         Assert.Contains("Infinite = false", playback);
+        Assert.DoesNotContain(
+            "var catalog = TryLoadSessionTemplateCatalog();",
+            playback[playback.IndexOf(
+                "private async Task<TemplateMacroPlaybackResult> PlayTemplateMacrosAsync",
+                StringComparison.Ordinal)..]);
+        Assert.Contains("playbackCache.GetOrLoad(", playback);
+        Assert.Contains("playbackCache.GetOrTransform(", playback);
+        Assert.Contains("playbackLeases.GetOrAcquire(", playback);
+        Assert.Contains("_leases.TryGetValue(key", leaseCache);
+        Assert.Contains(
+            "windowService.AcquirePlaybackTargetLease(targets)",
+            leaseCache);
+        Assert.Contains("prepared.PlaybackLeases.Dispose()", host);
         Assert.DoesNotContain(
             "infinite: template.RepeatWholeLayoutMacro",
             playback);

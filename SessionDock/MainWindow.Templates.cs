@@ -874,27 +874,13 @@ public partial class MainWindow
 
     private async Task<TemplateMacroPlaybackResult> PlayTemplateMacrosAsync(
         SessionTemplate template,
-        IReadOnlyList<RobloxSessionLayoutWindow> windows,
+        RuntimeMacroPlan plan,
+        ExactWheelDisplayTopology destinationDisplay,
         ExactWheelPlaybackRate playbackRate,
         CancellationToken cancellationToken)
     {
         if (template.MacroMode == SessionTemplateMacroMode.None)
             return TemplateMacroPlaybackResult.Completed;
-
-        var catalog = TryLoadSessionTemplateCatalog();
-        if (catalog is null)
-        {
-            return TemplateMacroPlaybackResult.Stopped(
-                Localize("Macro.CatalogUnavailable"));
-        }
-        var windowsByKey = windows.ToDictionary(
-            window => window.Key,
-            StringComparer.OrdinalIgnoreCase);
-        var definitionsById = catalog.MacroDefinitions.ToDictionary(
-            definition => definition.ContentId,
-            StringComparer.OrdinalIgnoreCase);
-        _exactWheelMacroStore ??=
-            new ExactWheelMacroStore(_sessionTemplateStore);
 
         try
         {
@@ -903,24 +889,33 @@ public partial class MainWindow
                 SessionTemplateMacroMode.PerClient =>
                     await PlayPerClientMacrosAsync(
                         template,
-                        windowsByKey,
-                        definitionsById,
+                        plan.WindowsByKey,
+                        plan.DefinitionsById,
+                        plan.PlaybackCache,
+                        plan.PlaybackLeases,
+                        destinationDisplay,
                         sharedMacroId: null,
                         playbackRate,
                         cancellationToken),
                 SessionTemplateMacroMode.Shared =>
                     await PlayPerClientMacrosAsync(
                         template,
-                        windowsByKey,
-                        definitionsById,
+                        plan.WindowsByKey,
+                        plan.DefinitionsById,
+                        plan.PlaybackCache,
+                        plan.PlaybackLeases,
+                        destinationDisplay,
                         template.SharedMacroId,
                         playbackRate,
                         cancellationToken),
                 SessionTemplateMacroMode.WholeLayout =>
                     await PlayWholeLayoutMacroAsync(
                         template,
-                        windows,
-                        definitionsById,
+                        plan.Windows,
+                        plan.DefinitionsById,
+                        plan.PlaybackCache,
+                        plan.PlaybackLeases,
+                        destinationDisplay,
                         playbackRate,
                         cancellationToken),
                 _ => TemplateMacroPlaybackResult.Stopped(
@@ -942,6 +937,9 @@ public partial class MainWindow
         SessionTemplate template,
         IReadOnlyDictionary<string, RobloxSessionLayoutWindow> windowsByKey,
         IReadOnlyDictionary<string, MacroDefinition> definitionsById,
+        SessionMacroPlaybackCache playbackCache,
+        SessionMacroPlaybackLeaseCache playbackLeases,
+        ExactWheelDisplayTopology destinationDisplay,
         string? sharedMacroId,
         ExactWheelPlaybackRate playbackRate,
         CancellationToken cancellationToken)
@@ -977,24 +975,13 @@ public partial class MainWindow
                 Localize("Macro.FocusingClientDetail", slot.Order + 1),
                 Localize("Macro.PlaybackBadge"),
                 StatusTone.Neutral);
-            var focused = await _robloxWindowService.FocusAsync(
-                window.Identity,
-                window.Handle,
-                timeout: null,
-                cancellationToken);
-            if (!focused.Success)
-            {
-                skipped++;
-                continue;
-            }
 
             string? warning;
             try
             {
-                var leaseResult = _robloxWindowService
-                    .AcquirePlaybackTargetLease(
-                        window.Identity,
-                        window.Handle);
+                var leaseResult = playbackLeases.GetOrAcquire(
+                    _robloxWindowService,
+                    window);
                 if (!leaseResult.Success || leaseResult.Lease is null)
                 {
                     Trace.WriteLine(
@@ -1002,22 +989,42 @@ public partial class MainWindow
                     skipped++;
                     continue;
                 }
-                using var playbackLease = leaseResult.Lease;
+                var playbackLease = leaseResult.Lease;
+                var focused = await _robloxWindowService.FocusAsync(
+                    playbackLease,
+                    window.Identity,
+                    window.Handle,
+                    timeout: null,
+                    cancellationToken);
+                if (!focused.Success)
+                {
+                    skipped++;
+                    continue;
+                }
                 if (!playbackLease.IsDispatchAuthorized())
                 {
                     skipped++;
                     continue;
                 }
                 var destination =
-                    ExactWheelDesktopCapture.CaptureRecordingTarget(
+                    ExactWheelDesktopCapture.CapturePlaybackTarget(
                         window.Handle,
+                        destinationDisplay,
+                        Path.GetFileName(window.Identity.ExecutablePath) ??
+                            string.Empty,
                         requireForeground: true);
-                var source = _exactWheelMacroStore!.Load(definition);
-                var transformed = ExactWheelCoordinateTransforms
-                    .TransformClientRelative(
-                        source,
-                        destination.Display,
-                        destination.Metadata);
+                var source = playbackCache.GetOrLoad(
+                    definition,
+                    _exactWheelMacroStore!.Load);
+                var transformed = playbackCache.GetOrTransform(
+                    definition,
+                    SessionMacroTransformKind.ClientRelative,
+                    destination,
+                    () => ExactWheelCoordinateTransforms
+                        .TransformClientRelative(
+                            source,
+                            destination.Display,
+                            destination.Metadata));
                 warning = await PlayRecordingAsync(
                     transformed,
                     playbackLease,
@@ -1072,6 +1079,9 @@ public partial class MainWindow
         SessionTemplate template,
         IReadOnlyList<RobloxSessionLayoutWindow> windows,
         IReadOnlyDictionary<string, MacroDefinition> definitionsById,
+        SessionMacroPlaybackCache playbackCache,
+        SessionMacroPlaybackLeaseCache playbackLeases,
+        ExactWheelDisplayTopology destinationDisplay,
         ExactWheelPlaybackRate playbackRate,
         CancellationToken cancellationToken)
     {
@@ -1087,7 +1097,19 @@ public partial class MainWindow
         }
 
         var first = windows[0];
+        var leaseResult = playbackLeases.GetOrAcquire(
+            _robloxWindowService,
+            windows);
+        if (!leaseResult.Success || leaseResult.Lease is null)
+        {
+            Trace.WriteLine(
+                $"Whole-session macro target lease was rejected: {leaseResult.Failure?.Kind}.");
+            return TemplateMacroPlaybackResult.Stopped(
+                leaseResult.Failure?.Error ?? Localize("Macro.FocusDenied"));
+        }
+        var playbackLease = leaseResult.Lease;
         var focused = await _robloxWindowService.FocusAsync(
+            playbackLease,
             first.Identity,
             first.Handle,
             timeout: null,
@@ -1097,19 +1119,6 @@ public partial class MainWindow
             return TemplateMacroPlaybackResult.Stopped(
                 focused.Error ?? Localize("Macro.FocusDenied"));
         }
-
-        var leaseResult = _robloxWindowService.AcquirePlaybackTargetLease(
-            windows.Select(window => new RobloxPlaybackTarget(
-                window.Identity,
-                window.Handle)).ToArray());
-        if (!leaseResult.Success || leaseResult.Lease is null)
-        {
-            Trace.WriteLine(
-                $"Whole-session macro target lease was rejected: {leaseResult.Failure?.Kind}.");
-            return TemplateMacroPlaybackResult.Stopped(
-                leaseResult.Failure?.Error ?? Localize("Macro.FocusDenied"));
-        }
-        using var playbackLease = leaseResult.Lease;
         if (!playbackLease.IsDispatchAuthorized())
         {
             return TemplateMacroPlaybackResult.Stopped(
@@ -1117,15 +1126,23 @@ public partial class MainWindow
                     Localize("Macro.FocusDenied"));
         }
 
-        var destination = ExactWheelDesktopCapture.CaptureRecordingTarget(
+        var destination = ExactWheelDesktopCapture.CapturePlaybackTarget(
             first.Handle,
+            destinationDisplay,
+            Path.GetFileName(first.Identity.ExecutablePath) ?? string.Empty,
             requireForeground: true);
-        var source = _exactWheelMacroStore!.Load(definition);
-        var transformed = ExactWheelCoordinateTransforms
-            .TransformVirtualDesktopNormalized(
-                source,
-                destination.Display,
-                destination.Metadata);
+        var source = playbackCache.GetOrLoad(
+            definition,
+            _exactWheelMacroStore!.Load);
+        var transformed = playbackCache.GetOrTransform(
+            definition,
+            SessionMacroTransformKind.WholeLayout,
+            destination,
+            () => ExactWheelCoordinateTransforms
+                .TransformVirtualDesktopNormalized(
+                    source,
+                    destination.Display,
+                    destination.Metadata));
         var warning = await PlayRecordingAsync(
             transformed,
             playbackLease,

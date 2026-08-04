@@ -6,9 +6,12 @@ internal interface IRobloxProcessLifetimePin : IDisposable
 {
     RobloxClientProcessIdentity Identity { get; }
 
-    bool IsAlive { get; }
+    bool IsExitObservedAlive { get; }
 
-    RobloxProcessVerificationStatus VerifyIdentity(bool forceTrustRefresh);
+    bool IsRetainedProcessAlive { get; }
+
+    RobloxProcessVerificationStatus RevalidateIdentityAndToken(
+        bool refreshExecutableTrust);
 }
 
 internal sealed record RobloxPlaybackTarget(
@@ -50,34 +53,34 @@ internal sealed record RobloxPlaybackTargetLeaseAcquisitionResult(
 
 internal sealed partial class RobloxWindowService
 {
-    private static readonly TimeSpan DefaultPlaybackFullVerificationInterval =
-        TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan DefaultPlaybackIdentityRevalidationInterval =
+        TimeSpan.FromSeconds(5);
 
     internal RobloxPlaybackTargetLeaseAcquisitionResult
         AcquirePlaybackTargetLease(
         RobloxClientProcessIdentity identity,
         nint windowHandle,
-        TimeSpan? fullVerificationInterval = null)
+        TimeSpan? identityRevalidationInterval = null)
     {
         ArgumentNullException.ThrowIfNull(identity);
         return AcquirePlaybackTargetLease(
             [new RobloxPlaybackTarget(identity, windowHandle)],
-            fullVerificationInterval);
+            identityRevalidationInterval);
     }
 
     internal RobloxPlaybackTargetLeaseAcquisitionResult
         AcquirePlaybackTargetLease(
         IReadOnlyList<RobloxPlaybackTarget> allowedTargets,
-        TimeSpan? fullVerificationInterval = null)
+        TimeSpan? identityRevalidationInterval = null)
     {
         ArgumentNullException.ThrowIfNull(allowedTargets);
-        var interval = fullVerificationInterval ??
-            DefaultPlaybackFullVerificationInterval;
+        var interval = identityRevalidationInterval ??
+            DefaultPlaybackIdentityRevalidationInterval;
         if (interval <= TimeSpan.Zero || interval > TimeSpan.FromMinutes(1))
         {
             throw new ArgumentOutOfRangeException(
-                nameof(fullVerificationInterval),
-                "The playback identity refresh interval must be from one tick through one minute.");
+                nameof(identityRevalidationInterval),
+                "The playback identity revalidation interval must be from one tick through one minute.");
         }
 
         return RobloxPlaybackTargetLease.Acquire(
@@ -92,9 +95,9 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
     private readonly object _sync = new();
     private readonly IRobloxWindowNativeAdapter _native;
     private readonly IReadOnlyDictionary<nint, PinnedTarget> _targetsByHandle;
-    private readonly TimeSpan _fullVerificationInterval;
+    private readonly TimeSpan _identityRevalidationInterval;
     private DateTimeOffset _lastObservedUtc;
-    private DateTimeOffset _nextFullVerificationUtc;
+    private DateTimeOffset _nextLivenessSweepUtc;
     private RobloxPlaybackTargetLeaseFailure? _failure;
     private bool _pinsReleased;
     private bool _disposed;
@@ -102,14 +105,19 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
     private RobloxPlaybackTargetLease(
         IRobloxWindowNativeAdapter native,
         IReadOnlyList<PinnedTarget> targets,
-        TimeSpan fullVerificationInterval)
+        TimeSpan identityRevalidationInterval)
     {
         _native = native;
         _targetsByHandle = targets.ToDictionary(target => target.Handle);
-        _fullVerificationInterval = fullVerificationInterval;
+        _identityRevalidationInterval = identityRevalidationInterval;
         _lastObservedUtc = native.UtcNow;
-        _nextFullVerificationUtc =
-            _lastObservedUtc + fullVerificationInterval;
+        _nextLivenessSweepUtc =
+            _lastObservedUtc + identityRevalidationInterval;
+        foreach (var target in targets)
+        {
+            target.NextIdentityRevalidationUtc =
+                _lastObservedUtc + identityRevalidationInterval;
+        }
     }
 
     internal int AllowedTargetCount => _targetsByHandle.Count;
@@ -126,7 +134,7 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
     internal static RobloxPlaybackTargetLeaseAcquisitionResult Acquire(
         IRobloxWindowNativeAdapter native,
         IReadOnlyList<RobloxPlaybackTarget> allowedTargets,
-        TimeSpan fullVerificationInterval)
+        TimeSpan identityRevalidationInterval)
     {
         ArgumentNullException.ThrowIfNull(native);
         ArgumentNullException.ThrowIfNull(allowedTargets);
@@ -173,7 +181,7 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                     target.Handle,
                     pin);
                 pinnedTargets.Add(pinnedTarget);
-                if (!pin.IsAlive)
+                if (!pin.IsRetainedProcessAlive)
                 {
                     return FailAcquisition(
                         pinnedTargets,
@@ -192,7 +200,7 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                         pinnedTargets,
                         WindowUnavailableFailure());
                 }
-                if (!pin.IsAlive)
+                if (!pin.IsRetainedProcessAlive)
                 {
                     return FailAcquisition(
                         pinnedTargets,
@@ -204,7 +212,7 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                 new RobloxPlaybackTargetLease(
                     native,
                     pinnedTargets,
-                    fullVerificationInterval));
+                    identityRevalidationInterval));
         }
         catch (Exception exception) when (IsExpectedNativeFailure(exception))
         {
@@ -218,6 +226,109 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
 
     internal bool IsDispatchAuthorized() =>
         TryAuthorizeDispatch(out _);
+
+    // Window operations can reuse the exact process proof retained for input
+    // playback without broadening dispatch authorization or rehashing the
+    // executable. A mismatched caller is rejected without poisoning an
+    // otherwise valid lease; a changed retained target remains a sticky
+    // terminal lease failure.
+    internal RobloxPlaybackTargetLeaseFailure? ValidateExactTarget(
+        RobloxClientProcessIdentity identity,
+        nint windowHandle,
+        bool revalidateIdentityAndToken)
+    {
+        ArgumentNullException.ThrowIfNull(identity);
+        lock (_sync)
+        {
+            if (_failure is not null)
+                return _failure;
+            if (!_targetsByHandle.TryGetValue(
+                    windowHandle,
+                    out var target) ||
+                !RobloxClientProcessIdentityComparer.Instance.Equals(
+                    target.Identity,
+                    identity))
+            {
+                return new RobloxPlaybackTargetLeaseFailure(
+                    RobloxPlaybackTargetLeaseFailureKind.IdentityRejected,
+                    "The playback lease does not contain that exact Roblox process and window target.");
+            }
+
+            try
+            {
+                var now = _native.UtcNow;
+                var clockRegressed = now < _lastObservedUtc;
+                _lastObservedUtc = now;
+                if (clockRegressed)
+                {
+                    foreach (var retainedTarget in _targetsByHandle.Values)
+                    {
+                        if (!retainedTarget.Pin.IsExitObservedAlive)
+                        {
+                            _ = RejectLocked(
+                                ProcessExitedFailure(),
+                                out var failure);
+                            return failure;
+                        }
+                    }
+
+                    _nextLivenessSweepUtc =
+                        now + _identityRevalidationInterval;
+                }
+                if (!target.Pin.IsRetainedProcessAlive)
+                {
+                    _ = RejectLocked(ProcessExitedFailure(), out var failure);
+                    return failure;
+                }
+                if (revalidateIdentityAndToken || clockRegressed)
+                {
+                    var verification = target.Pin
+                        .RevalidateIdentityAndToken(
+                            refreshExecutableTrust: false);
+                    if (verification !=
+                        RobloxProcessVerificationStatus.Verified)
+                    {
+                        _ = RejectLocked(
+                            VerificationFailure(
+                                verification,
+                                duringAcquisition: false),
+                            out var failure);
+                        return failure;
+                    }
+
+                    target.NextIdentityRevalidationUtc =
+                        now + _identityRevalidationInterval;
+                }
+                if (_native.GetWindowProcessId(target.Handle) !=
+                    target.Identity.ProcessId)
+                {
+                    _ = RejectLocked(
+                        WindowOwnershipFailure(),
+                        out var failure);
+                    return failure;
+                }
+                if (!_native.IsUsableTopLevelWindow(target.Handle))
+                {
+                    _ = RejectLocked(
+                        WindowUnavailableFailure(),
+                        out var failure);
+                    return failure;
+                }
+
+                return null;
+            }
+            catch (Exception exception) when (
+                IsExpectedNativeFailure(exception))
+            {
+                _ = RejectLocked(
+                    new RobloxPlaybackTargetLeaseFailure(
+                        RobloxPlaybackTargetLeaseFailureKind.WindowUnavailable,
+                        "Windows could not revalidate the leased Roblox playback target."),
+                    out var failure);
+                return failure;
+            }
+        }
+    }
 
     internal bool IsDispatchAuthorized(ExactWheelInputEvent inputEvent) =>
         TryAuthorizeDispatch(inputEvent, out _);
@@ -261,47 +372,28 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
             try
             {
                 var now = _native.UtcNow;
-                if (now < _lastObservedUtc || now >= _nextFullVerificationUtc)
+                var clockRegressed = now < _lastObservedUtc;
+                _lastObservedUtc = now;
+                if (clockRegressed || now >= _nextLivenessSweepUtc)
                 {
+                    // Process-exit state is event-backed in production, so a
+                    // complete session liveness sweep is only a small managed
+                    // read per target. This preserves prompt failure when an
+                    // inactive client exits without repeating expensive full
+                    // identity and signer checks for every client.
                     foreach (var target in _targetsByHandle.Values)
                     {
-                        var verification = target.Pin.VerifyIdentity(
-                            forceTrustRefresh: false);
-                        if (verification !=
-                            RobloxProcessVerificationStatus.Verified)
-                        {
-                            return RejectLocked(
-                                VerificationFailure(
-                                    verification,
-                                    duringAcquisition: false),
-                                out failure);
-                        }
-                        if (!target.Pin.IsAlive)
+                        if (!target.Pin.IsExitObservedAlive)
                         {
                             return RejectLocked(
                                 ProcessExitedFailure(),
                                 out failure);
                         }
-                        if (_native.GetWindowProcessId(target.Handle) !=
-                            target.Identity.ProcessId)
-                        {
-                            return RejectLocked(
-                                WindowOwnershipFailure(),
-                                out failure);
-                        }
-                        if (!_native.IsUsableTopLevelWindow(target.Handle))
-                        {
-                            return RejectLocked(
-                                WindowUnavailableFailure(),
-                                out failure);
-                        }
                     }
 
-                    _nextFullVerificationUtc =
-                        now + _fullVerificationInterval;
+                    _nextLivenessSweepUtc =
+                        now + _identityRevalidationInterval;
                 }
-
-                _lastObservedUtc = now;
                 var foreground = _native.GetForegroundWindow();
                 if (!_targetsByHandle.TryGetValue(
                         foreground,
@@ -320,19 +412,12 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                         "Playback paused because no leased Roblox window is in the foreground.");
                     return false;
                 }
-                if (!foregroundTarget.Pin.IsAlive)
-                {
-                    return RejectLocked(
-                        ProcessExitedFailure(),
-                        out failure);
-                }
-                if (_native.GetWindowProcessId(foregroundTarget.Handle) !=
-                    foregroundTarget.Identity.ProcessId)
-                {
-                    return RejectLocked(
-                        WindowOwnershipFailure(),
-                        out failure);
-                }
+                if (!TryValidateDispatchTargetLocked(
+                        foregroundTarget,
+                        now,
+                        clockRegressed,
+                        out failure))
+                    return false;
 
                 if (inputEvent is { } candidate && candidate.IsMouseEvent)
                 {
@@ -349,19 +434,13 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                             "Playback paused because the recorded pointer location is not over a leased Roblox window.");
                         return false;
                     }
-                    if (!pointedTarget.Pin.IsAlive)
-                    {
-                        return RejectLocked(
-                            ProcessExitedFailure(),
-                            out failure);
-                    }
-                    if (_native.GetWindowProcessId(pointedTarget.Handle) !=
-                        pointedTarget.Identity.ProcessId)
-                    {
-                        return RejectLocked(
-                            WindowOwnershipFailure(),
-                            out failure);
-                    }
+                    if (pointedTarget.Handle != foregroundTarget.Handle &&
+                        !TryValidateDispatchTargetLocked(
+                            pointedTarget,
+                            now,
+                            clockRegressed,
+                            out failure))
+                        return false;
                 }
 
                 failure = null;
@@ -376,6 +455,68 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                     out failure);
             }
         }
+    }
+
+    private bool TryValidateDispatchTargetLocked(
+        PinnedTarget target,
+        DateTimeOffset now,
+        bool clockRegressed,
+        out RobloxPlaybackTargetLeaseFailure? failure)
+    {
+        // A session can contain many clients, but one input event can affect
+        // only its foreground and (for mouse input) pointed-at targets. Fully
+        // revalidating every retained process on one dispatch caused an O(n)
+        // pause once per interval. Keep a deadline per target and perform the
+        // expensive path/token validation when that target is actually about
+        // to receive input. Acquisition already force-validates every signer,
+        // and the retained process handle prevents PID reuse while an inactive
+        // target waits for its next use.
+        if (clockRegressed || now >= target.NextIdentityRevalidationUtc)
+        {
+            var verification = target.Pin.RevalidateIdentityAndToken(
+                refreshExecutableTrust: false);
+            if (verification != RobloxProcessVerificationStatus.Verified)
+            {
+                return RejectLocked(
+                    VerificationFailure(
+                        verification,
+                        duringAcquisition: false),
+                    out failure);
+            }
+            if (!_native.IsUsableTopLevelWindow(target.Handle))
+            {
+                return RejectLocked(
+                    WindowUnavailableFailure(),
+                    out failure);
+            }
+
+            target.NextIdentityRevalidationUtc =
+                now + _identityRevalidationInterval;
+        }
+
+        // These lightweight checks intentionally remain on every dispatch.
+        // They keep the final pre-SendInput authorization exact without
+        // imposing a full all-client identity scan on the playback thread.
+        // The exit event is only an optimization. The retained kernel handle
+        // is checked synchronously next to dispatch so thread-pool starvation
+        // cannot leave a dead process looking alive long enough for PID/HWND
+        // reuse to pass authorization.
+        if (!target.Pin.IsRetainedProcessAlive)
+        {
+            return RejectLocked(
+                ProcessExitedFailure(),
+                out failure);
+        }
+        if (_native.GetWindowProcessId(target.Handle) !=
+            target.Identity.ProcessId)
+        {
+            return RejectLocked(
+                WindowOwnershipFailure(),
+                out failure);
+        }
+
+        failure = null;
+        return true;
     }
 
     private static ExactWheelDispatchAuthorization ToDispatchAuthorization(
@@ -508,8 +649,17 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
             NotSupportedException or ArgumentException or
             UnauthorizedAccessException;
 
-    private sealed record PinnedTarget(
-        RobloxClientProcessIdentity Identity,
-        nint Handle,
-        IRobloxProcessLifetimePin Pin);
+    private sealed class PinnedTarget(
+        RobloxClientProcessIdentity identity,
+        nint handle,
+        IRobloxProcessLifetimePin pin)
+    {
+        internal RobloxClientProcessIdentity Identity { get; } = identity;
+
+        internal nint Handle { get; } = handle;
+
+        internal IRobloxProcessLifetimePin Pin { get; } = pin;
+
+        internal DateTimeOffset NextIdentityRevalidationUtc { get; set; }
+    }
 }

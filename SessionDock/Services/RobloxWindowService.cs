@@ -144,6 +144,8 @@ internal sealed partial class RobloxWindowService
         TimeSpan.FromSeconds(2);
     private static readonly TimeSpan DefaultPollInterval =
         TimeSpan.FromMilliseconds(100);
+    private static readonly TimeSpan ProcessRevalidationInterval =
+        TimeSpan.FromSeconds(1);
     private static readonly TimeSpan WindowReadinessStability =
         TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan RealizedBoundsStability =
@@ -186,147 +188,189 @@ internal sealed partial class RobloxWindowService
         var effectiveTimeout = ValidateTimeout(
             timeout ?? DefaultWindowTimeout,
             nameof(timeout));
-        var preliminary = _native.VerifyProcess(
+        var preliminary = _native.TryPinProcessLifetime(
             identity,
-            forceTrustRefresh: false);
-        if (preliminary != RobloxProcessVerificationStatus.Verified)
-            return VerificationFailure(preliminary);
-
-        var deadline = _native.UtcNow + effectiveTimeout;
-        var requiredStability = GetRequiredStability(
-            WindowReadinessStability,
-            effectiveTimeout);
-        var sawFullscreen = false;
-        var sawAmbiguousMainWindow = false;
-        CandidateWindow? stableCandidate = null;
-        var stableSince = _native.UtcNow;
-        var stableReads = 0;
-        do
+            forceTrustRefresh: true,
+            out var lifetimePin);
+        if (preliminary != RobloxProcessVerificationStatus.Verified ||
+            lifetimePin is null)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var currentVerification = _native.VerifyProcess(
-                identity,
-                forceTrustRefresh: false);
-            if (currentVerification != RobloxProcessVerificationStatus.Verified)
-                return VerificationFailure(currentVerification);
-
-            var candidates = _native.EnumerateTopLevelWindows(identity.ProcessId)
-                .Where(window =>
-                    window != nint.Zero &&
-                    _native.GetWindowProcessId(window) == identity.ProcessId &&
-                    _native.IsUsableTopLevelWindow(window))
-                .Select(window =>
-                {
-                    var hasGeometry = _native.TryGetGeometry(
-                        window,
-                        out var outerBounds,
-                        out var clientBounds);
-                    return new CandidateWindow(
-                        window,
-                        hasGeometry,
-                        outerBounds,
-                        clientBounds,
-                        _native.IsFullscreen(window),
-                        _native.IsMinimized(window),
-                        _native.IsMaximized(window));
-                })
-                .Where(candidate =>
-                    candidate.HasGeometry &&
-                    !candidate.IsMinimized)
-                .ToArray();
-
-            sawFullscreen |= candidates.Any(candidate => candidate.IsFullscreen);
-            var viable = candidates
-                .Where(item => !item.IsFullscreen)
-                .OrderByDescending(item => Area(item.OuterBounds))
-                .ToArray();
-            CandidateWindow? candidate = null;
-            if (viable.Length > 0)
+            lifetimePin?.Dispose();
+            return VerificationFailure(preliminary);
+        }
+        using (lifetimePin)
+        {
+            if (!RobloxClientProcessIdentityComparer.Instance.Equals(
+                    lifetimePin.Identity,
+                    identity))
             {
-                var largestArea = Area(viable[0].OuterBounds);
-                var equallyViable = viable
-                    .TakeWhile(item => Area(item.OuterBounds) == largestArea)
+                return VerificationFailure(
+                    RobloxProcessVerificationStatus.StartTimeMismatch);
+            }
+
+            var deadline = _native.UtcNow + effectiveTimeout;
+            var requiredStability = GetRequiredStability(
+                WindowReadinessStability,
+                effectiveTimeout);
+            var sawFullscreen = false;
+            var sawAmbiguousMainWindow = false;
+            CandidateWindow? stableCandidate = null;
+            var stableSince = _native.UtcNow;
+            var lastProcessVerificationUtc = stableSince;
+            var nextProcessVerificationUtc =
+                stableSince + ProcessRevalidationInterval;
+            var stableReads = 0;
+            do
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var now = _native.UtcNow;
+                if (!lifetimePin.IsRetainedProcessAlive)
+                {
+                    return VerificationFailure(
+                        RobloxProcessVerificationStatus.Exited);
+                }
+                if (now < lastProcessVerificationUtc ||
+                    now >= nextProcessVerificationUtc)
+                {
+                    var currentVerification = lifetimePin
+                        .RevalidateIdentityAndToken(
+                            refreshExecutableTrust: false);
+                    if (currentVerification !=
+                        RobloxProcessVerificationStatus.Verified)
+                    {
+                        return VerificationFailure(currentVerification);
+                    }
+
+                    lastProcessVerificationUtc = now;
+                    nextProcessVerificationUtc =
+                        now + ProcessRevalidationInterval;
+                }
+
+                var candidates = _native
+                    .EnumerateTopLevelWindows(identity.ProcessId)
+                    .Where(window =>
+                        window != nint.Zero &&
+                        _native.GetWindowProcessId(window) ==
+                            identity.ProcessId &&
+                        _native.IsUsableTopLevelWindow(window))
+                    .Select(window =>
+                    {
+                        var hasGeometry = _native.TryGetGeometry(
+                            window,
+                            out var outerBounds,
+                            out var clientBounds);
+                        return new CandidateWindow(
+                            window,
+                            hasGeometry,
+                            outerBounds,
+                            clientBounds,
+                            _native.IsFullscreen(window),
+                            _native.IsMinimized(window),
+                            _native.IsMaximized(window));
+                    })
+                    .Where(candidate =>
+                        candidate.HasGeometry &&
+                        !candidate.IsMinimized)
                     .ToArray();
-                if (equallyViable.Length == 1)
-                {
-                    candidate = equallyViable[0];
-                }
-                else
-                {
-                    sawAmbiguousMainWindow = true;
-                }
-            }
 
-            if (candidate is null)
-            {
-                stableCandidate = null;
-                stableReads = 0;
-            }
-            else if (stableCandidate is not null &&
-                     HasSameUsableGeometry(stableCandidate, candidate))
-            {
-                stableReads++;
-            }
-            else
-            {
-                stableCandidate = candidate;
-                stableSince = _native.UtcNow;
-                stableReads = 1;
-            }
-
-            if (candidate is not null &&
-                stableReads >= MinimumStableReads &&
-                _native.UtcNow - stableSince >= requiredStability)
-            {
-                var finalVerification = _native.VerifyProcess(
-                    identity,
-                    forceTrustRefresh: true);
-                if (finalVerification != RobloxProcessVerificationStatus.Verified)
-                    return VerificationFailure(finalVerification);
-                if (_native.GetWindowProcessId(candidate.Handle) !=
-                    identity.ProcessId)
+                sawFullscreen |= candidates.Any(candidate =>
+                    candidate.IsFullscreen);
+                var viable = candidates
+                    .Where(item => !item.IsFullscreen)
+                    .OrderByDescending(item => Area(item.OuterBounds))
+                    .ToArray();
+                CandidateWindow? candidate = null;
+                if (viable.Length > 0)
                 {
-                    return RobloxWindowOperationResult.Failed(
-                        RobloxWindowOperationStatus.IdentityRejected,
-                        "The Roblox window changed process ownership before it could be used.");
+                    var largestArea = Area(viable[0].OuterBounds);
+                    var equallyViable = viable
+                        .TakeWhile(item =>
+                            Area(item.OuterBounds) == largestArea)
+                        .ToArray();
+                    if (equallyViable.Length == 1)
+                    {
+                        candidate = equallyViable[0];
+                    }
+                    else
+                    {
+                        sawAmbiguousMainWindow = true;
+                    }
                 }
 
-                if (!_native.IsUsableTopLevelWindow(candidate.Handle) ||
-                    _native.IsMinimized(candidate.Handle) ||
-                    _native.IsFullscreen(candidate.Handle) ||
-                    !_native.TryGetGeometry(
-                        candidate.Handle,
-                        out var finalOuterBounds,
-                        out var finalClientBounds) ||
-                    finalOuterBounds != candidate.OuterBounds ||
-                    finalClientBounds != candidate.ClientBounds)
+                if (candidate is null)
                 {
                     stableCandidate = null;
                     stableReads = 0;
-                    continue;
+                }
+                else if (stableCandidate is not null &&
+                         HasSameUsableGeometry(stableCandidate, candidate))
+                {
+                    stableReads++;
+                }
+                else
+                {
+                    stableCandidate = candidate;
+                    stableSince = _native.UtcNow;
+                    stableReads = 1;
                 }
 
-                return RobloxWindowOperationResult.Succeeded(
-                    CreateSnapshot(identity, candidate));
+                if (candidate is not null &&
+                    stableReads >= MinimumStableReads &&
+                    _native.UtcNow - stableSince >= requiredStability)
+                {
+                    var finalVerification = lifetimePin
+                        .RevalidateIdentityAndToken(
+                            refreshExecutableTrust: false);
+                    if (finalVerification !=
+                        RobloxProcessVerificationStatus.Verified)
+                    {
+                        return VerificationFailure(finalVerification);
+                    }
+                    if (_native.GetWindowProcessId(candidate.Handle) !=
+                        identity.ProcessId)
+                    {
+                        return RobloxWindowOperationResult.Failed(
+                            RobloxWindowOperationStatus.IdentityRejected,
+                            "The Roblox window changed process ownership before it could be used.");
+                    }
+
+                    if (!_native.IsUsableTopLevelWindow(candidate.Handle) ||
+                        _native.IsMinimized(candidate.Handle) ||
+                        _native.IsFullscreen(candidate.Handle) ||
+                        !_native.TryGetGeometry(
+                            candidate.Handle,
+                            out var finalOuterBounds,
+                            out var finalClientBounds) ||
+                        finalOuterBounds != candidate.OuterBounds ||
+                        finalClientBounds != candidate.ClientBounds)
+                    {
+                        stableCandidate = null;
+                        stableReads = 0;
+                        continue;
+                    }
+
+                    return RobloxWindowOperationResult.Succeeded(
+                        CreateSnapshot(identity, candidate));
+                }
+
+                if (_native.UtcNow >= deadline)
+                    break;
+                await _native.DelayAsync(_pollInterval, cancellationToken);
             }
+            while (_native.UtcNow <= deadline);
 
-            if (_native.UtcNow >= deadline)
-                break;
-            await _native.DelayAsync(_pollInterval, cancellationToken);
-        }
-        while (_native.UtcNow <= deadline);
-
-        return sawFullscreen
-            ? RobloxWindowOperationResult.Failed(
-                RobloxWindowOperationStatus.Fullscreen,
-                "Roblox is fullscreen. Switch it to windowed mode before arranging it.")
-            : sawAmbiguousMainWindow
+            return sawFullscreen
                 ? RobloxWindowOperationResult.Failed(
+                    RobloxWindowOperationStatus.Fullscreen,
+                    "Roblox is fullscreen. Switch it to windowed mode before arranging it.")
+                : sawAmbiguousMainWindow
+                    ? RobloxWindowOperationResult.Failed(
+                        RobloxWindowOperationStatus.TimedOut,
+                        "Multiple equally viable Roblox windows remained visible, so SessionDock could not identify one main window safely.")
+                : RobloxWindowOperationResult.Failed(
                     RobloxWindowOperationStatus.TimedOut,
-                    "Multiple equally viable Roblox windows remained visible, so SessionDock could not identify one main window safely.")
-            : RobloxWindowOperationResult.Failed(
-                RobloxWindowOperationStatus.TimedOut,
-                "One stable, visible Roblox main window did not become available in time.");
+                    "One stable, visible Roblox main window did not become available in time.");
+        }
     }
 
     internal async Task<RobloxWindowOperationResult> CaptureAsync(
@@ -417,7 +461,9 @@ internal sealed partial class RobloxWindowService
         do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var repeatedValidation = ValidateWindow(identity, windowHandle);
+            var repeatedValidation = ValidateWindowHandle(
+                identity,
+                windowHandle);
             if (repeatedValidation is not null)
                 return repeatedValidation;
             if (_native.TryGetGeometry(
@@ -464,6 +510,12 @@ internal sealed partial class RobloxWindowService
                     else if (snapshot.OuterBounds.Left == requestedOuterBounds.Left &&
                              snapshot.OuterBounds.Top == requestedOuterBounds.Top)
                     {
+                        var finalValidation = ValidateWindow(
+                            identity,
+                            windowHandle,
+                            forceTrustRefresh: false);
+                        if (finalValidation is not null)
+                            return finalValidation;
                         return RobloxWindowOperationResult.Succeeded(
                             snapshot,
                             requestedOuterBounds);
@@ -536,7 +588,9 @@ internal sealed partial class RobloxWindowService
         do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var repeatedValidation = ValidateWindow(identity, windowHandle);
+            var repeatedValidation = ValidateWindowHandle(
+                identity,
+                windowHandle);
             if (repeatedValidation is not null)
                 return repeatedValidation;
 
@@ -549,6 +603,139 @@ internal sealed partial class RobloxWindowService
                     forceTrustRefresh: true);
                 if (finalVerification != RobloxProcessVerificationStatus.Verified)
                     return VerificationFailure(finalVerification);
+                if (!_native.TryGetGeometry(
+                        windowHandle,
+                        out var outerBounds,
+                        out var clientBounds))
+                {
+                    return RobloxWindowOperationResult.Failed(
+                        RobloxWindowOperationStatus.GeometryUnavailable,
+                        "The focused Roblox window bounds could not be read.");
+                }
+
+                return RobloxWindowOperationResult.Succeeded(
+                    new RobloxWindowSnapshot(
+                        identity,
+                        windowHandle,
+                        outerBounds,
+                        clientBounds,
+                        _native.IsMinimized(windowHandle),
+                        _native.IsMaximized(windowHandle)));
+            }
+
+            if (_native.UtcNow >= deadline)
+                break;
+            await _native.DelayAsync(_pollInterval, cancellationToken);
+        }
+        while (_native.UtcNow <= deadline);
+
+        return RobloxWindowOperationResult.Failed(
+            RobloxWindowOperationStatus.FocusDenied,
+            "Windows denied the foreground request. Click the visible Roblox reveal area and try again.");
+    }
+
+    internal async Task<RobloxWindowOperationResult> FocusAsync(
+        RobloxPlaybackTargetLease playbackLease,
+        RobloxClientProcessIdentity identity,
+        nint windowHandle,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(playbackLease);
+        ArgumentNullException.ThrowIfNull(identity);
+        cancellationToken.ThrowIfCancellationRequested();
+        var effectiveTimeout = ValidateTimeout(
+            timeout ?? DefaultFocusTimeout,
+            nameof(timeout));
+        var leaseFailure = playbackLease.ValidateExactTarget(
+            identity,
+            windowHandle,
+            revalidateIdentityAndToken: false);
+        if (leaseFailure is not null)
+            return LeaseValidationFailure(leaseFailure);
+
+        if (_native.IsMinimized(windowHandle) ||
+            _native.IsMaximized(windowHandle))
+        {
+            if (!_native.TryRestore(windowHandle))
+            {
+                return RobloxWindowOperationResult.Failed(
+                    RobloxWindowOperationStatus.RestoreFailed,
+                    "Windows did not restore the Roblox window.");
+            }
+
+            var restoreDeadline = _native.UtcNow + effectiveTimeout;
+            do
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                leaseFailure = playbackLease.ValidateExactTarget(
+                    identity,
+                    windowHandle,
+                    revalidateIdentityAndToken: false);
+                if (leaseFailure is not null)
+                    return LeaseValidationFailure(leaseFailure);
+                if (!_native.IsMinimized(windowHandle) &&
+                    !_native.IsMaximized(windowHandle))
+                {
+                    break;
+                }
+
+                if (_native.UtcNow >= restoreDeadline)
+                {
+                    return RobloxWindowOperationResult.Failed(
+                        RobloxWindowOperationStatus.RestoreFailed,
+                        "The Roblox window did not finish restoring in time.");
+                }
+                await _native.DelayAsync(_pollInterval, cancellationToken);
+            }
+            while (_native.UtcNow <= restoreDeadline);
+        }
+
+        if (_native.IsFullscreen(windowHandle))
+        {
+            return RobloxWindowOperationResult.Failed(
+                RobloxWindowOperationStatus.Fullscreen,
+                "Roblox is fullscreen. Switch it to windowed mode before focusing it.");
+        }
+
+        leaseFailure = playbackLease.ValidateExactTarget(
+            identity,
+            windowHandle,
+            revalidateIdentityAndToken: false);
+        if (leaseFailure is not null)
+            return LeaseValidationFailure(leaseFailure);
+
+        // The lease already force-validated the executable and retained the
+        // exact kernel process object. Focus therefore needs only the pinned
+        // liveness/identity proof plus live HWND ownership checks; it must not
+        // hash and WinVerifyTrust the same executable again.
+        cancellationToken.ThrowIfCancellationRequested();
+        _ = _native.TrySetForeground(windowHandle);
+        var deadline = _native.UtcNow + effectiveTimeout;
+        do
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            leaseFailure = playbackLease.ValidateExactTarget(
+                identity,
+                windowHandle,
+                revalidateIdentityAndToken: false);
+            if (leaseFailure is not null)
+                return LeaseValidationFailure(leaseFailure);
+
+            var foreground = _native.GetForegroundWindow();
+            if (foreground == windowHandle &&
+                _native.GetWindowProcessId(foreground) == identity.ProcessId)
+            {
+                // Revalidate start time, executable path, user, session, and
+                // token elevation on the retained process immediately before
+                // success. Executable signature trust was force-checked when
+                // this exact process handle entered the lease.
+                leaseFailure = playbackLease.ValidateExactTarget(
+                    identity,
+                    windowHandle,
+                    revalidateIdentityAndToken: true);
+                if (leaseFailure is not null)
+                    return LeaseValidationFailure(leaseFailure);
                 if (!_native.TryGetGeometry(
                         windowHandle,
                         out var outerBounds,
@@ -733,7 +920,7 @@ internal sealed partial class RobloxWindowService
         do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var validated = ValidateWindow(identity, windowHandle);
+            var validated = ValidateWindowHandle(identity, windowHandle);
             if (validated is not null)
                 return validated;
             if (!_native.IsMinimized(windowHandle) &&
@@ -763,6 +950,13 @@ internal sealed partial class RobloxWindowService
             forceTrustRefresh);
         if (verification != RobloxProcessVerificationStatus.Verified)
             return VerificationFailure(verification);
+        return ValidateWindowHandle(identity, windowHandle);
+    }
+
+    private RobloxWindowOperationResult? ValidateWindowHandle(
+        RobloxClientProcessIdentity identity,
+        nint windowHandle)
+    {
         if (windowHandle == nint.Zero ||
             _native.GetWindowProcessId(windowHandle) != identity.ProcessId)
         {
@@ -779,6 +973,32 @@ internal sealed partial class RobloxWindowService
 
         return null;
     }
+
+    private static RobloxWindowOperationResult LeaseValidationFailure(
+        RobloxPlaybackTargetLeaseFailure failure) =>
+        failure.Kind switch
+        {
+            RobloxPlaybackTargetLeaseFailureKind.InvalidTargetSet or
+                RobloxPlaybackTargetLeaseFailureKind.ConflictingTargetSet or
+                RobloxPlaybackTargetLeaseFailureKind.IdentityRejected or
+                RobloxPlaybackTargetLeaseFailureKind.WindowOwnershipChanged =>
+                RobloxWindowOperationResult.Failed(
+                    RobloxWindowOperationStatus.IdentityRejected,
+                    failure.Error),
+            RobloxPlaybackTargetLeaseFailureKind.ProcessUnavailable or
+                RobloxPlaybackTargetLeaseFailureKind.ProcessExited or
+                RobloxPlaybackTargetLeaseFailureKind.Disposed =>
+                RobloxWindowOperationResult.Failed(
+                    RobloxWindowOperationStatus.ProcessUnavailable,
+                    failure.Error),
+            RobloxPlaybackTargetLeaseFailureKind.WindowUnavailable =>
+                RobloxWindowOperationResult.Failed(
+                    RobloxWindowOperationStatus.WindowUnavailable,
+                    failure.Error),
+            _ => RobloxWindowOperationResult.Failed(
+                RobloxWindowOperationStatus.FocusDenied,
+                failure.Error)
+        };
 
     private static RobloxWindowOperationResult VerificationFailure(
         RobloxProcessVerificationStatus status) =>
@@ -846,6 +1066,9 @@ internal sealed partial class RobloxWindowService
 internal sealed class Win32RobloxWindowNativeAdapter :
     IRobloxWindowNativeAdapter
 {
+    private static readonly TimeSpan WindowEnumerationSnapshotLifetime =
+        TimeSpan.FromMilliseconds(75);
+    private const uint WaitTimeout = 258;
     private const uint MonitorDefaultToNearest = 2;
     private const uint MonitorPrimaryFlag = 1;
     private const uint DisplayDeviceActive = 1;
@@ -872,7 +1095,37 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         0x0010 | // SWP_NOACTIVATE
         0x0200;  // SWP_NOOWNERZORDER
 
-    public DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+    private readonly object _windowEnumerationGate = new();
+    private readonly Func<DateTimeOffset> _getUtcNow;
+    private readonly Func<IReadOnlyDictionary<int, IReadOnlyList<nint>>>
+        _enumerateWindowsByProcess;
+    private IReadOnlyDictionary<int, IReadOnlyList<nint>>
+        _windowEnumerationSnapshot =
+            new Dictionary<int, IReadOnlyList<nint>>();
+    private DateTimeOffset _windowEnumerationSnapshotUtc =
+        DateTimeOffset.MinValue;
+    private DateTimeOffset _windowEnumerationSnapshotExpiresUtc =
+        DateTimeOffset.MinValue;
+
+    internal Win32RobloxWindowNativeAdapter()
+        : this(
+            () => DateTimeOffset.UtcNow,
+            EnumerateWindowsByProcess)
+    {
+    }
+
+    internal Win32RobloxWindowNativeAdapter(
+        Func<DateTimeOffset> getUtcNow,
+        Func<IReadOnlyDictionary<int, IReadOnlyList<nint>>>
+            enumerateWindowsByProcess)
+    {
+        _getUtcNow = getUtcNow ??
+            throw new ArgumentNullException(nameof(getUtcNow));
+        _enumerateWindowsByProcess = enumerateWindowsByProcess ??
+            throw new ArgumentNullException(nameof(enumerateWindowsByProcess));
+    }
+
+    public DateTimeOffset UtcNow => _getUtcNow();
 
     public RobloxProcessVerificationStatus VerifyProcess(
         RobloxClientProcessIdentity identity,
@@ -938,7 +1191,8 @@ internal sealed class Win32RobloxWindowNativeAdapter :
     private static RobloxProcessVerificationStatus VerifyPinnedProcess(
         Process process,
         RobloxClientProcessIdentity identity,
-        bool forceTrustRefresh)
+        bool forceTrustRefresh,
+        bool verifyExecutableTrust = true)
     {
         try
         {
@@ -955,7 +1209,8 @@ internal sealed class Win32RobloxWindowNativeAdapter :
             {
                 return RobloxProcessVerificationStatus.ExecutablePathMismatch;
             }
-            if (!RobloxExecutableTrust.IsTrustedPlayerPath(
+            if (verifyExecutableTrust &&
+                !RobloxExecutableTrust.IsTrustedPlayerPath(
                     executablePath,
                     forceTrustRefresh))
             {
@@ -985,6 +1240,7 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         private readonly object _sync = new();
         private readonly RobloxClientProcessIdentity _identity;
         private Process? _process;
+        private volatile bool _isAlive;
 
         internal Win32RobloxProcessLifetimePin(
             Process process,
@@ -992,40 +1248,73 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         {
             _process = process;
             _identity = identity;
+            process.Exited += Process_Exited;
+            process.EnableRaisingEvents = true;
+            _isAlive = !process.HasExited;
         }
 
         public RobloxClientProcessIdentity Identity => _identity;
 
-        public bool IsAlive
+        // The Process.Exited callback owns the hot-path liveness state. An
+        // authorization check can read it without taking the process lock or
+        // issuing GetExitCodeProcess for every recorded input event.
+        public bool IsExitObservedAlive => _isAlive;
+
+        public bool IsRetainedProcessAlive
         {
             get
             {
                 lock (_sync)
                 {
+                    if (!_isAlive || _process is not { } process)
+                        return false;
                     try
                     {
-                        return _process is not null && !_process.HasExited;
+                        var waitResult = WaitForSingleObject(
+                            process.SafeHandle.DangerousGetHandle(),
+                            milliseconds: 0);
+                        if (waitResult == WaitTimeout)
+                            return true;
+
+                        // WAIT_OBJECT_0 means the exact retained process has
+                        // exited. WAIT_FAILED is also fail-closed; neither may
+                        // authorize a potentially reused PID/HWND pair.
+                        _isAlive = false;
+                        return false;
                     }
                     catch (Exception exception) when (
                         IsExpectedProcessAccessFailure(exception))
                     {
+                        _isAlive = false;
                         return false;
                     }
                 }
             }
         }
 
-        public RobloxProcessVerificationStatus VerifyIdentity(
-            bool forceTrustRefresh)
+        public RobloxProcessVerificationStatus RevalidateIdentityAndToken(
+            bool refreshExecutableTrust)
         {
             lock (_sync)
             {
-                return _process is null
-                    ? RobloxProcessVerificationStatus.Unavailable
-                    : VerifyPinnedProcess(
-                        _process,
-                        _identity,
-                        forceTrustRefresh);
+                if (_process is null)
+                    return RobloxProcessVerificationStatus.Unavailable;
+                if (!IsRetainedProcessAlive)
+                    return RobloxProcessVerificationStatus.Exited;
+                var verification = VerifyPinnedProcess(
+                    _process,
+                    _identity,
+                    refreshExecutableTrust,
+                    // Acquisition already verified the executable signer
+                    // before this exact kernel process handle was retained.
+                    // Rehashing the large Roblox executable on every playback
+                    // refresh stalls input without adding protection against
+                    // PID reuse. A caller requesting a forced refresh still
+                    // gets a complete file/signature verification.
+                    verifyExecutableTrust: refreshExecutableTrust);
+                if (verification == RobloxProcessVerificationStatus.Exited)
+                    _isAlive = false;
+                return verification;
             }
         }
 
@@ -1033,24 +1322,74 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         {
             lock (_sync)
             {
-                _process?.Dispose();
+                if (_process is not { } process)
+                    return;
                 _process = null;
+                _isAlive = false;
+                process.Exited -= Process_Exited;
+                process.Dispose();
             }
+        }
+
+        private void Process_Exited(object? sender, EventArgs e)
+        {
+            lock (_sync)
+                _isAlive = false;
         }
     }
 
     public IReadOnlyList<nint> EnumerateTopLevelWindows(int processId)
     {
-        var windows = new List<nint>();
+        lock (_windowEnumerationGate)
+        {
+            var now = _getUtcNow();
+            if (now < _windowEnumerationSnapshotUtc ||
+                now >= _windowEnumerationSnapshotExpiresUtc)
+            {
+                _windowEnumerationSnapshot =
+                    _enumerateWindowsByProcess();
+                _windowEnumerationSnapshotUtc = now;
+                _windowEnumerationSnapshotExpiresUtc =
+                    now + WindowEnumerationSnapshotLifetime;
+            }
+
+            return _windowEnumerationSnapshot.TryGetValue(
+                processId,
+                out var windows)
+                ? windows
+                : Array.Empty<nint>();
+        }
+    }
+
+    private static IReadOnlyDictionary<int, IReadOnlyList<nint>>
+        EnumerateWindowsByProcess()
+    {
+        var windowsByProcess = new Dictionary<int, List<nint>>();
         _ = EnumWindows(
             (window, _) =>
             {
-                if (GetWindowProcessId(window) == processId)
-                    windows.Add(window);
+                var threadId = GetWindowThreadProcessId(
+                    window,
+                    out var processId);
+                if (threadId == 0 ||
+                    processId == 0 ||
+                    processId > int.MaxValue)
+                    return true;
+                var processIdValue = (int)processId;
+                if (!windowsByProcess.TryGetValue(
+                        processIdValue,
+                        out var windows))
+                {
+                    windows = [];
+                    windowsByProcess.Add(processIdValue, windows);
+                }
+                windows.Add(window);
                 return true;
             },
             nint.Zero);
-        return windows;
+        return windowsByProcess.ToDictionary(
+            pair => pair.Key,
+            pair => (IReadOnlyList<nint>)pair.Value.ToArray());
     }
 
     public IReadOnlyList<nint> EnumerateTopLevelWindowsInZOrder()
@@ -1464,6 +1803,11 @@ internal sealed class Win32RobloxWindowNativeAdapter :
         nint deviceContext,
         nint monitorBounds,
         nint parameter);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(
+        nint handle,
+        uint milliseconds);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

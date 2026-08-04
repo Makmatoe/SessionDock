@@ -175,6 +175,24 @@ public static class ExactWheelTiming
         if (originTicks < 0 || frequency <= 0)
             throw new ArgumentOutOfRangeException(nameof(originTicks));
 
+        if (TryGetPlaybackOffsetTicks(
+                loopIndex,
+                recordedDurationMicroseconds,
+                eventOffsetMicroseconds,
+                rate,
+                interLoopDelayMicroseconds,
+                frequency,
+                out var fastOffsetTicks))
+        {
+            if (fastOffsetTicks > (UInt128)(long.MaxValue - originTicks))
+            {
+                throw new OverflowException(
+                    "Playback deadline is outside the Stopwatch range.");
+            }
+
+            return checked(originTicks + (long)fastOffsetTicks);
+        }
+
         var rateAdjustedLoop =
             new BigInteger(recordedDurationMicroseconds) *
                 rate.Denominator +
@@ -202,12 +220,56 @@ public static class ExactWheelTiming
         if (frequency <= 0)
             throw new ArgumentOutOfRangeException(nameof(frequency));
 
-        var converted = DivideRounded(
-            new BigInteger(ticks) * MicrosecondsPerSecond,
-            frequency);
+        var numerator = (UInt128)(ulong)ticks * MicrosecondsPerSecond;
+        var converted = DivideRounded(numerator, (ulong)frequency);
         return converted > long.MaxValue
             ? long.MaxValue
             : (long)converted;
+    }
+
+    private static bool TryGetPlaybackOffsetTicks(
+        ulong loopIndex,
+        ulong recordedDurationMicroseconds,
+        ulong eventOffsetMicroseconds,
+        ExactWheelPlaybackRate rate,
+        ulong interLoopDelayMicroseconds,
+        long frequency,
+        out UInt128 offsetTicks)
+    {
+        try
+        {
+            var rateAdjustedLoop = checked(
+                (UInt128)recordedDurationMicroseconds * rate.Denominator +
+                (UInt128)interLoopDelayMicroseconds * rate.Numerator);
+            var numeratorMicroseconds = checked(
+                (UInt128)loopIndex * rateAdjustedLoop +
+                (UInt128)eventOffsetMicroseconds * rate.Denominator);
+            var numeratorTicks = checked(
+                numeratorMicroseconds * (ulong)frequency);
+            var denominator = checked(
+                (UInt128)rate.Numerator * MicrosecondsPerSecond);
+            offsetTicks = DivideRounded(numeratorTicks, denominator);
+            return true;
+        }
+        catch (OverflowException)
+        {
+            offsetTicks = 0;
+            return false;
+        }
+    }
+
+    private static UInt128 DivideRounded(
+        UInt128 numerator,
+        UInt128 denominator)
+    {
+        if (denominator == 0)
+            throw new ArgumentOutOfRangeException(nameof(denominator));
+
+        var quotient = numerator / denominator;
+        var remainder = numerator % denominator;
+        return remainder >= denominator - remainder
+            ? checked(quotient + 1)
+            : quotient;
     }
 
     private static BigInteger DivideRounded(

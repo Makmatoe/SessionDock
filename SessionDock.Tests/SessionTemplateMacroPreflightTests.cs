@@ -471,7 +471,11 @@ public sealed class SessionTemplateMacroPreflightTests
         Assert.True(prepareCall > playEntry);
         Assert.True(playCall > prepareCall);
         Assert.Contains(
-            "_exactWheelMacroStore.Load(definition)",
+            "playbackCache.GetOrLoad(",
+            playbackSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "_exactWheelMacroStore.Load",
             playbackSource,
             StringComparison.Ordinal);
     }

@@ -34,7 +34,22 @@ public sealed class ExactWheelPlaybackOptions
 
     public ulong DangerouslyLateMicroseconds { get; init; } = 250_000;
 
-    public ulong FinalSpinMicroseconds { get; init; } = 500;
+    // Preserve semantic input after CPU stalls by shifting the remaining
+    // absolute timeline instead of bursting an unbounded stale backlog.
+    public bool RecoverFromTimingStalls { get; init; } = true;
+
+    // A small backlog may catch up naturally; anything older rebases time.
+    public ulong MaximumCatchUpMicroseconds { get; init; } = 5_000;
+
+    // Only redundant, overdue moves are coalesced. Button, wheel, and key
+    // events are never coalesced, nor are moves while injected input is held.
+    public bool CoalesceOverdueMouseMoves { get; init; } = true;
+
+    // UI progress is advisory and latest-value throttled to avoid flooding.
+    public ulong ProgressIntervalMicroseconds { get; init; } = 50_000;
+
+    // High-resolution waitable timers do not need a busy-spin by default.
+    public ulong FinalSpinMicroseconds { get; init; }
 
     public bool StopOnPhysicalInput { get; init; } = true;
 

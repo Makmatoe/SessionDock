@@ -20,6 +20,10 @@ internal sealed record SessionMacroControllerReadiness(
 
 public partial class SessionMacroControllerWindow : Window
 {
+    private static readonly TimeSpan ActiveReadinessInterval =
+        TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan IdleReadinessInterval =
+        TimeSpan.FromSeconds(30);
     private readonly Func<
         SessionMacroLaunchSnapshot,
         double,
@@ -34,9 +38,12 @@ public partial class SessionMacroControllerWindow : Window
     private SessionMacroLaunchContext _context;
     private SessionMacroControllerReadiness _readiness = new(false, 0);
     private CancellationTokenSource? _playbackCancellation;
+    private ControllerPresentation? _renderedPresentation;
     private bool _allowClose;
     private bool _isClosed;
     private bool _isPlaying;
+    private bool _presentationRefreshQueued;
+    private bool _queuedReadinessEvaluation;
 
     internal SessionMacroControllerWindow(
         SessionMacroLaunchContext context,
@@ -60,9 +67,9 @@ public partial class SessionMacroControllerWindow : Window
         InitializeComponent();
         _localization = ((App)Application.Current).LocalizationService;
         _readinessTimer = new DispatcherTimer(
-            TimeSpan.FromSeconds(5),
-            DispatcherPriority.Background,
-            (_, _) => UpdatePresentation(),
+            ActiveReadinessInterval,
+            DispatcherPriority.ApplicationIdle,
+            ReadinessTimer_Tick,
             Dispatcher);
         IReadOnlyList<SpeedOption> speedOptions = SpeedOptions;
         if (double.IsFinite(initialSpeed) &&
@@ -83,26 +90,26 @@ public partial class SessionMacroControllerWindow : Window
             .OrderBy(option => Math.Abs(option.Multiplier - initialSpeed))
             .First();
         _context.Changed += Context_Changed;
+        _localization.LanguageChanged += Localization_LanguageChanged;
         Closed += (_, _) => _isClosed = true;
         Loaded += (_, _) =>
         {
             FitInitialPosition();
-            UpdatePresentation();
-            _readinessTimer.Start();
+            RefreshPresentation(evaluateReadiness: true);
+            StartReadinessTimer();
         };
         IsVisibleChanged += (_, _) =>
         {
-            if (IsVisible)
+            if (IsVisible && IsLoaded)
             {
-                UpdatePresentation();
-                _readinessTimer.Start();
+                RefreshPresentation(evaluateReadiness: true);
+                StartReadinessTimer();
             }
             else
             {
                 _readinessTimer.Stop();
             }
         };
-        UpdatePresentation();
     }
 
     private static IReadOnlyList<SpeedOption> SpeedOptions { get; } =
@@ -124,7 +131,7 @@ public partial class SessionMacroControllerWindow : Window
         _context.Changed -= Context_Changed;
         _context = context;
         _context.Changed += Context_Changed;
-        UpdatePresentation();
+        QueuePresentationRefresh(evaluateReadiness: true);
     }
 
     internal void Reopen(bool userInitiated)
@@ -146,6 +153,7 @@ public partial class SessionMacroControllerWindow : Window
         _playbackCancellation?.Cancel();
         _readinessTimer.Stop();
         _context.Changed -= Context_Changed;
+        _localization.LanguageChanged -= Localization_LanguageChanged;
         if (!_isClosed)
             Close();
     }
@@ -157,11 +165,11 @@ public partial class SessionMacroControllerWindow : Window
         if (_isPlaying)
         {
             _playbackCancellation?.Cancel();
-            UpdatePresentation();
+            RefreshPresentation(evaluateReadiness: false);
             return;
         }
 
-        UpdatePresentation();
+        RefreshPresentation(evaluateReadiness: true);
         if (!_readiness.CanPlay)
         {
             return;
@@ -174,7 +182,8 @@ public partial class SessionMacroControllerWindow : Window
         var playbackCancellation = new CancellationTokenSource();
         _playbackCancellation = playbackCancellation;
         _isPlaying = true;
-        UpdatePresentation();
+        _readinessTimer.Stop();
+        RefreshPresentation(evaluateReadiness: false);
         try
         {
             var outcome = await _play(
@@ -222,7 +231,8 @@ public partial class SessionMacroControllerWindow : Window
             }
             playbackCancellation.Dispose();
             _isPlaying = false;
-            UpdatePresentation();
+            RefreshPresentation(evaluateReadiness: true);
+            StartReadinessTimer();
         }
     }
 
@@ -240,41 +250,124 @@ public partial class SessionMacroControllerWindow : Window
     {
         _ = sender;
         _ = e;
-        if (Dispatcher.CheckAccess())
-            UpdatePresentation();
-        else
-            _ = Dispatcher.BeginInvoke(UpdatePresentation);
+        QueuePresentationRefresh(evaluateReadiness: true);
     }
 
-    private void UpdatePresentation()
+    private void Localization_LanguageChanged(object? sender, EventArgs e)
     {
-        if (!IsInitialized)
+        _ = sender;
+        _ = e;
+        _renderedPresentation = null;
+        QueuePresentationRefresh(evaluateReadiness: false);
+    }
+
+    private void ReadinessTimer_Tick(object? sender, EventArgs e)
+    {
+        _ = sender;
+        _ = e;
+        if (_isPlaying || !IsVisible)
             return;
-        var snapshot = _context.Snapshot();
-        if (!_isPlaying)
+
+        var previous = _readiness;
+        RefreshPresentation(evaluateReadiness: true);
+        _readinessTimer.Interval = previous == _readiness
+            ? IdleReadinessInterval
+            : ActiveReadinessInterval;
+    }
+
+    private void StartReadinessTimer()
+    {
+        if (!IsLoaded || !IsVisible || _isPlaying || _isClosed)
+            return;
+
+        _readinessTimer.Interval = ActiveReadinessInterval;
+        _readinessTimer.Start();
+    }
+
+    private void QueuePresentationRefresh(bool evaluateReadiness)
+    {
+        if (_isClosed)
+            return;
+        if (!Dispatcher.CheckAccess())
+        {
+            _ = Dispatcher.BeginInvoke(
+                () => QueuePresentationRefresh(evaluateReadiness),
+                DispatcherPriority.Background);
+            return;
+        }
+        _queuedReadinessEvaluation |= evaluateReadiness;
+        if (_presentationRefreshQueued)
+            return;
+
+        _presentationRefreshQueued = true;
+        _ = Dispatcher.BeginInvoke(
+            () =>
+            {
+                _presentationRefreshQueued = false;
+                var shouldEvaluateReadiness = _queuedReadinessEvaluation;
+                _queuedReadinessEvaluation = false;
+                if (!IsVisible)
+                    return;
+                RefreshPresentation(shouldEvaluateReadiness);
+            },
+            DispatcherPriority.ContextIdle);
+    }
+
+    private void RefreshPresentation(bool evaluateReadiness)
+    {
+        if (!IsInitialized || _isClosed)
+            return;
+        if (!_isPlaying && evaluateReadiness)
+        {
+            var snapshot = _context.Snapshot();
             _readiness = EvaluateReadiness(snapshot);
+        }
         var assignmentCount = _readiness.ValidAssignmentCount;
         var stopRequested =
             _playbackCancellation?.IsCancellationRequested == true;
-        PlayButton.IsEnabled = _isPlaying
+        var presentation = new ControllerPresentation(
+            IsPlaying: _isPlaying,
+            StopRequested: stopRequested,
+            CanPlay: _readiness.CanPlay,
+            AssignmentCount: assignmentCount,
+            Message: _readiness.Message);
+        if (presentation == _renderedPresentation)
+            return;
+        _renderedPresentation = presentation;
+
+        var playEnabled = _isPlaying
             ? !stopRequested
             : _readiness.CanPlay;
-        SpeedComboBox.IsEnabled = !_isPlaying;
+        if (PlayButton.IsEnabled != playEnabled)
+            PlayButton.IsEnabled = playEnabled;
+        if (SpeedComboBox.IsEnabled == _isPlaying)
+            SpeedComboBox.IsEnabled = !_isPlaying;
         var actionText = _isPlaying
             ? Localize("Macro.Stop")
             : Localize("Macro.ControllerPlay");
-        PlayButton.Content = actionText;
-        AutomationProperties.SetName(PlayButton, actionText);
-        PlayButton.ToolTip = _isPlaying
+        if (!Equals(PlayButton.Content, actionText))
+            PlayButton.Content = actionText;
+        if (!string.Equals(
+                AutomationProperties.GetName(PlayButton),
+                actionText,
+                StringComparison.Ordinal))
+        {
+            AutomationProperties.SetName(PlayButton, actionText);
+        }
+        var toolTip = _isPlaying
             ? actionText
             : !_readiness.CanPlay
             ? _readiness.Message ??
                 Localize("Macro.ControllerNoValidAssignments")
             : _readiness.Message ??
                 Localize("Macro.ControllerAssignmentCount", assignmentCount);
-        Title = assignmentCount == 0
+        if (!Equals(PlayButton.ToolTip, toolTip))
+            PlayButton.ToolTip = toolTip;
+        var title = assignmentCount == 0
             ? Localize("Macro.ControllerTitleEmpty")
             : Localize("Macro.ControllerTitleCount", assignmentCount);
+        if (!string.Equals(Title, title, StringComparison.Ordinal))
+            Title = title;
     }
 
     private SessionMacroControllerReadiness EvaluateReadiness(
@@ -323,4 +416,11 @@ public partial class SessionMacroControllerWindow : Window
     private sealed record SpeedOption(
         double Multiplier,
         string DisplayName) : IDropdownLabel;
+
+    private sealed record ControllerPresentation(
+        bool IsPlaying,
+        bool StopRequested,
+        bool CanPlay,
+        int AssignmentCount,
+        string? Message);
 }

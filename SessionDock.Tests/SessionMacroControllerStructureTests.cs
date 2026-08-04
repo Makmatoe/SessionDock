@@ -46,7 +46,8 @@ public sealed class SessionMacroControllerStructureTests
         Assert.Contains("_playbackCancellation?.Cancel()", source);
         Assert.Contains("playbackCancellation.Token", source);
         Assert.Contains("Localize(\"Macro.Stop\")", source);
-        Assert.Contains("PlayButton.IsEnabled = _isPlaying", source);
+        Assert.Contains("var playEnabled = _isPlaying", source);
+        Assert.Contains("PlayButton.IsEnabled = playEnabled", source);
         Assert.DoesNotContain("CancellationToken.None", source);
 
         var hostSource = File.ReadAllText(RepoFile(
@@ -99,7 +100,17 @@ public sealed class SessionMacroControllerStructureTests
             2,
             CountOccurrences(
                 playbackSource,
-                "AcquirePlaybackTargetLease("));
+                "playbackLeases.GetOrAcquire("));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                playbackSource,
+                "FocusAsync("));
+        Assert.Contains("playbackLease,", playbackSource);
+        Assert.DoesNotContain("using var playbackLease", playbackSource);
+        Assert.Contains(
+            "prepared.PlaybackLeases.Dispose()",
+            controllerSource);
         Assert.Equal(
             2,
             CountOccurrences(

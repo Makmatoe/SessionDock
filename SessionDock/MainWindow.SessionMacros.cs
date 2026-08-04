@@ -277,17 +277,41 @@ public partial class MainWindow
         var warnings = new HashSet<string>(StringComparer.Ordinal);
         if (!string.IsNullOrWhiteSpace(prepared.Warning))
             warnings.Add(prepared.Warning);
+        IDisposable? playbackPerformanceMode = null;
         try
         {
+            playbackPerformanceMode =
+                await TryEnterMacroPlaybackPerformanceModeAsync(
+                    playbackCancellation.Token);
+
             await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
                 async cycleCancellationToken =>
                 {
+                    ExactWheelDisplayTopology destinationDisplay;
+                    try
+                    {
+                        destinationDisplay = prepared.PlaybackCache
+                            .GetDisplayTopology(
+                                ExactWheelDesktopCapture
+                                    .CaptureDisplayTopology);
+                    }
+                    catch (Exception exception) when (
+                        IsExpectedMacroArtifactFailure(exception) ||
+                        exception is System.ComponentModel.Win32Exception)
+                    {
+                        warnings.Add(Localize(
+                            "Macro.PlaybackFailure",
+                            exception.Message));
+                        return false;
+                    }
+
                     var mayContinue = true;
                     if (prepared.ClientTemplate is not null)
                     {
                         var result = await PlayTemplateMacrosAsync(
                             prepared.ClientTemplate,
-                            prepared.Windows,
+                            prepared,
+                            destinationDisplay,
                             rate,
                             cycleCancellationToken);
                         mayContinue = result.MayContinue;
@@ -298,7 +322,8 @@ public partial class MainWindow
                     {
                         var result = await PlayTemplateMacrosAsync(
                             prepared.WholeTemplate,
-                            prepared.Windows,
+                            prepared,
+                            destinationDisplay,
                             rate,
                             cycleCancellationToken);
                         mayContinue = result.MayContinue;
@@ -359,6 +384,8 @@ public partial class MainWindow
         }
         finally
         {
+            prepared.PlaybackLeases.Dispose();
+            playbackPerformanceMode?.Dispose();
             _macroPlaybackInProgress = false;
             if (ReferenceEquals(
                     _macroPlaybackCancellation,
@@ -384,6 +411,8 @@ public partial class MainWindow
     {
         _exactWheelMacroStore ??=
             new ExactWheelMacroStore(_sessionTemplateStore);
+        var playbackCache = new SessionMacroPlaybackCache();
+        var playbackLeases = new SessionMacroPlaybackLeaseCache();
         var clientByKey = snapshot.Clients
             .GroupBy(
                 client => client.AccountKey,
@@ -471,6 +500,24 @@ public partial class MainWindow
                 client.Identity,
                 client.WindowHandle))
             .ToArray();
+        var windowsByKey = windows
+            .GroupBy(
+                window => window.Key,
+                StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Single(),
+                StringComparer.OrdinalIgnoreCase);
+        var definitionsById = catalog.MacroDefinitions
+            .GroupBy(
+                definition => definition.ContentId,
+                StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() == 1)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Single(),
+                StringComparer.OrdinalIgnoreCase);
         SessionTemplate? clientTemplate = null;
         if (validClientAssignments.Count > 0)
         {
@@ -514,6 +561,10 @@ public partial class MainWindow
 
         return new RuntimeMacroPlan(
             windows,
+            windowsByKey,
+            definitionsById,
+            playbackCache,
+            playbackLeases,
             clientTemplate,
             wholeTemplate,
             invalidCount == 0
@@ -525,12 +576,18 @@ public partial class MainWindow
             var cacheKey = string.Concat(
                 definition.ContentId,
                 "|",
-                definition.Sha256);
+                definition.Sha256,
+                "|",
+                definition.SafeFileName,
+                "|",
+                definition.Kind);
             if (fileValidity.TryGetValue(cacheKey, out var isValid))
                 return isValid;
             try
             {
-                _ = _exactWheelMacroStore.Load(definition);
+                _ = playbackCache.GetOrLoad(
+                    definition,
+                    _exactWheelMacroStore.Load);
                 fileValidity[cacheKey] = true;
                 return true;
             }
@@ -569,22 +626,15 @@ public partial class MainWindow
 
         var validAssignmentCount = 0;
         var unavailableTargetCount = 0;
-        var windowsByKey = prepared.Windows
-            .GroupBy(
-                window => window.Key,
-                StringComparer.OrdinalIgnoreCase)
-            .Where(group => group.Count() == 1)
-            .ToDictionary(
-                group => group.Key,
-                group => group.Single(),
-                StringComparer.OrdinalIgnoreCase);
         if (prepared.ClientTemplate is not null)
         {
             foreach (var slot in prepared.ClientTemplate.ClientSlots.Where(
                          slot => !string.IsNullOrWhiteSpace(
                              slot.PerClientMacroId)))
             {
-                if (!windowsByKey.TryGetValue(slot.AccountKey, out var window))
+                if (!prepared.WindowsByKey.TryGetValue(
+                        slot.AccountKey,
+                        out var window))
                 {
                     unavailableTargetCount++;
                     continue;
@@ -737,6 +787,10 @@ public partial class MainWindow
 
     private sealed record RuntimeMacroPlan(
         IReadOnlyList<RobloxSessionLayoutWindow> Windows,
+        IReadOnlyDictionary<string, RobloxSessionLayoutWindow> WindowsByKey,
+        IReadOnlyDictionary<string, MacroDefinition> DefinitionsById,
+        SessionMacroPlaybackCache PlaybackCache,
+        SessionMacroPlaybackLeaseCache PlaybackLeases,
         SessionTemplate? ClientTemplate,
         SessionTemplate? WholeTemplate,
         string? Warning)

@@ -12,19 +12,7 @@ public static class ExactWheelDesktopCapture
         nint windowHandle,
         bool requireForeground = true)
     {
-        var root = GetRootWindow(windowHandle);
-        if (root == 0 || !ExactWheelNativeMethods.IsWindow(root))
-            throw new ArgumentException("A valid target window is required.", nameof(windowHandle));
-        if (!ExactWheelNativeMethods.IsWindowVisible(root))
-            throw new InvalidOperationException("The selected target window is not visible.");
-        if (ExactWheelNativeMethods.IsIconic(root))
-            throw new InvalidOperationException("The selected target window is minimized.");
-
-        if (requireForeground && !IsForeground(root))
-        {
-            throw new InvalidOperationException(
-                "The selected target must be foreground before recording starts.");
-        }
+        var root = ValidateTargetWindow(windowHandle, requireForeground);
 
         _ = ExactWheelNativeMethods.GetWindowThreadProcessId(
             root,
@@ -52,53 +40,42 @@ public static class ExactWheelDesktopCapture
 
         var processBasename = Path.GetFileName(
             new string(executablePath, 0, checked((int)pathLength)));
-        var classNameBuffer = new char[
-            ExactWheelLimits.MaximumWindowClassUtf16Units + 1];
-        var classLength = ExactWheelNativeMethods.GetClassName(
-            root,
-            classNameBuffer,
-            classNameBuffer.Length);
-        if (classLength <= 0)
-            throw LastWin32("The selected target window class could not be read.");
-
-        if (!ExactWheelNativeMethods.GetWindowRect(
-                root,
-                out var nativeWindowRect) ||
-            !ExactWheelNativeMethods.GetClientRect(
-                root,
-                out var nativeClientRect))
-        {
-            throw LastWin32("The selected target bounds could not be read.");
-        }
-
-        var clientTopLeft = new ExactWheelNativeMethods.NativePoint
-        {
-            X = nativeClientRect.Left,
-            Y = nativeClientRect.Top
-        };
-        var clientBottomRight = new ExactWheelNativeMethods.NativePoint
-        {
-            X = nativeClientRect.Right,
-            Y = nativeClientRect.Bottom
-        };
-        if (!ExactWheelNativeMethods.ClientToScreen(root, ref clientTopLeft) ||
-            !ExactWheelNativeMethods.ClientToScreen(root, ref clientBottomRight))
-        {
-            throw LastWin32("The selected target client bounds could not be mapped.");
-        }
-
         return new ExactWheelRecordingTarget(
             root,
             CaptureDisplayTopology(),
-            new ExactWheelTargetMetadata(
-                processBasename,
-                new string(classNameBuffer, 0, classLength),
-                ToModel(nativeWindowRect),
-                new ExactWheelRect(
-                    clientTopLeft.X,
-                    clientTopLeft.Y,
-                    clientBottomRight.X,
-                    clientBottomRight.Y)));
+            CaptureTargetMetadata(root, processBasename));
+    }
+
+    /// <summary>
+    /// Captures the changing geometry for an already verified playback target.
+    /// Callers can share one display snapshot across multiple clients and avoid
+    /// reopening and querying the same trusted process on every macro loop.
+    /// </summary>
+    public static ExactWheelRecordingTarget CapturePlaybackTarget(
+        nint windowHandle,
+        ExactWheelDisplayTopology display,
+        string verifiedProcessBasename,
+        bool requireForeground = true)
+    {
+        ArgumentNullException.ThrowIfNull(display);
+        if (string.IsNullOrWhiteSpace(verifiedProcessBasename) ||
+            verifiedProcessBasename.Length >
+                ExactWheelLimits.MaximumProcessBasenameUtf16Units ||
+            !string.Equals(
+                Path.GetFileName(verifiedProcessBasename),
+                verifiedProcessBasename,
+                StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "A verified process basename is required.",
+                nameof(verifiedProcessBasename));
+        }
+
+        var root = ValidateTargetWindow(windowHandle, requireForeground);
+        return new ExactWheelRecordingTarget(
+            root,
+            display,
+            CaptureTargetMetadata(root, verifiedProcessBasename));
     }
 
     public static ExactWheelDisplayTopology CaptureDisplayTopology()
@@ -217,6 +194,87 @@ public static class ExactWheelDesktopCapture
                 ExactWheelNativeMethods.GaRoot) is var root && root != 0
                 ? root
                 : windowHandle;
+
+    private static nint ValidateTargetWindow(
+        nint windowHandle,
+        bool requireForeground)
+    {
+        var root = GetRootWindow(windowHandle);
+        if (root == 0 || !ExactWheelNativeMethods.IsWindow(root))
+        {
+            throw new ArgumentException(
+                "A valid target window is required.",
+                nameof(windowHandle));
+        }
+        if (!ExactWheelNativeMethods.IsWindowVisible(root))
+        {
+            throw new InvalidOperationException(
+                "The selected target window is not visible.");
+        }
+        if (ExactWheelNativeMethods.IsIconic(root))
+        {
+            throw new InvalidOperationException(
+                "The selected target window is minimized.");
+        }
+        if (requireForeground && !IsForeground(root))
+        {
+            throw new InvalidOperationException(
+                "The selected target must be foreground before recording starts.");
+        }
+
+        return root;
+    }
+
+    private static ExactWheelTargetMetadata CaptureTargetMetadata(
+        nint root,
+        string processBasename)
+    {
+        var classNameBuffer = new char[
+            ExactWheelLimits.MaximumWindowClassUtf16Units + 1];
+        var classLength = ExactWheelNativeMethods.GetClassName(
+            root,
+            classNameBuffer,
+            classNameBuffer.Length);
+        if (classLength <= 0)
+            throw LastWin32("The selected target window class could not be read.");
+
+        if (!ExactWheelNativeMethods.GetWindowRect(
+                root,
+                out var nativeWindowRect) ||
+            !ExactWheelNativeMethods.GetClientRect(
+                root,
+                out var nativeClientRect))
+        {
+            throw LastWin32("The selected target bounds could not be read.");
+        }
+
+        var clientTopLeft = new ExactWheelNativeMethods.NativePoint
+        {
+            X = nativeClientRect.Left,
+            Y = nativeClientRect.Top
+        };
+        var clientBottomRight = new ExactWheelNativeMethods.NativePoint
+        {
+            X = nativeClientRect.Right,
+            Y = nativeClientRect.Bottom
+        };
+        if (!ExactWheelNativeMethods.ClientToScreen(root, ref clientTopLeft) ||
+            !ExactWheelNativeMethods.ClientToScreen(root, ref clientBottomRight))
+        {
+            throw LastWin32(
+                "The selected target client bounds could not be mapped.");
+        }
+
+        return new ExactWheelTargetMetadata(
+            processBasename,
+            new string(classNameBuffer, 0, classLength),
+            ToModel(nativeWindowRect),
+            new ExactWheelRect(
+                clientTopLeft.X,
+                clientTopLeft.Y,
+                clientBottomRight.X,
+                clientBottomRight.Y));
+    }
 
     private static ExactWheelRect ToModel(
         ExactWheelNativeMethods.NativeRect rectangle) =>

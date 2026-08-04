@@ -49,6 +49,11 @@ public partial class MainWindow : Window
     private readonly AccessibilityLiveRegion _statusLiveRegion;
     private readonly AccessibilityLiveRegion _homeStatusLiveRegion;
     private readonly AccessibilityLiveRegion? _destinationValidationLiveRegion;
+    private string? _lastStatusTitle;
+    private string? _lastStatusDetail;
+    private string? _lastStatusBadge;
+    private string? _lastStatusAnnouncement;
+    private StatusTone? _lastStatusTone;
     private string? _startupNotice;
     private AccountProfile? _activeProfile;
     private AccountProfile? _pendingProfile;
@@ -1017,6 +1022,34 @@ public partial class MainWindow : Window
         return false;
     }
 
+    private async Task<IDisposable?>
+        TryEnterMacroPlaybackPerformanceModeAsync(
+            CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        // Suspending WebView2 materially reduces the idle browser renderer's
+        // CPU and memory pressure on lower-powered machines. This is strictly
+        // best effort: visible login, batch work, auto-join, account checks,
+        // and assignment work always keep the web session running.
+        if (!_macroPlaybackInProgress ||
+            _operationBusy ||
+            _launchInProgress ||
+            _macroAssignmentInProgress ||
+            _pendingProfile is not null ||
+            BrowserPanel.Visibility != Visibility.Collapsed ||
+            IsAutoJoinWatchActive ||
+            _accountCheckLock.CurrentCount == 0 ||
+            _activeProfile is null ||
+            !TryGetCurrentWebSessionToken(_activeProfile, out var token))
+        {
+            return null;
+        }
+
+        return await _webSession.TrySuspendForMacroPlaybackAsync(
+            token,
+            cancellationToken);
+    }
+
     private bool TryGetAffineWebSessionToken(
         AccountProfile profile,
         out WebSessionToken token)
@@ -1085,7 +1118,21 @@ public partial class MainWindow : Window
         StatusTone tone,
         bool announceChanges = true)
     {
-        var announcement = CreateStatusAnnouncement(title, detail, badge);
+        var statusTextChanged =
+            !string.Equals(_lastStatusTitle, title, StringComparison.Ordinal) ||
+            !string.Equals(_lastStatusDetail, detail, StringComparison.Ordinal) ||
+            !string.Equals(_lastStatusBadge, badge, StringComparison.Ordinal);
+        if (statusTextChanged || _lastStatusAnnouncement is null)
+        {
+            _lastStatusAnnouncement = CreateStatusAnnouncement(
+                title,
+                detail,
+                badge);
+            _lastStatusTitle = title;
+            _lastStatusDetail = detail;
+            _lastStatusBadge = badge;
+        }
+        var announcement = _lastStatusAnnouncement;
         var severity = tone is StatusTone.Error or StatusTone.Warning
             ? AccessibilityLiveRegionSeverity.Assertive
             : AccessibilityLiveRegionSeverity.Polite;
@@ -1096,13 +1143,19 @@ public partial class MainWindow : Window
             announcement,
             severity,
             announceChanges && advancedIsVisible);
-        StatusDetail.Text = detail;
-        SessionBadge.Text = badge;
+        if (!string.Equals(StatusDetail.Text, detail, StringComparison.Ordinal))
+            StatusDetail.Text = detail;
+        if (!string.Equals(SessionBadge.Text, badge, StringComparison.Ordinal))
+            SessionBadge.Text = badge;
         _homeStatusLiveRegion.Update(
             announcement,
             announcement,
             severity,
             announceChanges && !advancedIsVisible);
+
+        if (_lastStatusTone == tone)
+            return;
+        _lastStatusTone = tone;
 
         var foregroundResource = tone switch
         {

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Windows.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using SessionDock.Models;
@@ -12,6 +13,8 @@ public sealed class RobloxWebSessionService : IDisposable
     private static readonly TimeSpan AccountTimeout = TimeSpan.FromSeconds(12);
     private static readonly TimeSpan ApiTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan LocaleTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan MacroPlaybackSuspensionTimeout =
+        TimeSpan.FromSeconds(1);
     private const int MaximumWebMessageCharacters = 64 * 1024;
     private const int MaximumAuthenticationTicketCharacters = 8 * 1024;
     private static readonly Regex PrivateServerCodePattern = new(
@@ -22,6 +25,7 @@ public sealed class RobloxWebSessionService : IDisposable
     private bool _isReady;
     private WebSessionToken? _currentToken;
     private int _failedGeneration = -1;
+    private readonly SemaphoreSlim _macroSuspensionGate = new(1, 1);
     private TaskCompletionSource<WebSessionUnavailableReason> _sessionEnded =
         CreateSessionEndedSignal();
 
@@ -37,6 +41,95 @@ public sealed class RobloxWebSessionService : IDisposable
             token,
             isReady: true,
             _browser?.CoreWebView2 is not null);
+
+    internal async Task<IDisposable?> TrySuspendForMacroPlaybackAsync(
+        WebSessionToken token,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!await _macroSuspensionGate.WaitAsync(
+                TimeSpan.Zero,
+                cancellationToken))
+        {
+            // A prior timed-out suspension still owns the WebView operation.
+            // Its observer will resume the browser (if needed) and release the
+            // gate when that operation eventually settles.
+            return null;
+        }
+
+        var releaseGate = true;
+        CoreWebView2? ownedSuspendedCore = null;
+        try
+        {
+            EnsureUsable(token);
+            var browser = _browser!;
+            var core = browser.CoreWebView2;
+            if (core.IsSuspended)
+                return null;
+
+            var suspensionTask = core.TrySuspendAsync();
+            bool suspended;
+            try
+            {
+                suspended = await suspensionTask.WaitAsync(
+                    MacroPlaybackSuspensionTimeout,
+                    cancellationToken);
+            }
+            catch (TimeoutException)
+            {
+                releaseGate = false;
+                ObserveLateSuspension(
+                    suspensionTask,
+                    core,
+                    browser.Dispatcher);
+                System.Diagnostics.Trace.WriteLine(
+                    "WebView2 performance suspension exceeded its time budget and playback continued without it.");
+                return null;
+            }
+            catch (OperationCanceledException)
+            {
+                releaseGate = false;
+                ObserveLateSuspension(
+                    suspensionTask,
+                    core,
+                    browser.Dispatcher);
+                throw;
+            }
+
+            if (!suspended)
+                return null;
+            ownedSuspendedCore = core;
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!IsCurrent(token) ||
+                !ReferenceEquals(browser, _browser))
+            {
+                return null;
+            }
+            var lease = new WebSessionSuspensionLease(
+                core,
+                _macroSuspensionGate);
+            ownedSuspendedCore = null;
+            releaseGate = false;
+            return lease;
+        }
+        catch (Exception exception) when (
+            IsExpectedSuspensionFailure(exception))
+        {
+            System.Diagnostics.Trace.WriteLine(
+                $"WebView2 performance suspension was unavailable: {exception.GetType().Name}.");
+            return null;
+        }
+        finally
+        {
+            if (releaseGate)
+            {
+                if (ownedSuspendedCore is not null)
+                    ResumeSafely(ownedSuspendedCore);
+                _macroSuspensionGate.Release();
+            }
+        }
+    }
 
     internal static bool CanContinue(
         WebSessionToken? currentToken,
@@ -809,7 +902,102 @@ public sealed class RobloxWebSessionService : IDisposable
     private CoreWebView2 GetCore(WebSessionToken token)
     {
         EnsureUsable(token);
-        return _browser!.CoreWebView2;
+        var core = _browser!.CoreWebView2;
+        // Account and batch operations always take priority over the optional
+        // playback optimization. If any work reaches the browser, resume it
+        // before executing scripts or navigating.
+        if (core.IsSuspended)
+            core.Resume();
+        return core;
+    }
+
+    private static bool IsExpectedSuspensionFailure(Exception exception) =>
+        exception is COMException or InvalidOperationException or
+            ObjectDisposedException or WebSessionUnavailableException;
+
+    private static void ResumeSafely(CoreWebView2 core)
+    {
+        try
+        {
+            if (core.IsSuspended)
+                core.Resume();
+        }
+        catch (Exception exception) when (
+            IsExpectedSuspensionFailure(exception))
+        {
+            System.Diagnostics.Trace.WriteLine(
+                $"WebView2 performance resume was unavailable: {exception.GetType().Name}.");
+        }
+    }
+
+    private void ObserveLateSuspension(
+        Task<bool> suspensionTask,
+        CoreWebView2 core,
+        Dispatcher dispatcher)
+    {
+        _ = ObserveLateSuspensionAsync(
+            suspensionTask,
+            core,
+            dispatcher,
+            _macroSuspensionGate);
+    }
+
+    private static async Task ObserveLateSuspensionAsync(
+        Task<bool> suspensionTask,
+        CoreWebView2 core,
+        Dispatcher dispatcher,
+        SemaphoreSlim suspensionGate)
+    {
+        try
+        {
+            var suspended = await suspensionTask.ConfigureAwait(false);
+            if (!suspended)
+                return;
+
+            await dispatcher.InvokeAsync(
+                () => ResumeSafely(core),
+                DispatcherPriority.Send);
+        }
+        catch (Exception exception)
+        {
+            // This detached observer must consume every late fault. Expected
+            // COM/lifecycle failures are normal during browser replacement or
+            // shutdown; unexpected failures are diagnostic-only because the
+            // optimization must never break macro cancellation.
+            System.Diagnostics.Trace.WriteLine(
+                $"Late WebView2 performance suspension settled safely: {exception.GetType().Name}.");
+        }
+        finally
+        {
+            suspensionGate.Release();
+        }
+    }
+
+    private sealed class WebSessionSuspensionLease(
+        CoreWebView2 core,
+        SemaphoreSlim suspensionGate) : IDisposable
+    {
+        private SuspensionLeaseState? _state = new(core, suspensionGate);
+
+        public void Dispose()
+        {
+            var state = Interlocked.Exchange(ref _state, null);
+            if (state is null)
+                return;
+
+            try
+            {
+                ResumeSafely(state.Core);
+            }
+            finally
+            {
+                state.SuspensionGate.Release();
+            }
+        }
+
+        private sealed record SuspensionLeaseState(
+            CoreWebView2 Core,
+            SemaphoreSlim SuspensionGate);
     }
 
     private void EnsureUsable(WebSessionToken token)

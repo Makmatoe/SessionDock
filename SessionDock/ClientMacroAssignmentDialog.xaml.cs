@@ -12,13 +12,19 @@ namespace SessionDock;
 
 public partial class ClientMacroAssignmentDialog : Window
 {
+    private static readonly TimeSpan ForegroundPollInterval =
+        TimeSpan.FromMilliseconds(250);
     private readonly SessionMacroLaunchContext _context;
     private readonly RobloxWindowService _windowService;
     private readonly IReadOnlySet<string> _selectableAccountKeys;
+    private readonly IReadOnlyList<SessionMacroClientTarget> _selectableClients;
+    private readonly IReadOnlyDictionary<string, string> _definitionNames;
     private readonly AppLocalizationService _localization;
     private readonly DispatcherTimer _foregroundTimer;
     private readonly ObservableCollection<AssignmentRow> _rows = [];
     private bool _assigning;
+    private bool _isLoaded;
+    private bool? _statusIsError;
     private nint _lastAssignedHandle;
 
     internal ClientMacroAssignmentDialog(
@@ -36,6 +42,15 @@ public partial class ClientMacroAssignmentDialog : Window
         InitializeComponent();
         _localization = ((App)Application.Current).LocalizationService;
         WindowLayoutService.FitToWorkArea(this);
+        _foregroundTimer = new DispatcherTimer(
+            ForegroundPollInterval,
+            DispatcherPriority.Background,
+            ForegroundTimer_Tick,
+            Dispatcher);
+        _selectableClients = _context.Snapshot().Clients
+            .Where(client =>
+                _selectableAccountKeys.Contains(client.AccountKey))
+            .ToArray();
 
         var macroOptions = definitions
             .Where(definition =>
@@ -58,23 +73,25 @@ public partial class ClientMacroAssignmentDialog : Window
                 null,
                 Localize("Macro.AssignChooseMacro")))
             .ToArray();
+        _definitionNames = macroOptions
+            .Where(option => option.Definition is not null)
+            .ToDictionary(
+                option => option.Definition!.ContentId,
+                option => option.DisplayName,
+                StringComparer.OrdinalIgnoreCase);
         MacroComboBox.ItemsSource = macroOptions;
         MacroComboBox.SelectedIndex = 0;
 
         RefreshRows();
         AssignmentsList.ItemsSource = _rows;
-        _foregroundTimer = new DispatcherTimer(
-            TimeSpan.FromMilliseconds(125),
-            DispatcherPriority.Background,
-            ForegroundTimer_Tick,
-            Dispatcher);
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
     {
         _ = sender;
         _ = e;
-        _foregroundTimer.Start();
+        _isLoaded = true;
+        UpdateForegroundPolling();
         MacroComboBox.Focus();
     }
 
@@ -82,6 +99,7 @@ public partial class ClientMacroAssignmentDialog : Window
     {
         _ = sender;
         _ = e;
+        _isLoaded = false;
         _foregroundTimer.Stop();
     }
 
@@ -95,6 +113,7 @@ public partial class ClientMacroAssignmentDialog : Window
         // handle lets the user change the macro for the same client after
         // returning focus to that exact client window.
         _lastAssignedHandle = nint.Zero;
+        UpdateForegroundPolling();
         if (IsInitialized)
             SetStatus(Localize("Macro.AssignWaiting"));
     }
@@ -112,23 +131,31 @@ public partial class ClientMacroAssignmentDialog : Window
             return;
         }
 
-        var snapshot = _context.Snapshot();
-        var matches = snapshot.Clients
-            .Where(client =>
-                _selectableAccountKeys.Contains(client.AccountKey) &&
-                ExactWheelDesktopCapture.IsForeground(client.WindowHandle))
-            .Take(2)
-            .ToArray();
-        if (matches.Length != 1 ||
-            matches[0].WindowHandle == _lastAssignedHandle)
+        if (_lastAssignedHandle != nint.Zero &&
+            ExactWheelDesktopCapture.IsForeground(_lastAssignedHandle))
         {
             return;
         }
 
+        SessionMacroClientTarget? match = null;
+        foreach (var client in _selectableClients)
+        {
+            if (client.WindowHandle == _lastAssignedHandle ||
+                !ExactWheelDesktopCapture.IsForeground(client.WindowHandle))
+            {
+                continue;
+            }
+            if (match is not null)
+                return;
+            match = client;
+        }
+        if (match is null)
+            return;
+
         _assigning = true;
         try
         {
-            var client = matches[0];
+            var client = match;
             var valid = await _windowService.CaptureAsync(
                 client.Identity,
                 client.WindowHandle);
@@ -189,25 +216,15 @@ public partial class ClientMacroAssignmentDialog : Window
     private void RefreshRows()
     {
         var snapshot = _context.Snapshot();
-        var definitions = MacroComboBox.ItemsSource is IEnumerable<MacroOption>
-            options
-            ? options
-                .Where(option => option.Definition is not null)
-                .ToDictionary(
-                    option => option.Definition!.ContentId,
-                    option => option.DisplayName,
-                    StringComparer.OrdinalIgnoreCase)
-            : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var existingRows = _rows.ToDictionary(
             row => row.AccountKey,
             StringComparer.OrdinalIgnoreCase);
-        foreach (var client in snapshot.Clients.Where(client =>
-                     _selectableAccountKeys.Contains(client.AccountKey)))
+        foreach (var client in _selectableClients)
         {
             var macroId = snapshot.ClientMacroAssignments
                 .GetValueOrDefault(client.AccountKey);
             var label = macroId is not null &&
-                definitions.TryGetValue(macroId, out var macroName)
+                _definitionNames.TryGetValue(macroId, out var macroName)
                     ? Localize("Macro.AssignAssigned", macroName)
                     : macroId is null
                         ? Localize("Macro.AssignUnassigned")
@@ -236,10 +253,32 @@ public partial class ClientMacroAssignmentDialog : Window
 
     private void SetStatus(string text, bool isError = false)
     {
-        StatusText.Text = text;
+        if (!string.Equals(StatusText.Text, text, StringComparison.Ordinal))
+            StatusText.Text = text;
+        if (_statusIsError == isError)
+            return;
+        _statusIsError = isError;
         StatusText.SetResourceReference(
             TextBlock.ForegroundProperty,
             isError ? "ErrorTextBrush" : "SuccessTextBrush");
+    }
+
+    private void UpdateForegroundPolling()
+    {
+        var shouldPoll = _isLoaded &&
+            MacroComboBox.SelectedItem is MacroOption
+            {
+                Definition: not null
+            };
+        if (shouldPoll)
+        {
+            if (!_foregroundTimer.IsEnabled)
+                _foregroundTimer.Start();
+        }
+        else
+        {
+            _foregroundTimer.Stop();
+        }
     }
 
     private string Localize(string key, params object?[] arguments) =>
