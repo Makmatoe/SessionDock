@@ -34,6 +34,9 @@ public partial class GuidedTourOverlay : UserControl
     private Size _lastPlacementViewport = Size.Empty;
     private int _lastPlacementStep = -1;
     private bool _isTrackingLayout;
+    private bool _isUpdatingSpotlight;
+    private DispatcherOperation? _spotlightUpdateOperation;
+    private int _tourGeneration;
 
     public GuidedTourOverlay()
     {
@@ -63,6 +66,8 @@ public partial class GuidedTourOverlay : UserControl
                 "A guided tour requires at least one valid target.",
                 nameof(steps));
 
+        CancelPendingSpotlightUpdate();
+        _tourGeneration++;
         _steps = steps.ToArray();
         _stepIndex = 0;
         _isFinishing = false;
@@ -82,6 +87,8 @@ public partial class GuidedTourOverlay : UserControl
 
     public void Stop()
     {
+        _tourGeneration++;
+        CancelPendingSpotlightUpdate();
         _steps = [];
         _stepIndex = 0;
         StopLayoutTracking();
@@ -129,7 +136,7 @@ public partial class GuidedTourOverlay : UserControl
                 BodyText.Text,
                 PreviewText.Text));
         InvalidateCalloutPlacement();
-        UpdateSpotlight();
+        QueueSpotlightUpdate();
         Dispatcher.BeginInvoke(
             DispatcherPriority.Input,
             () => NextButton.Focus());
@@ -137,36 +144,37 @@ public partial class GuidedTourOverlay : UserControl
 
     private void UpdateSpotlight()
     {
-        if (!IsRunning || ActualWidth <= 0 || ActualHeight <= 0)
+        if (_isUpdatingSpotlight ||
+            !IsRunning ||
+            !IsFinitePositive(ActualWidth) ||
+            !IsFinitePositive(ActualHeight))
             return;
 
-        var target = _steps[_stepIndex].Target;
-        Rect targetBounds;
+        _isUpdatingSpotlight = true;
         try
         {
-            var transform = target.TransformToVisual(this);
-            targetBounds = transform.TransformBounds(
-                new Rect(0, 0, target.ActualWidth, target.ActualHeight));
+            UpdateSpotlightCore();
         }
-        catch (InvalidOperationException)
+        finally
         {
-            targetBounds = Rect.Empty;
+            _isUpdatingSpotlight = false;
         }
+    }
 
-        if (targetBounds.IsEmpty ||
-            target.ActualWidth <= 0 ||
-            target.ActualHeight <= 0 ||
-            !target.IsVisible)
-        {
-            targetBounds = new Rect(
-                (ActualWidth - 160) / 2,
-                (ActualHeight - 64) / 2,
-                160,
-                64);
-        }
+    private void UpdateSpotlightCore()
+    {
+        var viewport = new Size(ActualWidth, ActualHeight);
+        var viewportBounds = new Rect(0, 0, viewport.Width, viewport.Height);
+        var targetBounds = GetVisibleTargetBounds(
+            _steps[_stepIndex].Target,
+            viewportBounds);
+
+        if (!IsUsableRect(targetBounds))
+            targetBounds = CreateFallbackTargetBounds(viewport);
 
         var highlight = InflateAndClamp(targetBounds, HighlightPadding);
-        var viewport = new Size(ActualWidth, ActualHeight);
+        if (!IsUsableRect(highlight))
+            highlight = CreateFallbackTargetBounds(viewport);
         if (_lastPlacementStep == _stepIndex &&
             AreClose(_lastPlacementViewport, viewport) &&
             AreClose(_lastPlacementHighlight, highlight))
@@ -248,6 +256,63 @@ public partial class GuidedTourOverlay : UserControl
         _lastPlacementHighlight = highlight;
     }
 
+    private Rect GetVisibleTargetBounds(
+        FrameworkElement target,
+        Rect viewportBounds)
+    {
+        if (!target.IsVisible ||
+            !IsFinitePositive(target.ActualWidth) ||
+            !IsFinitePositive(target.ActualHeight))
+        {
+            return Rect.Empty;
+        }
+
+        try
+        {
+            var transform = target.TransformToVisual(this);
+            var bounds = transform.TransformBounds(
+                new Rect(0, 0, target.ActualWidth, target.ActualHeight));
+            if (!IsUsableRect(bounds))
+                return Rect.Empty;
+
+            var visibleBounds = Rect.Intersect(bounds, viewportBounds);
+            return IsUsableRect(visibleBounds)
+                ? visibleBounds
+                : Rect.Empty;
+        }
+        catch (InvalidOperationException)
+        {
+            return Rect.Empty;
+        }
+        catch (ArgumentException)
+        {
+            return Rect.Empty;
+        }
+    }
+
+    private static Rect CreateFallbackTargetBounds(Size viewport)
+    {
+        var width = Math.Min(160, viewport.Width);
+        var height = Math.Min(64, viewport.Height);
+        return new Rect(
+            Math.Max(0, (viewport.Width - width) / 2),
+            Math.Max(0, (viewport.Height - height) / 2),
+            width,
+            height);
+    }
+
+    private static bool IsUsableRect(Rect bounds) =>
+        !bounds.IsEmpty &&
+        double.IsFinite(bounds.Left) &&
+        double.IsFinite(bounds.Top) &&
+        double.IsFinite(bounds.Right) &&
+        double.IsFinite(bounds.Bottom) &&
+        IsFinitePositive(bounds.Width) &&
+        IsFinitePositive(bounds.Height);
+
+    private static bool IsFinitePositive(double value) =>
+        double.IsFinite(value) && value > 0;
+
     private Rect InflateAndClamp(Rect bounds, double padding)
     {
         var left = Math.Clamp(bounds.Left - padding, 0, ActualWidth);
@@ -262,6 +327,39 @@ public partial class GuidedTourOverlay : UserControl
         _lastPlacementStep = -1;
         _lastPlacementViewport = Size.Empty;
         _lastPlacementHighlight = Rect.Empty;
+    }
+
+    private void QueueSpotlightUpdate()
+    {
+        if (!IsRunning ||
+            _spotlightUpdateOperation is
+            {
+                Status: DispatcherOperationStatus.Pending or
+                    DispatcherOperationStatus.Executing
+            })
+        {
+            return;
+        }
+
+        var generation = _tourGeneration;
+        _spotlightUpdateOperation = Dispatcher.BeginInvoke(
+            DispatcherPriority.Render,
+            new Action(() =>
+            {
+                _spotlightUpdateOperation = null;
+                if (generation != _tourGeneration || !IsRunning)
+                    return;
+
+                UpdateSpotlight();
+            }));
+    }
+
+    private void CancelPendingSpotlightUpdate()
+    {
+        var pendingUpdate = _spotlightUpdateOperation;
+        _spotlightUpdateOperation = null;
+        if (pendingUpdate?.Status == DispatcherOperationStatus.Pending)
+            pendingUpdate.Abort();
     }
 
     private void SetCompactNavigation(bool compact)
@@ -396,7 +494,7 @@ public partial class GuidedTourOverlay : UserControl
         _ = sender;
         _ = e;
         InvalidateCalloutPlacement();
-        UpdateSpotlight();
+        QueueSpotlightUpdate();
     }
 
     private void Overlay_LayoutUpdated(object? sender, EventArgs e)
@@ -404,7 +502,7 @@ public partial class GuidedTourOverlay : UserControl
         _ = sender;
         _ = e;
         if (IsRunning)
-            UpdateSpotlight();
+            QueueSpotlightUpdate();
     }
 
     private void StartLayoutTracking()
@@ -431,11 +529,12 @@ public partial class GuidedTourOverlay : UserControl
         if (e.NewValue is true)
         {
             StartLayoutTracking();
-            UpdateSpotlight();
+            QueueSpotlightUpdate();
         }
         else
         {
             StopLayoutTracking();
+            CancelPendingSpotlightUpdate();
         }
     }
 }

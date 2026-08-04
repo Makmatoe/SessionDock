@@ -177,6 +177,173 @@ public sealed class GuidedTourPlacementPolicyTests
         });
     }
 
+    [Fact]
+    public void Overlay_StartFromScrolledAwayTarget_WithPrepareLayout_RemainsResponsive()
+    {
+        RunOnSta(() =>
+        {
+            Window? window = null;
+            try
+            {
+                var target = new Button
+                {
+                    Content = "First advanced setting",
+                    Width = 240,
+                    Height = 44,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                var launchButton = new Button
+                {
+                    Content = "Start advanced tour",
+                    Width = 240,
+                    Height = 44,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                var scrollingContent = new StackPanel();
+                scrollingContent.Children.Add(target);
+                scrollingContent.Children.Add(new Border { Height = 900 });
+                scrollingContent.Children.Add(launchButton);
+                var scrollViewer = new ScrollViewer
+                {
+                    Content = scrollingContent,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                };
+                var overlay = new GuidedTourOverlay();
+                var root = new Grid();
+                root.Children.Add(scrollViewer);
+                root.Children.Add(overlay);
+                window = CreateTestWindow(root);
+                window.Show();
+                FlushDispatcher();
+
+                scrollViewer.ScrollToEnd();
+                FlushDispatcher();
+                AssertTargetOutsideViewport(target, scrollViewer);
+
+                overlay.Start(
+                    [
+                        new GuidedTourStep(
+                            target,
+                            "Tune window layout",
+                            "Set the cascade spacing and minimum client size.",
+                            root.UpdateLayout)
+                    ],
+                    "Step {0} of {1}",
+                    "Back",
+                    "Next",
+                    "Finish",
+                    "Skip tutorial");
+                AssertDispatcherResponsive();
+                FlushDispatcher();
+
+                Assert.True(overlay.IsRunning);
+                AssertTargetHighlighted(target, overlay);
+                AssertOverlayGeometry(overlay);
+            }
+            finally
+            {
+                window?.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void Overlay_NextAndBackAcrossScrolledTargets_RemainResponsive()
+    {
+        RunOnSta(() =>
+        {
+            Window? window = null;
+            try
+            {
+                var firstTarget = new Button
+                {
+                    Content = "Window layout",
+                    Width = 240,
+                    Height = 44,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                var secondTarget = new Button
+                {
+                    Content = "Advanced workspace",
+                    Width = 240,
+                    Height = 44,
+                    HorizontalAlignment = HorizontalAlignment.Left
+                };
+                var scrollingContent = new StackPanel();
+                scrollingContent.Children.Add(firstTarget);
+                scrollingContent.Children.Add(new Border { Height = 900 });
+                scrollingContent.Children.Add(secondTarget);
+                var scrollViewer = new ScrollViewer
+                {
+                    Content = scrollingContent,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+                };
+                var overlay = new GuidedTourOverlay();
+                var root = new Grid();
+                root.Children.Add(scrollViewer);
+                root.Children.Add(overlay);
+                window = CreateTestWindow(root);
+                window.Show();
+                FlushDispatcher();
+
+                var layoutNudge = false;
+                void PrepareStep()
+                {
+                    layoutNudge = !layoutNudge;
+                    scrollingContent.Margin = layoutNudge
+                        ? new Thickness(0, 0, 0, 1)
+                        : new Thickness(0);
+                    root.UpdateLayout();
+                }
+
+                overlay.Start(
+                    [
+                        new GuidedTourStep(
+                            firstTarget,
+                            "Window layout",
+                            "Tune the cascade.",
+                            PrepareStep),
+                        new GuidedTourStep(
+                            secondTarget,
+                            "Advanced workspace",
+                            "Open uncommon tools.",
+                            PrepareStep)
+                    ],
+                    "Step {0} of {1}",
+                    "Back",
+                    "Next",
+                    "Finish",
+                    "Skip tutorial");
+                AssertDispatcherResponsive();
+                AssertTargetHighlighted(firstTarget, overlay);
+
+                AssertTargetOutsideViewport(secondTarget, overlay);
+                overlay.NextButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent));
+                AssertDispatcherResponsive();
+                FlushDispatcher();
+                Assert.Equal("Step 2 of 2", overlay.ProgressText.Text);
+                AssertTargetHighlighted(secondTarget, overlay);
+                AssertOverlayGeometry(overlay);
+
+                AssertTargetOutsideViewport(firstTarget, overlay);
+                overlay.BackButton.RaiseEvent(
+                    new RoutedEventArgs(Button.ClickEvent));
+                AssertDispatcherResponsive();
+                FlushDispatcher();
+                Assert.Equal("Step 1 of 2", overlay.ProgressText.Text);
+                AssertTargetHighlighted(firstTarget, overlay);
+                AssertOverlayGeometry(overlay);
+            }
+            finally
+            {
+                window?.Close();
+            }
+        });
+    }
+
     private static GuidedTourCalloutPlacement Calculate(
         Size viewport,
         Rect highlight,
@@ -221,6 +388,68 @@ public sealed class GuidedTourPlacementPolicyTests
                 $"Callout: {callout}; button: {buttonBounds}; " +
                 $"viewport: {overlay.ActualWidth}x{overlay.ActualHeight}.");
         }
+    }
+
+    private static Window CreateTestWindow(UIElement content) =>
+        new()
+        {
+            Content = content,
+            Width = 520,
+            Height = 430,
+            Left = -10_000,
+            Top = -10_000,
+            ShowActivated = false,
+            ShowInTaskbar = false,
+            WindowStyle = WindowStyle.None
+        };
+
+    private static void AssertTargetOutsideViewport(
+        FrameworkElement target,
+        FrameworkElement viewportElement)
+    {
+        var bounds = BoundsRelativeTo(target, viewportElement);
+        var viewport = new Rect(
+            0,
+            0,
+            viewportElement.ActualWidth,
+            viewportElement.ActualHeight);
+        Assert.True(
+            Rect.Intersect(bounds, viewport).IsEmpty,
+            $"The target must begin outside the viewport. " +
+            $"Target: {bounds}; viewport: {viewport}.");
+    }
+
+    private static void AssertTargetHighlighted(
+        FrameworkElement target,
+        GuidedTourOverlay overlay)
+    {
+        var targetBounds = BoundsRelativeTo(target, overlay);
+        var outlineBounds = BoundsRelativeTo(overlay.TargetOutline, overlay);
+        var viewport = new Rect(
+            0,
+            0,
+            overlay.ActualWidth,
+            overlay.ActualHeight);
+        Assert.False(Rect.Intersect(targetBounds, viewport).IsEmpty);
+        Assert.True(
+            outlineBounds.Contains(targetBounds),
+            $"The spotlight must contain its target. " +
+            $"Spotlight: {outlineBounds}; target: {targetBounds}.");
+    }
+
+    private static void AssertDispatcherResponsive()
+    {
+        var dispatcher = Dispatcher.CurrentDispatcher;
+        var pulseCompleted = false;
+        dispatcher.BeginInvoke(
+            DispatcherPriority.Background,
+            () => pulseCompleted = true);
+        dispatcher.Invoke(
+            DispatcherPriority.ApplicationIdle,
+            static () => { });
+        Assert.True(
+            pulseCompleted,
+            "The tutorial must not starve the UI dispatcher.");
     }
 
     private static Rect BoundsRelativeTo(

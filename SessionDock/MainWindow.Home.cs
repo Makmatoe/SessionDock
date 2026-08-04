@@ -478,7 +478,6 @@ public partial class MainWindow
     {
         if (_currentWorkspacePage != page)
             NavigateToWorkspace(page, resizeWindow: true);
-        UpdateLayout();
     }
 
     private void HomeGuidedTour_Finished(object? sender, EventArgs e)
