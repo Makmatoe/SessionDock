@@ -253,10 +253,11 @@ if ($releaseEnvironment.Count -eq 1) {
         'AZURE_SUBSCRIPTION_ID',
         'AZURE_TENANT_ID',
         'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')
-    if (Compare-Object `
-            ($expectedReleaseSecretNames | Sort-Object) `
-            ($releaseSecretNames | Sort-Object) `
-            -CaseSensitive) {
+    $expectedReleaseSecretFingerprint =
+        ($expectedReleaseSecretNames | Sort-Object) -join "`n"
+    $releaseSecretFingerprint =
+        ($releaseSecretNames | Sort-Object) -join "`n"
+    if ($expectedReleaseSecretFingerprint -cne $releaseSecretFingerprint) {
         Add-AnnouncementAuditFailure "Environment 'release' must contain exactly the descriptor-key and Azure OIDC secret names: $($expectedReleaseSecretNames -join ', ')."
     }
     if (@($releaseSecrets | Where-Object {
@@ -284,10 +285,11 @@ if ($releaseEnvironment.Count -eq 1) {
         'ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME',
         'ARTIFACT_SIGNING_ENDPOINT',
         'ARTIFACT_SIGNING_PUBLISHER_SUBJECT')
-    if (Compare-Object `
-            ($expectedReleaseVariableNames | Sort-Object) `
-            ($releaseVariableNames | Sort-Object) `
-            -CaseSensitive) {
+    $expectedReleaseVariableFingerprint =
+        ($expectedReleaseVariableNames | Sort-Object) -join "`n"
+    $releaseVariableFingerprint =
+        ($releaseVariableNames | Sort-Object) -join "`n"
+    if ($expectedReleaseVariableFingerprint -cne $releaseVariableFingerprint) {
         Add-AnnouncementAuditFailure "Environment 'release' must contain exactly the four Artifact Signing variable names: $($expectedReleaseVariableNames -join ', ')."
     }
 }
@@ -379,7 +381,7 @@ if ($repositoryState.owner.type -ceq 'Organization') {
 }
 
 if ($announcementAuditFailures.Count -ne 0) {
-    throw "GitHub release-announcement configuration audit failed with $($announcementAuditFailures.Count) blocking issue(s)."
+    throw "GitHub protected release-environment configuration audit failed with $($announcementAuditFailures.Count) blocking issue(s)."
 }
 
 Write-Host 'GitHub security configuration audit completed without weakening existing rules.'

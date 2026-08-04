@@ -1326,7 +1326,7 @@ try {
         'announcementAuditFailures',
         'releaseEnvironmentEndpoint/secrets',
         'releaseEnvironmentEndpoint/variables',
-        'GitHub release-announcement configuration audit failed'
+        'GitHub protected release-environment configuration audit failed'
     )
     foreach ($pattern in $githubSecurityAuditPatterns) {
         if ($githubSecurityContents -notmatch $pattern) {
