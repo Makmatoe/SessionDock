@@ -160,7 +160,7 @@ Microsoft signatures. Unexpected executables, scripts, source directories,
 duplicate paths, reparse points, or extra component payloads are rejected.
 
 ExactWheel provenance pins 14 implementation/lock files at commit
-`14fef76e6639bf291c87a83db7043b91e1c3daa8`, the separately pinned current
+`1e3b6bfbbc5a2335af6c863cdcc32e2b70c7ffc1`, the separately pinned current
 build definition, and the root MIT license. HandleScope has its own pinned
 upstream inventory and compatibility checks. These gates establish source
 identity; they do not bypass Windows malware detection.

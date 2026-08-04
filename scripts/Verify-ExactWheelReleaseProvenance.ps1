@@ -11,12 +11,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$expectedSourceCommit = '14fef76e6639bf291c87a83db7043b91e1c3daa8'
-$expectedManifestSha256 = 'de707b6b4b234a08c42c73282d1941acbe724b4c89f10b0e3000359e907fa19c'
+$expectedSourceCommit = '1e3b6bfbbc5a2335af6c863cdcc32e2b70c7ffc1'
+$expectedManifestSha256 = '4cc1d743ab40619b4bb48d77995534e60b611aacc0153ab80a1f7e8502e88397'
 $expectedLicenseSha256 = '5944250b546861e4e616de520b7d06513fec435a5651fc49d83ae92d3cf14bf2'
 $expectedLicenseGitBlob = '730ba1584a9ef1002dfca75b3b18a8d889052fbc'
 $expectedCanonicalManifestSha256 =
-    '2368564b533bc5b762bceefb5b27ed4273ebdf7deee6d63a2fe7108d2659405e'
+    '83ef063c36a990a0322e867d67e9a0db151c88424af17b5bed1eada1901b6232'
 $expectedProjectSha256 = '76e3be05eea91e5526965d05da043219da67afdc52a423b07707b63fdfaa1841'
 $expectedProjectGitBlob = '07fe8f9ec14088750f6d2a0d835c86b678a0f76e'
 $expectedProjectPath = 'SessionDock.ExactWheel/SessionDock.ExactWheel.csproj'
@@ -24,27 +24,27 @@ $expectedProjectBytes = 1311L
 $expectedInventory = @(
     [pscustomobject]@{
         Path = 'ExactWheelCoordinateTransforms.cs'
-        Bytes = 8853L
-        Sha256 = '66076bd513d83939cf7f8988899e455fd786b26a29bddbbf9db8c8387b65e7b5'
-        GitBlob = 'c183864e0a70abbd0e05a2a0065c7c5b6dfa3f19'
+        Bytes = 9007L
+        Sha256 = '5e18669e74e3ab983fb354acdc77b9a041f13b9f85d06bd73a22dcabfd02a0ba'
+        GitBlob = '4c30ab57a2a72b70cfdd4f5c9e1cbbb30c0d00d8'
     },
     [pscustomobject]@{
         Path = 'ExactWheelDesktopCapture.cs'
-        Bytes = 10325L
-        Sha256 = 'f079c22f6744f907806402dbdd7eb65485e0cf1db229054527aff326a384973b'
-        GitBlob = '972c1a911f8bc2206058b0698c85b1644383d3d7'
+        Bytes = 14678L
+        Sha256 = 'df3e5f40630e52fff747871ffef37bbdd3be326f7571c2f9cabef4c2e4f17ad1'
+        GitBlob = 'f46180c9f05cfa475153af3f322bbd4c920cd4c5'
     },
     [pscustomobject]@{
         Path = 'ExactWheelMacroSerializer.cs'
-        Bytes = 18058L
-        Sha256 = '072a6a53e759145365e5afd0884d5e158f1e59906278bdb6b4b2c8c8c67d9581'
-        GitBlob = 'e847293e09b39c1e5f5d0ad92247af47cfe38686'
+        Bytes = 18076L
+        Sha256 = 'b495a0dd078feabc5348bea40a48a9ef57445f705231a6a2ebb766d93cadc572'
+        GitBlob = 'db76b7c1c9789a59b9540f3fff796a830ee01cff'
     },
     [pscustomobject]@{
         Path = 'ExactWheelModels.cs'
-        Bytes = 5421L
-        Sha256 = '8799d1ee140df719090a82e5b2e35bcbe3c9d691af1ed72cc08dd4ee6dd8ba05'
-        GitBlob = 'a11c0b682fdacf91723424564876809fc16f6554'
+        Bytes = 6648L
+        Sha256 = '926512299bf3678ea80640625229df84beca0003ac036044903f3b03cc0025f3'
+        GitBlob = 'c550bc894e3e64dededee18a68082132ffbe94a6'
     },
     [pscustomobject]@{
         Path = 'ExactWheelPlaybackModels.cs'
@@ -54,15 +54,15 @@ $expectedInventory = @(
     },
     [pscustomobject]@{
         Path = 'ExactWheelRecordingValidator.cs'
-        Bytes = 9444L
-        Sha256 = '3b0f4d325c652287f4f491446db5d0b2315bcb9269b3d380883251a773e5caf9'
-        GitBlob = '1cda0e63eedab520434cc4b1855e3225c52855ce'
+        Bytes = 10969L
+        Sha256 = 'e48763f8fa6e6b4a2fbe46cecaad628c8be0a9f60231b542635a416874bd32ec'
+        GitBlob = '9b9ece1bcddf08c41131a1e0b058180113e6c391'
     },
     [pscustomobject]@{
         Path = 'ExactWheelSession.cs'
-        Bytes = 5358L
-        Sha256 = '6f9d0b909856b8ce7c623a8f96bec7c22da80ecccb064adbeeeb4d423b37e113'
-        GitBlob = '7036e31fd636767caf0f7f07472545e761a9f9bc'
+        Bytes = 8823L
+        Sha256 = '45b7f5cc45b70b1eba485bfd8a5b2dfff5caa159b2af8cc4b80dab8dab7b2934'
+        GitBlob = 'a1d151ed7797fbd6d2f4327dee91a6209968b78e'
     },
     [pscustomobject]@{
         Path = 'ExactWheelTiming.cs'
@@ -78,9 +78,9 @@ $expectedInventory = @(
     },
     [pscustomobject]@{
         Path = 'Windows/ExactWheelInputInjector.cs'
-        Bytes = 17152L
-        Sha256 = '692cf142b5da9d32cfd0088349c06d8525533b728a46e964b9f5779edc0bea0d'
-        GitBlob = 'aca542a8d99858cc2d6f542060fc8c5cfe8b6535'
+        Bytes = 19682L
+        Sha256 = '11e4d38db740a22adbed7b4c31f517f717295ac572b96a7b869031b2ef83692f'
+        GitBlob = '3e9b1e50b2780e75c2b9774c5b7dc4df19e75171'
     },
     [pscustomobject]@{
         Path = 'Windows/ExactWheelNativeMethods.cs'
@@ -90,15 +90,15 @@ $expectedInventory = @(
     },
     [pscustomobject]@{
         Path = 'Windows/ExactWheelPlaybackEngine.cs'
-        Bytes = 50334L
-        Sha256 = '7bd7f486b84314af33631975488eee967478ba5d5b768caba2260c31a37a3103'
-        GitBlob = '96f440e76e4ca4b2203ee5dc6b6e6910662d256a'
+        Bytes = 68961L
+        Sha256 = 'ff15a483bdd3f6493c533a3bc97485893183fb00c0cc598b2709abfc6e7429a2'
+        GitBlob = '712d33cb50fd754d22e43b768d4f107b4733506f'
     },
     [pscustomobject]@{
         Path = 'Windows/LowLevelInputCapture.cs'
-        Bytes = 22455L
-        Sha256 = '974525b67431d33400ab69d582a594dd82f29a08f3beae161034db431047f4bb'
-        GitBlob = 'a71077a8529172a46fcf204f215d45f641a08d77'
+        Bytes = 33870L
+        Sha256 = '29dc99a93507463aa4b924d3c754cf8a705c8296a5d1164fc0cd8dfe5fc1e318'
+        GitBlob = 'f9b940af14ffd34140cad462f0912c3fde8d25ab'
     },
     [pscustomobject]@{
         Path = 'packages.lock.json'
@@ -276,7 +276,7 @@ if ($manifest.sourcePathHint -cne 'SessionDock.ExactWheel') {
     $blockingReasons.Add('sourcePathHint is not the repository-native component path')
 }
 if ([long] $manifest.sourceFileCount -ne $expectedInventory.Count -or
-    [long] $manifest.sourceBytes -ne 172994L -or
+    [long] $manifest.sourceBytes -ne 216308L -or
     $manifest.canonicalManifestSha256 -cne $expectedCanonicalManifestSha256) {
     $blockingReasons.Add('source inventory summary does not match the pinned repository snapshot')
 }
