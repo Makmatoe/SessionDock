@@ -4,14 +4,19 @@ This is an archived, version-specific asset set for SessionDock 2.7.0. It
 documents the installed 2.7.0 interface; it is not a claim about the current
 release and must not be relabeled as newer-version evidence.
 
-- [Current SessionDock release](https://github.com/Makmatoe/SessionDock/releases/latest)
+> **Historical snapshot only:** do not use this page as current installation or
+> workflow guidance. These images predate the Home tutorial, clickable window
+> cascade, integrated ExactWheel macros, session templates, and the one-app
+> HandleScope workflow. Use the [root README](../../../README.md) for current
+> source-tree instructions.
+
+- [SessionDock release archive (distribution hold)](https://github.com/Makmatoe/SessionDock/releases)
 - [Archived v2.7.0 release and verification assets](https://github.com/Makmatoe/SessionDock/releases/tag/v2.7.0)
-- [Install SessionDock v2.7.0](https://github.com/Makmatoe/SessionDock/releases/download/v2.7.0/SessionDock-win-x64-Setup.exe)
 
 The reviewed build identity is
-`2.7.0+e30ad6acf8165befe11e00d9f1f5d1de1f7e90de`. The direct installer link is
-intentionally pinned to that historical release for provenance; use the current
-release link when you want the newest SessionDock version.
+`2.7.0+e30ad6acf8165befe11e00d9f1f5d1de1f7e90de`. The archived release is
+provenance evidence, not an installation recommendation. Existing release
+binaries are under a 2026-08-04 distribution hold.
 
 ## Verify before using an image
 

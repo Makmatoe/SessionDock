@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="520" height="64" viewBox="0 0 520 64" role="img" aria-labelledby="title description">
-  <title id="title">Install Latest SessionDock release</title>
-  <desc id="description">Download the latest stable SessionDock Setup for Windows</desc>
-  <rect width="520" height="64" rx="12" fill="#2563eb"/>
-  <rect x="1" y="1" width="518" height="62" rx="11" fill="none" stroke="#93c5fd" stroke-width="2"/>
-  <path d="M38 16v21m0 0-9-9m9 9 9-9M27 46h22" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-  <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">Install Latest SessionDock release</text>
-</svg>

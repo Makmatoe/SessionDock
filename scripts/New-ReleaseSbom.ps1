@@ -16,6 +16,9 @@ param(
     [string] $BundledHandleScopeManifest,
 
     [Parameter(Mandatory)]
+    [string] $BundledExactWheelManifest,
+
+    [Parameter(Mandatory)]
     [string] $Output
 )
 
@@ -64,6 +67,9 @@ $lockPath = Require-File $LockFile 'Application package lock'
 $handleScopeManifestPath = Require-File `
     $BundledHandleScopeManifest `
     'Bundled HandleScope provenance manifest'
+$exactWheelManifestPath = Require-File `
+    $BundledExactWheelManifest `
+    'Bundled ExactWheel provenance manifest'
 $outputPath = [IO.Path]::GetFullPath($Output)
 
 $release = ConvertFrom-ReleaseJson (Get-Content -LiteralPath $descriptorPath -Raw)
@@ -101,6 +107,17 @@ if (@(Compare-Object `
     $handleScopeManifest.upstream.commit -cne 'ef3b926848353115296faaa9f48f1a5be8c8bae2' -or
     @($handleScopeManifest.sources).Count -le 0) {
     throw 'The bundled HandleScope provenance is not the reviewed 0.3.0 source identity.'
+}
+
+$exactWheelVerifier = Require-File `
+    (Join-Path $PSScriptRoot 'Verify-ExactWheelReleaseProvenance.ps1') `
+    'ExactWheel release provenance verifier'
+$exactWheelManifest = & $exactWheelVerifier `
+    -ManifestPath $exactWheelManifestPath `
+    -StagedManifestOnly `
+    -PassThru
+if ($null -eq $exactWheelManifest) {
+    throw 'The bundled ExactWheel provenance verifier returned no release identity.'
 }
 
 $lock = ConvertFrom-ReleaseJson (Get-Content -LiteralPath $lockPath -Raw)
@@ -175,6 +192,21 @@ $handleScopePackage = [ordered]@{
     )
 }
 $packages.Add($handleScopePackage)
+$exactWheelPackage = [ordered]@{
+    name = 'ExactWheel'
+    SPDXID = 'SPDXRef-Package-ExactWheel'
+    versionInfo = [string] $exactWheelManifest.componentVersion
+    downloadLocation =
+        "https://github.com/Makmatoe/SessionDock/archive/$($exactWheelManifest.sourceCommit).tar.gz"
+    filesAnalyzed = $false
+    licenseConcluded = 'NOASSERTION'
+    licenseDeclared = [string] $exactWheelManifest.license
+    copyrightText = 'Copyright (c) 2026 Makmatoe'
+    supplier = 'Person: Makmatoe'
+    sourceInfo =
+        "Repository-native tagless ExactWheel source pinned to Git commit $($exactWheelManifest.sourceCommit); $($exactWheelManifest.sourceFileCount)-file canonical inventory SHA-256 $($exactWheelManifest.canonicalManifestSha256); build definition $($exactWheelManifest.buildDefinitionPath), $($exactWheelManifest.buildDefinitionBytes) bytes, Git blob $($exactWheelManifest.buildDefinitionGitBlob), SHA-256 $($exactWheelManifest.buildDefinitionSha256); license $($exactWheelManifest.license)."
+}
+$packages.Add($exactWheelPackage)
 
 foreach ($dependency in $resolved.GetEnumerator() | Sort-Object Key) {
     $name = [string] $dependency.Key
@@ -212,7 +244,8 @@ $relationships.Add([ordered]@{
 foreach ($package in @($packages.ToArray() | Where-Object {
             $_.SPDXID -notin @(
                 'SPDXRef-Package-SessionDock',
-                'SPDXRef-Package-HandleScope')
+                'SPDXRef-Package-HandleScope',
+                'SPDXRef-Package-ExactWheel')
         })) {
     $relationships.Add([ordered]@{
         spdxElementId = 'SPDXRef-Package-SessionDock'
@@ -225,11 +258,25 @@ $relationships.Add([ordered]@{
     relationshipType = 'CONTAINS'
     relatedSpdxElement = 'SPDXRef-Package-HandleScope'
 })
+$relationships.Add([ordered]@{
+    spdxElementId = 'SPDXRef-Package-SessionDock'
+    relationshipType = 'CONTAINS'
+    relatedSpdxElement = 'SPDXRef-Package-ExactWheel'
+})
 foreach ($runtimeId in @(
         'SPDXRef-Package-Microsoft.AspNetCore.App.Runtime.win-x64',
         'SPDXRef-Package-Microsoft.NETCore.App.Runtime.win-x64')) {
     $relationships.Add([ordered]@{
         spdxElementId = 'SPDXRef-Package-HandleScope'
+        relationshipType = 'DEPENDS_ON'
+        relatedSpdxElement = $runtimeId
+    })
+}
+foreach ($runtimeId in @(
+        'SPDXRef-Package-Microsoft.NETCore.App.Runtime.win-x64',
+        'SPDXRef-Package-Microsoft.WindowsDesktop.App.Runtime.win-x64')) {
+    $relationships.Add([ordered]@{
+        spdxElementId = 'SPDXRef-Package-ExactWheel'
         relationshipType = 'DEPENDS_ON'
         relatedSpdxElement = $runtimeId
     })

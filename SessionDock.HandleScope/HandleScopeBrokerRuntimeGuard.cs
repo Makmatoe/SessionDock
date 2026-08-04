@@ -25,8 +25,6 @@ internal static class HandleScopeBrokerRuntimeGuard
     {
         ArgumentNullException.ThrowIfNull(identity);
         var sidHash = SHA256.HashData(Encoding.UTF8.GetBytes(identity.OwnerSid));
-        return $@"Local\SessionDock.HandleScope.Broker.{
-            Convert.ToHexString(sidHash.AsSpan(0, 8))}.{
-            identity.WindowsSessionId}";
+        return $@"Local\SessionDock.HandleScope.Broker.{Convert.ToHexString(sidHash.AsSpan(0, 8))}.{identity.WindowsSessionId}";
     }
 }

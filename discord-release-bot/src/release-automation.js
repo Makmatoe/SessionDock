@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 const PRODUCT = "SessionDock";
 const REPOSITORY = "Makmatoe/SessionDock";
 const KIND = "sessiondock.discord-release-announcement";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const DISCORD_API = "https://discord.com/api/v10";
 const USER_AGENT = "DiscordBot (https://github.com/Makmatoe/SessionDock, 1.0)";
 const EMBED_COLOR = 0x5865f2;
@@ -457,7 +457,7 @@ function loadReviewedImagesFromRepository(root, relativeDirectory, version) {
 function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
   const tag = `v${version}`;
   const releaseUrl = `https://github.com/${REPOSITORY}/releases/tag/${tag}`;
-  const installerUrl = `https://github.com/${REPOSITORY}/releases/download/${tag}/SessionDock-win-x64-Setup.exe`;
+  const portableUrl = `https://github.com/${REPOSITORY}/releases/download/${tag}/SessionDock-win-x64-Portable.zip`;
   const images = reviewedImages?.images ?? [];
   const attachments = images.map((image) => ({
     artifactPath: `images/${image.fileName}`,
@@ -475,7 +475,7 @@ function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
     fields: [
       {
         name: "Download",
-        value: `[Windows x64 installer](${installerUrl})`,
+        value: `[Windows x64 portable ZIP](${portableUrl})`,
       },
     ],
     title: `${PRODUCT} ${version}`,
@@ -513,7 +513,7 @@ function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
       : null,
   };
   const release = {
-    installerUrl,
+    portableUrl,
     product: PRODUCT,
     repository: REPOSITORY,
     sourceCommit,
@@ -623,14 +623,14 @@ function validateReleaseShape(artifact, expected = {}) {
   }
   assertExactKeys(
     artifact.release,
-    ["installerUrl", "product", "repository", "sourceCommit", "sourceRef", "tag", "url", "version"],
+    ["portableUrl", "product", "repository", "sourceCommit", "sourceRef", "tag", "url", "version"],
     "Announcement release identity",
   );
   validateVersion(artifact.release.version);
   validateCommit(artifact.release.sourceCommit);
   const tag = `v${artifact.release.version}`;
   const expectedRelease = {
-    installerUrl: `https://github.com/${REPOSITORY}/releases/download/${tag}/SessionDock-win-x64-Setup.exe`,
+    portableUrl: `https://github.com/${REPOSITORY}/releases/download/${tag}/SessionDock-win-x64-Portable.zip`,
     product: PRODUCT,
     repository: REPOSITORY,
     sourceRef: `refs/tags/${tag}`,

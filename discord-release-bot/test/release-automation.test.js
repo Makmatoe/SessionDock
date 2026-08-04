@@ -459,10 +459,43 @@ test("generation is byte-for-byte deterministic and records canonical sources", 
       readFileSync(path.join(second.artifactDirectory, file)),
     );
   }
+  assert.equal(first.bundle.artifact.schemaVersion, 2);
+  assert.equal(
+    first.bundle.artifact.release.portableUrl,
+    "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip",
+  );
+  assert.equal(Object.hasOwn(first.bundle.artifact.release, "installerUrl"), false);
+  assert.equal(
+    first.bundle.artifact.announcement.message.embeds[0].fields[0].value,
+    "[Windows x64 portable ZIP](https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip)",
+  );
   assert.equal(first.bundle.artifact.release.sourceCommit, COMMIT);
   assert.equal(first.bundle.artifact.sources.releaseNotes.canonicalPath, "SessionDock/ReleaseNotes/2.7.2.en-US.md");
   assert.match(first.bundle.summaryText, /Bota delivers it automatically only after/);
   assert.match(first.bundle.summaryText, /No form, preview confirmation, or manual publish action/);
+});
+
+test("bundle validation rejects legacy and schema-2 installer identities", (t) => {
+  for (const schemaVersion of [1, 2]) {
+    const fixture = createFixture(t);
+    const artifactPath = path.join(fixture.artifactDirectory, "announcement.json");
+    const portableUrl =
+      "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip";
+    const installerUrl =
+      "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Setup.exe";
+    let artifactText = readFileSync(artifactPath, "utf8")
+      .replace(`"portableUrl": "${portableUrl}"`, `"installerUrl": "${installerUrl}"`)
+      .replace(`[Windows x64 portable ZIP](${portableUrl})`, `[Windows x64 installer](${installerUrl})`);
+    if (schemaVersion === 1) {
+      artifactText = artifactText.replace('"schemaVersion": 2', '"schemaVersion": 1');
+    }
+    writeFileSync(artifactPath, artifactText);
+
+    assert.throws(
+      () => readAnnouncementBundle({ artifactDirectory: fixture.artifactDirectory }),
+      (error) => error instanceof ReleaseAutomationError && error.code === "INVALID_ARTIFACT",
+    );
+  }
 });
 
 test("generation rejects mismatched notes without leaving a partial output", (t) => {

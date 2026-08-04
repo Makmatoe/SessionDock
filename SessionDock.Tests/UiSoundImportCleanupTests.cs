@@ -165,6 +165,33 @@ public sealed class UiSoundImportCleanupTests : IDisposable
             new InvalidOperationException("programmer fault")));
     }
 
+    [Fact]
+    public void ResolveCustomStartupSoundFileName_BuiltInSelectionClearsCustomFile()
+    {
+        var resolved = UiSoundService.ResolveCustomStartupSoundFileName(
+            UiSoundService.StartupSoft,
+            importedFileName: null,
+            existingFileName: "startup-custom-existing.wav");
+
+        Assert.Null(resolved);
+    }
+
+    [Fact]
+    public void ResolveCustomStartupSoundFileName_CustomSelectionRetainsOrReplacesFile()
+    {
+        var retained = UiSoundService.ResolveCustomStartupSoundFileName(
+            UiSoundService.StartupCustom,
+            importedFileName: null,
+            existingFileName: "startup-custom-existing.wav");
+        var replaced = UiSoundService.ResolveCustomStartupSoundFileName(
+            UiSoundService.StartupCustom,
+            importedFileName: "startup-custom-new.wav",
+            existingFileName: "startup-custom-existing.wav");
+
+        Assert.Equal("startup-custom-existing.wav", retained);
+        Assert.Equal("startup-custom-new.wav", replaced);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_soundsDirectory))

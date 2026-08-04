@@ -402,5 +402,8 @@ public partial class BatchLaunchDialog : Window
         public bool IsSelected { get; set; } = isSelected;
     }
 
-    private sealed record BatchGroupOption(string Name);
+    private sealed record BatchGroupOption(string Name) : IDropdownLabel
+    {
+        public string DisplayName => Name;
+    }
 }

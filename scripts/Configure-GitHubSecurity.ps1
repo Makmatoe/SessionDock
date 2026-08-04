@@ -127,10 +127,16 @@ $tagRuleset = @($rulesets | Where-Object {
         $_.target -eq 'tag' -and $_.name -eq 'Protect release tags'
     })
 if ($mainRuleset.Count -ne 1) {
-    Write-Warning 'Create an active main ruleset requiring pull requests, resolved conversations, strict current status checks, and blocking deletion/non-fast-forward updates. No ruleset was invented because required check names and bypass actors are repository-specific.'
+    Add-AnnouncementAuditFailure 'Create exactly one active main ruleset requiring pull requests, resolved conversations, strict current status checks, and blocking deletion/non-fast-forward updates. No ruleset was invented because required check names and bypass actors are repository-specific.'
+}
+elseif ($mainRuleset[0].enforcement -cne 'active') {
+    Add-AnnouncementAuditFailure "Ruleset 'Protect main' must have active enforcement before a release can proceed."
 }
 if ($tagRuleset.Count -ne 1) {
-    Write-Warning 'Create an active refs/tags/v* ruleset blocking creation/update/deletion by unauthorized actors. No bypass actor was chosen automatically.'
+    Add-AnnouncementAuditFailure 'Create exactly one active refs/tags/v* ruleset blocking creation/update/deletion by unauthorized actors. No bypass actor was chosen automatically.'
+}
+elseif ($tagRuleset[0].enforcement -cne 'active') {
+    Add-AnnouncementAuditFailure "Ruleset 'Protect release tags' must have active enforcement before a release can proceed."
 }
 
 $environments = @(Get-GhPagedItems `
@@ -138,17 +144,23 @@ $environments = @(Get-GhPagedItems `
         -CollectionProperty 'environments')
 foreach ($name in @('release', 'release-publication')) {
     $environment = @($environments | Where-Object { $_.name -ceq $name })
-    $hasReviewer = $environment.Count -eq 1 -and
-        @($environment[0].protection_rules | Where-Object {
-            $_.type -eq 'required_reviewers' -and $_.reviewers.Count -gt 0
-        }).Count -gt 0
-    if (-not $hasReviewer) {
-        if ([string]::IsNullOrWhiteSpace($ReleaseReviewer)) {
-            Write-Warning "Environment '$name' still needs an explicit reviewer. Re-run with -ReleaseReviewer <GitHub-login>; this script will never choose one automatically."
+    if ($environment.Count -ne 1) {
+        Add-AnnouncementAuditFailure "Create exactly one GitHub environment named '$name' before releasing."
+        continue
+    }
+
+    $reviewerRules = @($environment[0].protection_rules | Where-Object {
+            $_.type -eq 'required_reviewers'
+        })
+    if ($reviewerRules.Count -ne 1 -or
+        @($reviewerRules[0].reviewers).Count -lt 1) {
+        $reviewerGuidance = if ([string]::IsNullOrWhiteSpace($ReleaseReviewer)) {
+            'Re-run with -ReleaseReviewer <GitHub-login> for owner-facing guidance; this audit will never choose or install a reviewer automatically.'
         }
         else {
-            Write-Warning "Reviewer '$ReleaseReviewer' was supplied, but environment reviewer mutation is intentionally left for the repository owner to confirm in GitHub because user/team IDs and self-review policy are governance choices."
+            "Reviewer '$ReleaseReviewer' was supplied for guidance, but user/team IDs and self-review policy must still be confirmed by the repository owner in GitHub."
         }
+        Add-AnnouncementAuditFailure "Environment '$name' must have exactly one required-reviewers protection rule with at least one explicit reviewer. $reviewerGuidance"
     }
 }
 
@@ -244,15 +256,25 @@ else {
 $releaseEnvironment = @($environments | Where-Object { $_.name -ceq 'release' })
 if ($releaseEnvironment.Count -eq 1) {
     $releaseEnvironmentEndpoint = "repos/$Repository/environments/release"
-    $legacyReleaseSecrets = @(Get-GhPagedItems `
+    $releaseSecrets = @(Get-GhPagedItems `
             -Endpoint "$releaseEnvironmentEndpoint/secrets" `
             -CollectionProperty 'secrets')
-    if (@($legacyReleaseSecrets | Where-Object {
+    $releaseSecretNames = @($releaseSecrets | ForEach-Object { $_.name })
+    $expectedReleaseSecretNames = @(
+        'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')
+    $expectedReleaseSecretFingerprint =
+        ($expectedReleaseSecretNames | Sort-Object) -join "`n"
+    $releaseSecretFingerprint =
+        ($releaseSecretNames | Sort-Object) -join "`n"
+    if ($expectedReleaseSecretFingerprint -cne $releaseSecretFingerprint) {
+        Add-AnnouncementAuditFailure "Environment 'release' must contain exactly the update-descriptor key secret: $($expectedReleaseSecretNames -join ', '). Remove every obsolete Azure signing secret."
+    }
+    if (@($releaseSecrets | Where-Object {
                 $_.name -ceq 'DISCORD_RELEASE_BOT_TOKEN'
             }).Count -ne 0) {
         Add-AnnouncementAuditFailure "Remove legacy DISCORD_RELEASE_BOT_TOKEN from the 'release' environment after the credential is re-entered on 'release-announcement'."
     }
-    $legacyReleaseVariables = @(Get-GhPagedItems `
+    $releaseVariables = @(Get-GhPagedItems `
             -Endpoint "$releaseEnvironmentEndpoint/variables" `
             -CollectionProperty 'variables' `
             -PageSize 30)
@@ -260,11 +282,15 @@ if ($releaseEnvironment.Count -eq 1) {
         'DISCORD_RELEASE_BOT_ID',
         'DISCORD_RELEASE_CHANNEL_ID',
         'DISCORD_RELEASE_ROLE_ID')
-    $foundLegacyVariables = @($legacyReleaseVariables | Where-Object {
+    $foundLegacyVariables = @($releaseVariables | Where-Object {
             $legacyDiscordVariableNames -ccontains $_.name
         } | ForEach-Object { $_.name })
     if ($foundLegacyVariables.Count -ne 0) {
         Add-AnnouncementAuditFailure "Remove legacy Discord variables from the 'release' environment after migration: $($foundLegacyVariables -join ', ')."
+    }
+    $releaseVariableNames = @($releaseVariables | ForEach-Object { $_.name })
+    if ($releaseVariableNames.Count -ne 0) {
+        Add-AnnouncementAuditFailure "Environment 'release' must contain no variables. Remove obsolete signing variables: $($releaseVariableNames -join ', ')."
     }
 }
 
@@ -274,6 +300,15 @@ $repositorySecrets = @(Get-GhPagedItems `
 $repositorySecretNames = @($repositorySecrets | ForEach-Object { $_.name })
 if ($repositorySecretNames -ccontains 'DISCORD_RELEASE_BOT_TOKEN') {
     Add-AnnouncementAuditFailure 'Remove repository-scoped secret DISCORD_RELEASE_BOT_TOKEN after the environment-scoped credential is configured. Its presence permits fallback when the environment-scoped name is missing.'
+}
+foreach ($releaseSecretName in @(
+        'AZURE_CLIENT_ID',
+        'AZURE_SUBSCRIPTION_ID',
+        'AZURE_TENANT_ID',
+        'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')) {
+    if ($repositorySecretNames -ccontains $releaseSecretName) {
+        Add-AnnouncementAuditFailure "Remove repository-scoped secret $releaseSecretName. The update-descriptor key belongs only in the release environment, and Azure signing configuration is obsolete."
+    }
 }
 
 $repositoryVariables = @(Get-GhPagedItems `
@@ -289,6 +324,15 @@ foreach ($announcementVariableName in @(
         Add-AnnouncementAuditFailure "Remove repository-scoped variable $announcementVariableName after the environment-scoped value is configured. Its presence permits fallback when the environment-scoped name is missing."
     }
 }
+foreach ($releaseVariableName in @(
+        'ARTIFACT_SIGNING_ACCOUNT_NAME',
+        'ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME',
+        'ARTIFACT_SIGNING_ENDPOINT',
+        'ARTIFACT_SIGNING_PUBLISHER_SUBJECT')) {
+    if ($repositoryVariableNames -ccontains $releaseVariableName) {
+        Add-AnnouncementAuditFailure "Remove obsolete repository-scoped signing variable $releaseVariableName."
+    }
+}
 
 if ($repositoryState.owner.type -ceq 'Organization') {
     $organizationSecrets = @(Get-GhPagedItems `
@@ -299,6 +343,15 @@ if ($repositoryState.owner.type -ceq 'Organization') {
         })
     if ($organizationSecretNames -ccontains 'DISCORD_RELEASE_BOT_TOKEN') {
         Add-AnnouncementAuditFailure 'Remove organization-scoped secret DISCORD_RELEASE_BOT_TOKEN access for this repository after the environment-scoped credential is configured. Its presence permits fallback when lower scopes are missing.'
+    }
+    foreach ($releaseSecretName in @(
+            'AZURE_CLIENT_ID',
+            'AZURE_SUBSCRIPTION_ID',
+            'AZURE_TENANT_ID',
+            'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')) {
+        if ($organizationSecretNames -ccontains $releaseSecretName) {
+            Add-AnnouncementAuditFailure "Remove organization-scoped secret $releaseSecretName access for this repository. The update-descriptor key belongs only in the release environment, and Azure signing configuration is obsolete."
+        }
     }
 
     $organizationVariables = @(Get-GhPagedItems `
@@ -316,10 +369,19 @@ if ($repositoryState.owner.type -ceq 'Organization') {
             Add-AnnouncementAuditFailure "Remove organization-scoped variable $announcementVariableName access for this repository after the environment-scoped value is configured. Its presence permits fallback when lower scopes are missing."
         }
     }
+    foreach ($releaseVariableName in @(
+            'ARTIFACT_SIGNING_ACCOUNT_NAME',
+            'ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME',
+            'ARTIFACT_SIGNING_ENDPOINT',
+            'ARTIFACT_SIGNING_PUBLISHER_SUBJECT')) {
+        if ($organizationVariableNames -ccontains $releaseVariableName) {
+            Add-AnnouncementAuditFailure "Remove obsolete organization-scoped signing variable $releaseVariableName access for this repository."
+        }
+    }
 }
 
 if ($announcementAuditFailures.Count -ne 0) {
-    throw "GitHub release-announcement configuration audit failed with $($announcementAuditFailures.Count) blocking issue(s)."
+    throw "GitHub protected release-environment configuration audit failed with $($announcementAuditFailures.Count) blocking issue(s)."
 }
 
 Write-Host 'GitHub security configuration audit completed without weakening existing rules.'

@@ -4,9 +4,9 @@ This directory contains SessionDock's two optional post-launch integrations:
 
 - `LocalApiLaunchHook` sends a bounded event to a user-managed HTTPS loopback
   listener.
-- `HandleScopeLaunchHook` uses the HandleScope 0.3.0 engine included in
-  SessionDock 3.0, or an independently managed standalone API when the user
-  explicitly selects the advanced source.
+- `HandleScopeLaunchHook` uses the reviewed HandleScope component carried by
+  the current SessionDock source, or an independently managed standalone API
+  when the user explicitly selects the advanced source.
 
 Both hooks run only after Roblox Player starts successfully. They use short,
 bounded timeouts and cannot turn a successful Roblox launch into a failed
@@ -14,20 +14,39 @@ launch. SessionDock waits for each configured attempt before marking the
 integration step finished; the activity panel distinguishes **configured** from
 **skipped**.
 
-## Install SessionDock first
+This directory does not own the window-layout or ExactWheel macro workflow.
+Read [Templates and ExactWheel](../../docs/TEMPLATES_AND_MACROS.md) for those
+contracts. Neither HandleScope nor ExactWheel needs a separate installation in
+the integrated SessionDock path.
 
-[![Install Latest SessionDock release](../../docs/assets/install-latest-sessiondock.svg)](https://github.com/Makmatoe/SessionDock/releases/latest/download/SessionDock-win-x64-Setup.exe)
+> The integrated source described here is not a release announcement. A
+> published release contains this behavior only when its own notes say so.
 
-1. Select **Install Latest SessionDock release** on a Windows x64 PC.
-2. Confirm that the download came from the canonical
-   `Makmatoe/SessionDock` GitHub release.
-3. Verify the published checksum or GitHub attestation. SessionDock is not
-   currently Authenticode-signed, so Windows may show **Unknown publisher**.
-4. Open Setup as a standard Windows user, then configure only the integration
-   you need.
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Download nothing while this hold is active.
+> A future reviewed release must explicitly state that it lifts the hold and
+> has passed separate laptop validation before any public download is approved.
 
-Use the [root installation guide](../../README.md#install-and-launch) for the
-complete install, update, and uninstall workflow.
+## Use one SessionDock build after the hold is lifted
+
+After a reviewed release explicitly lifts the hold:
+
+1. Open only the canonical `Makmatoe/SessionDock` GitHub Releases page.
+2. Download `SessionDock-win-x64-Portable.zip` and its matching
+   `SHA256SUMS.txt`. Never obtain a SessionDock binary from Discord.
+3. Verify the ZIP checksum, then use File Explorer **Extract All** into a new
+   folder.
+4. Run `SessionDock.exe` as a standard Windows user and complete the
+   first-launch tutorial.
+5. Configure only the integration you need after SessionDock starts.
+
+An unsigned build can show **Unknown publisher**, but a named malware detection
+is always a hard stop. A matching checksum or attestation never overrides a
+detection. Do not restore, allow, exclude, unblock, or bypass the file.
+
+Use the
+[root download guide](../../README.md#download-and-launch-after-the-hold-is-lifted)
+for the complete portable, update, and removal workflow.
 
 ## Generic local API hook
 
@@ -111,15 +130,16 @@ foreach ($variableName in $variableNames) {
 
 ## HandleScope connector
 
-HandleScope integration is disabled by default. SessionDock 3.0 includes the
-reviewed HandleScope 0.3.0 engine inside `SessionDock.exe`; normal users install
-only SessionDock. The included engine is not a second application and has no
-separate download, installer, PowerShell command, UAC prompt, scheduled task,
-service, sign-in autostart, updater, or uninstall entry.
+HandleScope integration is disabled by default. The integrated source carries
+the reviewed HandleScope engine inside SessionDock's one portable folder. The
+included engine is not a second application and has no separate download,
+package, PowerShell command, UAC prompt, scheduled task, service, sign-in
+autostart, updater, or removal entry.
 
 ### Set up through SessionDock
 
-1. Install or update SessionDock with `SessionDock-win-x64-Setup.exe`.
+1. Start a validated SessionDock build that lists integrated HandleScope in its
+   release notes or development manifest.
 2. Open **Integrations > HandleScope integration**.
 3. Keep **Included with SessionDock (recommended)** selected.
 4. Choose **Automatic**, `v2`, or `v1` under **API version**.
@@ -131,10 +151,15 @@ service, sign-in autostart, updater, or uninstall entry.
 
 That is the complete normal setup. Do not download HandleScope, run an
 `Install-HandleScopeApi.ps1` file, change PowerShell execution policy, approve
-elevation, or create an autostart task for this mode. A device that previously
-reported **running scripts is disabled** or **Virus scan failed** can use the
-included engine because SessionDock does not invoke or download those standalone
-installation files.
+elevation, or create an autostart task for this mode.
+
+**Running scripts is disabled** means PowerShell blocked the standalone script
+before it ran; it is not an antivirus result. **Virus scan failed** means the
+browser/Windows security pipeline did not complete the download scan; it is not
+proof of malware or proof of safety. Verify the canonical SessionDock hash,
+check Windows Security protection history, and ask the device administrator on
+a managed laptop. Do not weaken security policy. Integrated mode avoids those
+standalone installation files entirely.
 
 ### Choose the source, standalone version, and API
 
@@ -142,7 +167,7 @@ The three selectors are independent:
 
 | Runtime source | Exact behavior |
 | --- | --- |
-| **Included with SessionDock (recommended)** | Uses the reviewed HandleScope 0.3.0 engine compiled into this SessionDock release. Its version changes only with a verified SessionDock update. |
+| **Included with SessionDock (recommended)** | Uses the reviewed HandleScope component compiled into the current SessionDock build. Its version can change only with the complete SessionDock package. |
 | **Standalone HandleScope (advanced)** | Connects to a compatible API that the user installed and started independently. SessionDock never downloads, installs, starts, stops, updates, downgrades, reconfigures, or uninstalls it. |
 
 | Standalone runtime version | Exact behavior |
@@ -164,8 +189,8 @@ this network request.
 | `v2` | Requires the selected runtime to support SessionDock's compiled v2 operation contract. |
 | `v1` | Requires the selected runtime to support the compiled legacy operation contract. |
 
-The included component-version display remains fixed to the code shipped in the
-current `SessionDock.exe`. An unavailable source, standalone version, or API
+The included component-version display remains fixed to the code built into the
+current `SessionDock.HandleScope.dll` in the same SessionDock package. An unavailable source, standalone version, or API
 contract fails
 closed and never falls back to a different source without changing the user's
 saved selection.
@@ -191,9 +216,9 @@ The child:
   lifetime ends unexpectedly.
 
 SessionDock owns only this child. It never adopts, terminates, or changes a
-standalone HandleScope process. An application update replaces the embedded
-engine atomically as part of `SessionDock.exe`; there is no independent
-HandleScope update race or file lock.
+standalone HandleScope process. An approved application update replaces the
+included component as part of the complete SessionDock package; there is no
+independent HandleScope updater.
 
 ### Standalone compatibility
 
@@ -225,13 +250,15 @@ selecting or deselecting the advanced source changes none of them.
 | **HandleScope needs attention** | The chosen API is unavailable or the runtime failed a security or health check. Return to **Automatic**, select **Retry**, and verify the current SessionDock package. |
 | **Settings need repair** | An existing opt-in or source preference is malformed or nonminimal. Review it, then use **Repair settings**. |
 
-If included mode fails, close SessionDock, verify the current
-`SessionDock-win-x64-Setup.exe` against the matching `SHA256SUMS.txt`, and run
-that verified Setup as the same standard user. Do not fetch a HandleScope ZIP as
-a repair and do not weaken PowerShell policy, Group Policy, SmartScreen,
-antivirus, or application control. A managed device may still block the
-unsigned SessionDock executable; ask the device administrator to review the
-canonical checksum and GitHub attestation.
+If included mode fails, close SessionDock. For a published portable build,
+verify the original ZIP against its matching `SHA256SUMS.txt`, then extract that
+verified ZIP into a new folder and run it as the same standard user. For a
+development build, rerun the complete repository gate. Do not fetch a
+HandleScope ZIP as a repair and do not weaken PowerShell policy, Group Policy,
+SmartScreen, antivirus, or application control. A managed device may still
+block an unsigned SessionDock executable; ask the administrator to review the
+canonical checksum and attestation. A named malware detection still blocks use
+even when those identities match.
 
 Opening the panel or changing a selector does not close a handle. **Disable**
 stops future post-launch work and the included child. In standalone mode it
@@ -241,7 +268,7 @@ disconnects SessionDock only and leaves the external application running.
 
 | File or resource | Owner and purpose |
 | --- | --- |
-| `SessionDock.HandleScope/Upstream/` | Allowlisted HandleScope 0.3.0 source snapshot compiled into `SessionDock.exe`. |
+| `SessionDock.HandleScope/Upstream/` | Allowlisted HandleScope source snapshot compiled into the reviewed `SessionDock.HandleScope.dll` package component. |
 | `SessionDock.HandleScope/handlescope-upstream.json` | Reviewed upstream repository, version, tag, commit, and synchronized-file hashes. |
 | `scripts/Sync-BundledHandleScope.ps1` | Maintainer-only deterministic synchronization and provenance verifier; never runs on an end user's computer. |
 | `%LOCALAPPDATA%\SessionDock\handlescope-runtime.json` | Strict source selection: included or standalone. It never contains a token or executable path. |
@@ -265,7 +292,7 @@ standalone; an enabled Automatic setup also stays standalone when its existing
 API passes the migration probe. Otherwise the missing choice becomes included.
 The result is then saved explicitly without changing any external process or
 file. An invalid source file fails closed and is never used to construct a path
-or command. SessionDock 3.0 keeps the standalone version and API choices from
+or command. The integrated source keeps the standalone version and API choices from
 `handlescope-preferences.json`. Automatic, Keep installed, and exact reviewed
 version are compatibility requirements only; they cannot download, install,
 start, replace, update, or downgrade software. A stale exact pin remains visible
@@ -390,18 +417,20 @@ users receive one application without making the two repositories drift:
    agree with the immutable upstream source. Do not edit synchronized files
    directly; land a fix upstream and synchronize it back.
 6. Update the displayed included-engine version, both repositories' current
-   integration/security/privacy documentation, the root MIT license reference,
-   third-party notices, and SPDX SBOM inputs in the same SessionDock change.
+   integration/security/privacy documentation, provenance, third-party notice
+   inputs, and SBOM inputs in the same SessionDock change. Do not claim that an
+   unpublished package or unresolved component license is already approved.
 7. Run the complete gate:
 
    ```powershell
    .\scripts\Build.ps1 -Configuration Release -Runtime win-x64 -CI
    ```
 
-8. Verify that the release package still contains only the approved SessionDock
-   inventory: HandleScope code must be inside `SessionDock.exe`, never an
-   untracked executable or install script. Publish the standalone HandleScope
-   release independently when its users need the same upstream change.
+8. Before any release decision, verify that the candidate package contains only
+   the approved transparent SessionDock inventory: HandleScope code must be in
+   the exact `SessionDock.HandleScope.dll` component, never an untracked
+   executable, install script, or source directory. Keep any standalone
+   HandleScope publication as an independently reviewed workflow.
 
 The sync script and CI must fail on an unknown/missing file, hash difference,
 provenance mismatch, uncommitted generated output, version mismatch, or missing

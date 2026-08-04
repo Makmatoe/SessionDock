@@ -74,9 +74,20 @@ internal sealed class AccessibilityLiveRegion
             _hasPreviousAnnouncement ? _previousAnnouncement : null,
             announcement);
 
-        _target.Text = displayText;
-        AutomationProperties.SetName(_target, announcement);
-        AutomationProperties.SetLiveSetting(_target, liveSetting);
+        // Status producers can report the same state repeatedly while polling.
+        // Avoid invalidating WPF layout and UI Automation properties unless the
+        // rendered value actually changed.
+        if (!string.Equals(_target.Text, displayText, StringComparison.Ordinal))
+            _target.Text = displayText;
+        if (!string.Equals(
+                AutomationProperties.GetName(_target),
+                announcement,
+                StringComparison.Ordinal))
+        {
+            AutomationProperties.SetName(_target, announcement);
+        }
+        if (AutomationProperties.GetLiveSetting(_target) != liveSetting)
+            AutomationProperties.SetLiveSetting(_target, liveSetting);
 
         if (!announceChanges)
         {

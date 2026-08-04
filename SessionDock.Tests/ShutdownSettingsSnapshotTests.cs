@@ -93,6 +93,49 @@ public sealed class ShutdownSettingsSnapshotTests
     }
 
     [Fact]
+    public void Create_MatchingAdvancedDraftRestoresNamedChecklistAssignment()
+    {
+        var settings = new AppSettings
+        {
+            Accounts =
+            [
+                new AccountProfile
+                {
+                    Key = "one",
+                    Destination = "67890"
+                }
+            ],
+            ActiveAccountKey = "one",
+            NamedDestinations =
+            [
+                new NamedDestination
+                {
+                    Id = "farm-id",
+                    Name = "Farm",
+                    Value = "12345"
+                }
+            ]
+        };
+        var capturedDraft = new DestinationPersistenceRequest(
+            "one",
+            OwnerEpoch: 3,
+            Revision: 7,
+            Destination: "https://www.roblox.com/games/12345/Farm");
+
+        var snapshot = ShutdownSettingsSnapshot.Create(
+            settings,
+            capturedDraft,
+            capturedDraft);
+
+        Assert.Equal(
+            "12345",
+            Assert.Single(snapshot.Accounts).Destination);
+        Assert.Equal(
+            new[] { "one" },
+            Assert.Single(snapshot.NamedDestinations).AccountKeys);
+    }
+
+    [Fact]
     public void Create_OverlaysCapturedWindowPlacementWithoutSharingIt()
     {
         var settings = new AppSettings

@@ -126,8 +126,7 @@ public partial class MainWindow
         _batchCancellation = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken);
         SetOperationBusy(true);
-        CancelBatchButton.Visibility = Visibility.Visible;
-        CancelBatchButton.IsEnabled = true;
+        SetBatchCancellationControls(active: true, enabled: true);
         BatchLaunchResult? result = null;
         var restoredOriginalProfile = true;
         try
@@ -144,7 +143,7 @@ public partial class MainWindow
         finally
         {
             _launchInProgress = false;
-            CancelBatchButton.IsEnabled = false;
+            SetBatchCancellationControls(active: true, enabled: false);
             if (!cancellationToken.IsCancellationRequested)
             {
                 try
@@ -163,7 +162,7 @@ public partial class MainWindow
             _batchCancellation = null;
             if (!_operationLifetime.IsShuttingDown)
             {
-                CancelBatchButton.Visibility = Visibility.Collapsed;
+                SetBatchCancellationControls(active: false, enabled: false);
                 SetOperationBusy(false);
             }
         }
@@ -225,18 +224,11 @@ public partial class MainWindow
         var accounts = BatchLaunchPreferences.ResolveAccounts(
             retryState.AccountKeys,
             _settings.Accounts);
-        return accounts.Select(account =>
-        {
-            var retryAccount = AppSettingsSnapshot.Clone(account);
-            if (string.IsNullOrWhiteSpace(retryAccount.Destination) &&
-                retryState.EffectiveDestinations.TryGetValue(
-                    retryAccount.Key,
-                    out var effectiveDestination))
-            {
-                retryAccount.Destination = effectiveDestination;
-            }
-            return retryAccount;
-        }).ToArray();
+        return accounts
+            .Select(account => BatchRetryDestinationPolicy.CreateRetryAccount(
+                account,
+                retryState.EffectiveDestinations))
+            .ToArray();
     }
 
     private void CancelBatchButton_Click(object sender, RoutedEventArgs e)
@@ -244,7 +236,7 @@ public partial class MainWindow
         if (_batchCancellation is null || _batchCancellation.IsCancellationRequested)
             return;
 
-        CancelBatchButton.IsEnabled = false;
+        SetBatchCancellationControls(active: true, enabled: false);
         SetStatus(
             Localize("Main.BatchCancellingTitle"),
             Localize("Main.BatchCancellingDetail"),
@@ -253,11 +245,34 @@ public partial class MainWindow
         _batchCancellation.Cancel();
     }
 
+    private void SetBatchCancellationControls(bool active, bool enabled)
+    {
+        var visibility = active
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        CancelBatchButton.Visibility = visibility;
+        HomeCancelBatchButton.Visibility = visibility;
+        CancelBatchButton.IsEnabled = active && enabled;
+        HomeCancelBatchButton.IsEnabled = active && enabled;
+
+        if (!active || !enabled)
+            return;
+
+        if (HomeWorkspace.Visibility == Visibility.Visible)
+            HomeCancelBatchButton.Focus();
+        else
+            CancelBatchButton.Focus();
+    }
+
     private async Task<BatchLaunchResult> RunBatchLaunchAsync(
         IReadOnlyList<BatchLaunchPlan> launchPlans,
         TimeSpan delay,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SessionTemplate? sessionTemplate = null,
+        SessionMacroPlaybackCacheReservation?
+            macroPlaybackCacheReservation = null)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var preflight = await PreflightBatchAccountsAsync(
             launchPlans,
             cancellationToken);
@@ -268,9 +283,15 @@ public partial class MainWindow
                 launchPlans.Count,
                 preflight.Failures,
                 ClientsWereClosed: false,
-                Cancelled: false);
+                Cancelled: false,
+                AutomationWarning: null);
         }
 
+        // Keep a healthy existing macro alive when the requested batch cannot
+        // pass its read-only account preflight. Once preflight succeeds, input
+        // from the previous batch must be fully quiescent before clients are
+        // closed or any launch-state mutation begins.
+        await CancelAndWaitForCurrentMacroPlaybackAsync(cancellationToken);
         SetStatus(
             Localize("Main.BatchPreparingTitle"),
             Localize("Main.BatchPreparingDetail"),
@@ -282,7 +303,10 @@ public partial class MainWindow
             closeResult = await _robloxClient.CloseAllPlayersAsync(
                 cancellationToken);
             if (closeResult.Success)
+            {
                 _runningClients.Clear();
+                ClearCurrentBatchMacroContext();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -305,7 +329,8 @@ public partial class MainWindow
                     Localize("Main.BatchFailureClientsNotClosed")))
                     .ToArray(),
                 ClientsWereClosed: false,
-                Cancelled: false);
+                Cancelled: false,
+                AutomationWarning: null);
         }
 
         if (!closeResult.Success)
@@ -334,7 +359,8 @@ public partial class MainWindow
                     detail))
                     .ToArray(),
                 ClientsWereClosed: false,
-                Cancelled: false);
+                Cancelled: false,
+                AutomationWarning: null);
         }
 
         Task cleanupSettled = Task.CompletedTask;
@@ -414,19 +440,36 @@ public partial class MainWindow
                     ? new BatchAccountLaunchResult(
                         started.Account.Key,
                         true,
-                        null)
+                        null,
+                        started.Started!.Identity)
                     : new BatchAccountLaunchResult(
                         started.Account.Key,
                         false,
                         started.Failure ??
                         Localize(
                             "Main.BatchFailureLaunch",
-                            started.Account.Username));
+                            started.Account.Username),
+                        Identity: null);
             },
             cancellationToken);
 
+        var startedCount = outcomes.Count(outcome => outcome.Started);
+        var launchedClients = outcomes
+            .Where(outcome => outcome.Started && outcome.Identity is not null)
+            .Select(outcome => new LaunchedBatchClient(
+                outcome.AccountKey,
+                outcome.Identity!))
+            .ToArray();
+        var postLaunch = startedCount == 0
+            ? SessionPostLaunchResult.Completed
+            : await ApplySessionPostLaunchAsync(
+                sessionTemplate,
+                launchedClients,
+                cancellationToken,
+                macroPlaybackCacheReservation);
+
         return new BatchLaunchResult(
-            outcomes.Count(outcome => outcome.Started),
+            startedCount,
             launchPlans.Count,
             outcomes
                 .Where(outcome => outcome.Failure is not null)
@@ -435,7 +478,8 @@ public partial class MainWindow
                     outcome.Failure!))
                 .ToArray(),
             ClientsWereClosed: true,
-            Cancelled: false);
+            Cancelled: false,
+            AutomationWarning: postLaunch.Warning);
     }
 
     private async Task<BatchPreflightResult> PreflightBatchAccountsAsync(
@@ -617,6 +661,20 @@ public partial class MainWindow
             return;
         }
 
+        if (result.MacroPreflightFailure is { } macroPreflightFailure)
+        {
+            ClearBatchRetryState();
+            SetStatus(
+                Localize("Macro.PreflightFailureTitle"),
+                Localize(macroPreflightFailure ==
+                    SessionTemplateMacroPreflightFailureKind.InvalidAssignment
+                        ? "Macro.PreflightInvalidAssignmentDetail"
+                        : "Macro.PreflightUnavailableDetail"),
+                Localize("Main.BatchErrorBadge"),
+                StatusTone.Error);
+            return;
+        }
+
         if (result.Failures.Count == 0)
         {
             ClearBatchRetryState();
@@ -626,11 +684,16 @@ public partial class MainWindow
                     : Localize(
                         "Main.BatchCompleteTitleMany",
                         result.Started),
-                restoredOriginalProfile
-                    ? Localize("Main.BatchCompleteDetail")
-                    : Localize("Main.BatchCompleteRestoreDetail"),
-                Localize("Main.BatchCompleteBadge"),
-                StatusTone.Success);
+                result.AutomationWarning ??
+                    (restoredOriginalProfile
+                        ? Localize("Main.BatchCompleteDetail")
+                        : Localize("Main.BatchCompleteRestoreDetail")),
+                result.AutomationWarning is null
+                    ? Localize("Main.BatchCompleteBadge")
+                    : Localize("Main.BatchPartialBadge"),
+                result.AutomationWarning is null
+                    ? StatusTone.Success
+                    : StatusTone.Warning);
             return;
         }
 
@@ -1100,6 +1163,7 @@ public partial class MainWindow
                     account,
                     recent,
                     processId,
+                    result.PlayerIdentity,
                     launchStartedAt,
                     position),
                 null);
@@ -1201,6 +1265,7 @@ public partial class MainWindow
         AccountProfile Account,
         RecentExperience Recent,
         int ProcessId,
+        RobloxClientProcessIdentity? Identity,
         DateTimeOffset LaunchStartedAt,
         string Position);
 
@@ -1218,17 +1283,26 @@ public partial class MainWindow
     private sealed record BatchAccountLaunchResult(
         string AccountKey,
         bool Started,
-        string? Failure);
+        string? Failure,
+        RobloxClientProcessIdentity? Identity);
 
     private sealed record BatchLaunchResult(
         int Started,
         int Total,
         IReadOnlyList<BatchFailure> Failures,
         bool ClientsWereClosed,
-        bool Cancelled)
+        bool Cancelled,
+        string? AutomationWarning,
+        SessionTemplateMacroPreflightFailureKind? MacroPreflightFailure = null)
     {
         public static BatchLaunchResult CancelledResult(int total) =>
-            new(0, total, [], ClientsWereClosed: false, Cancelled: true);
+            new(
+                0,
+                total,
+                [],
+                ClientsWereClosed: false,
+                Cancelled: true,
+                AutomationWarning: null);
     }
 
     private sealed record BatchRetryState(

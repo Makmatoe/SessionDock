@@ -14,6 +14,9 @@
     <SolidColorBrush x:Key="AccentHoverBrush" Color="{x:Static SystemColors.HighlightColor}"/>
     <SolidColorBrush x:Key="AccentSurfaceBrush" Color="{x:Static SystemColors.WindowColor}"/>
     <SolidColorBrush x:Key="FocusBrush" Color="{x:Static SystemColors.HighlightColor}"/>
+    <SolidColorBrush x:Key="TutorialOverlayBrush"
+                     Color="{x:Static SystemColors.WindowTextColor}"
+                     Opacity="0.85"/>
     <SolidColorBrush x:Key="OnAccentTextBrush" Color="{x:Static SystemColors.HighlightTextColor}"/>
     <SolidColorBrush x:Key="CaptionButtonHoverBrush" Color="{x:Static SystemColors.HighlightColor}"/>
     <SolidColorBrush x:Key="CaptionButtonPressedBrush" Color="{x:Static SystemColors.HighlightColor}"/>
@@ -27,6 +30,14 @@
     <SolidColorBrush x:Key="FieldHoverBorderBrush" Color="{x:Static SystemColors.HighlightColor}"/>
     <SolidColorBrush x:Key="FieldCaretBrush" Color="{x:Static SystemColors.WindowTextColor}"/>
     <SolidColorBrush x:Key="SelectionBrush" Color="{x:Static SystemColors.HighlightColor}"/>
+    <!-- Keep list text on the system Window surface because item templates may
+         use explicit primary and secondary text brushes. The highlight outline
+         communicates hover and selection without invalidating those pairings. -->
+    <SolidColorBrush x:Key="ListSurfaceBrush" Color="{x:Static SystemColors.WindowColor}"/>
+    <SolidColorBrush x:Key="ListBorderBrush" Color="{x:Static SystemColors.WindowTextColor}"/>
+    <SolidColorBrush x:Key="ListItemHoverBrush" Color="{x:Static SystemColors.WindowColor}"/>
+    <SolidColorBrush x:Key="ListItemSelectedBrush" Color="{x:Static SystemColors.WindowColor}"/>
+    <SolidColorBrush x:Key="ListItemSelectedBorderBrush" Color="{x:Static SystemColors.HighlightColor}"/>
     <SolidColorBrush x:Key="ScrollTrackBrush" Color="{x:Static SystemColors.ControlColor}"/>
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="{x:Static SystemColors.ControlTextColor}"/>
     <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="{x:Static SystemColors.HighlightColor}"/>

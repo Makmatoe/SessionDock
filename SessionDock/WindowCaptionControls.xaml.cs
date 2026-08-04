@@ -191,8 +191,9 @@ public partial class WindowCaptionControls : UserControl
         ref bool handled)
     {
         if (message != NonClientHitTestMessage ||
-            MaximizeButton.Visibility != Visibility.Visible ||
-            !MaximizeButton.IsEnabled)
+            !MaximizeButton.IsVisible ||
+            !MaximizeButton.IsEnabled ||
+            PresentationSource.FromVisual(MaximizeButton) is null)
         {
             return IntPtr.Zero;
         }
@@ -201,7 +202,18 @@ public partial class WindowCaptionControls : UserControl
         var screenPoint = new Point(
             unchecked((short)(packedPoint & 0xFFFF)),
             unchecked((short)((packedPoint >> 16) & 0xFFFF)));
-        var buttonPoint = MaximizeButton.PointFromScreen(screenPoint);
+        Point buttonPoint;
+        try
+        {
+            buttonPoint = MaximizeButton.PointFromScreen(screenPoint);
+        }
+        catch (InvalidOperationException)
+        {
+            // WM_NCHITTEST can arrive while WPF is attaching, collapsing, or
+            // detaching a workspace. Native hooks must fail open during that
+            // transient instead of letting PointFromScreen terminate the app.
+            return IntPtr.Zero;
+        }
         if (buttonPoint.X < 0 ||
             buttonPoint.Y < 0 ||
             buttonPoint.X > MaximizeButton.ActualWidth ||

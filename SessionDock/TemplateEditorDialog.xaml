@@ -1,0 +1,304 @@
+<Window x:Class="SessionDock.TemplateEditorDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource Template.Editor.Title}"
+        Width="700" Height="760" MinWidth="560" MinHeight="580"
+        ResizeMode="CanResizeWithGrip"
+        WindowStartupLocation="CenterOwner"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable Text"
+        UseLayoutRounding="True" ShowInTaskbar="False">
+    <Border Style="{StaticResource DialogShell}">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel>
+                <TextBlock Text="{DynamicResource Template.Editor.Title}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="22" FontWeight="SemiBold"
+                           AutomationProperties.HeadingLevel="Level1"/>
+                <TextBlock Text="{DynamicResource Template.Editor.Intro}"
+                           Margin="0,6,0,0"
+                           Foreground="{DynamicResource MutedBrush}"
+                           FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="1" Margin="0,18,0,0"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="0,0,8,0">
+                    <TextBlock Text="{DynamicResource Template.Editor.Name}"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontSize="12" FontWeight="SemiBold"/>
+                    <Border Height="44" Margin="0,7,0,0"
+                            Style="{StaticResource TextFieldShell}">
+                        <TextBox x:Name="NameBox" MaxLength="80"
+                                 Style="{StaticResource EmbeddedTextBox}"
+                                 AutomationProperties.Name="{DynamicResource Template.Editor.Name}"
+                                 AutomationProperties.HelpText="{DynamicResource Template.Editor.NameHelp}"/>
+                    </Border>
+
+                    <Grid Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="2*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Padding="14"
+                                Background="{DynamicResource InsetSurfaceBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="9">
+                            <StackPanel>
+                                <TextBlock Text="{DynamicResource Template.Editor.Layout}"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           FontSize="12" FontWeight="SemiBold"/>
+                                <RadioButton x:Name="SavedPositionsRadio"
+                                             GroupName="TemplateLayout"
+                                             Margin="0,10,0,0"
+                                             Content="{DynamicResource Template.Editor.LayoutSaved}"
+                                             AutomationProperties.HelpText="{DynamicResource Template.Editor.LayoutSavedHelp}"/>
+                                <RadioButton x:Name="CascadeRadio"
+                                             GroupName="TemplateLayout"
+                                             Margin="0,9,0,0"
+                                             Content="{DynamicResource Template.Editor.LayoutCascade}"
+                                             AutomationProperties.HelpText="{DynamicResource Template.Editor.LayoutCascadeHelp}"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Border Grid.Column="1" Margin="12,0,0,0" Padding="14"
+                                Background="{DynamicResource InsetSurfaceBrush}"
+                                BorderBrush="{DynamicResource CardBorderBrush}"
+                                BorderThickness="1" CornerRadius="9">
+                            <StackPanel>
+                                <TextBlock Text="{DynamicResource Template.Editor.Delay}"
+                                           Foreground="{DynamicResource TextBrush}"
+                                           FontSize="12" FontWeight="SemiBold"/>
+                                <ComboBox x:Name="DelayComboBox"
+                                          Margin="0,10,0,0" MinHeight="38"
+                                          DisplayMemberPath="DisplayName"
+                                          AutomationProperties.Name="{DynamicResource Template.Editor.Delay}"
+                                          AutomationProperties.HelpText="{DynamicResource Template.Editor.DelayHelp}"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <Border Margin="0,18,0,0" Padding="14"
+                            Background="{DynamicResource InsetSurfaceBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            BorderThickness="1" CornerRadius="9">
+                        <StackPanel>
+                            <TextBlock Text="{DynamicResource Template.Editor.Destinations}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       FontSize="12" FontWeight="SemiBold"
+                                       AutomationProperties.HeadingLevel="Level2"/>
+                            <TextBlock Text="{DynamicResource Template.Editor.DestinationsHelp}"
+                                       Margin="0,4,0,9"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap"/>
+                            <ListBox x:Name="ClientDestinationList"
+                                     MaxHeight="250" IsTabStop="False"
+                                     Padding="0" BorderThickness="0"
+                                     Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     AutomationProperties.Name="{DynamicResource Template.Editor.Destinations}">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Padding" Value="0"/>
+                                        <Setter Property="Margin" Value="0,0,0,9"/>
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Focusable" Value="False"/>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*"/>
+                                                <ColumnDefinition Width="3*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       Margin="2,0,12,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextBrush}"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Grid.Column="1">
+                                                <ComboBox MinHeight="34"
+                                                          ItemsSource="{Binding DestinationOptions}"
+                                                          SelectedItem="{Binding SelectedDestinationChoice, Mode=TwoWay}"
+                                                          DisplayMemberPath="DisplayName"
+                                                          AutomationProperties.Name="{Binding DestinationChoiceAutomationName}"
+                                                          AutomationProperties.HelpText="{Binding DestinationAutomationHelp}"/>
+                                                <Border Height="36" Margin="0,5,0,0"
+                                                        Style="{StaticResource TextFieldShell}">
+                                                    <TextBox Text="{Binding Destination, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                             MaxLength="4096"
+                                                             Style="{StaticResource EmbeddedTextBox}"
+                                                             AutomationProperties.Name="{Binding DestinationValueAutomationName}"
+                                                             AutomationProperties.HelpText="{Binding DestinationAutomationHelp}"/>
+                                                </Border>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Margin="0,18,0,0" Padding="14"
+                            Background="{DynamicResource InsetSurfaceBrush}"
+                            BorderBrush="{DynamicResource CardBorderBrush}"
+                            BorderThickness="1" CornerRadius="9">
+                        <StackPanel>
+                            <TextBlock Text="{DynamicResource Template.Editor.MacroMode}"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       FontSize="12" FontWeight="SemiBold"
+                                       AutomationProperties.HeadingLevel="Level2"/>
+                            <ComboBox x:Name="MacroModeComboBox"
+                                      Margin="0,8,0,0" MinHeight="38"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectionChanged="MacroModeComboBox_SelectionChanged"
+                                      AutomationProperties.Name="{DynamicResource Template.Editor.MacroMode}"
+                                      AutomationProperties.HelpText="{DynamicResource Template.Editor.MacroModeHelp}"/>
+
+                            <TextBlock x:Name="NoMacroDetailText"
+                                       Margin="0,10,0,0"
+                                       Text="{DynamicResource Template.Editor.MacroNoneDetail}"
+                                       Foreground="{DynamicResource MutedBrush}"
+                                       FontSize="11" TextWrapping="Wrap"/>
+
+                            <StackPanel x:Name="SharedMacroPanel"
+                                        Margin="0,12,0,0"
+                                        Visibility="Collapsed">
+                                <TextBlock Text="{DynamicResource Template.Editor.SharedMacro}"
+                                           Foreground="{DynamicResource SubtleBrush}"
+                                           FontSize="11" FontWeight="SemiBold"/>
+                                <ComboBox x:Name="SharedMacroComboBox"
+                                          Margin="0,6,0,0" MinHeight="38"
+                                          DisplayMemberPath="DisplayName"
+                                          AutomationProperties.Name="{DynamicResource Template.Editor.SharedMacro}"
+                                          AutomationProperties.HelpText="{DynamicResource Template.Editor.SharedMacroHelp}"/>
+                                <TextBlock Text="{DynamicResource Template.Editor.SharedTargetsHelp}"
+                                           Margin="0,10,0,0"
+                                           Foreground="{DynamicResource MutedBrush}"
+                                           FontSize="11" TextWrapping="Wrap"/>
+                                <ListBox x:Name="SharedTargetList"
+                                         Margin="0,7,0,0" MaxHeight="180"
+                                         IsTabStop="False"
+                                         Padding="0" BorderThickness="0"
+                                         Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         AutomationProperties.Name="{DynamicResource Template.Editor.SharedTargets}">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0,0,0,4"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding DisplayName}"
+                                                      IsChecked="{Binding IsSharedMacroTarget, Mode=TwoWay}"
+                                                      AutomationProperties.HelpText="{DynamicResource Template.Editor.SharedTargetsHelp}"/>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+
+                            <StackPanel x:Name="WholeLayoutMacroPanel"
+                                        Margin="0,12,0,0"
+                                        Visibility="Collapsed">
+                                <TextBlock Text="{DynamicResource Template.Editor.WholeLayoutMacro}"
+                                           Foreground="{DynamicResource SubtleBrush}"
+                                           FontSize="11" FontWeight="SemiBold"/>
+                                <ComboBox x:Name="WholeLayoutMacroComboBox"
+                                          Margin="0,6,0,0" MinHeight="38"
+                                          DisplayMemberPath="DisplayName"
+                                          AutomationProperties.Name="{DynamicResource Template.Editor.WholeLayoutMacro}"
+                                          AutomationProperties.HelpText="{DynamicResource Template.Editor.WholeLayoutMacroHelp}"/>
+                            </StackPanel>
+
+                            <StackPanel x:Name="PerClientMacroPanel"
+                                        Margin="0,12,0,0"
+                                        Visibility="Collapsed">
+                                <TextBlock Text="{DynamicResource Template.Editor.PerClientDetail}"
+                                           Foreground="{DynamicResource MutedBrush}"
+                                           FontSize="11" TextWrapping="Wrap"/>
+                                <ListBox x:Name="ClientMacroList"
+                                         Margin="0,9,0,0" MaxHeight="230"
+                                         IsTabStop="False"
+                                         Padding="0" BorderThickness="0"
+                                         Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         AutomationProperties.Name="{DynamicResource Template.Editor.Clients}">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                            <Setter Property="Padding" Value="0"/>
+                                            <Setter Property="Margin" Value="0,0,0,7"/>
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="Focusable" Value="False"/>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="260"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding DisplayName}"
+                                                           Margin="2,0,12,0"
+                                                           VerticalAlignment="Center"
+                                                           Foreground="{DynamicResource TextBrush}"
+                                                           FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"/>
+                                                <ComboBox Grid.Column="1" MinHeight="36"
+                                                          ItemsSource="{Binding MacroOptions}"
+                                                          SelectedItem="{Binding SelectedMacro, Mode=TwoWay}"
+                                                          DisplayMemberPath="DisplayName"
+                                                          AutomationProperties.Name="{Binding MacroAutomationName}"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid Grid.Row="2" Margin="0,14,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="ValidationText"
+                           MinHeight="18"
+                           Foreground="{DynamicResource ErrorTextBrush}"
+                           FontSize="12" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite"/>
+                <StackPanel Grid.Row="1" Margin="0,8,0,0"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right">
+                    <Button Content="{DynamicResource Common.Cancel}"
+                            IsCancel="True" Padding="16,9" Margin="0,0,8,0"
+                            Background="{DynamicResource ControlSurfaceBrush}"
+                            Foreground="{DynamicResource ControlTextBrush}"/>
+                    <Button Content="{DynamicResource Template.Editor.Save}"
+                            Click="SaveButton_Click" IsDefault="True"
+                            Padding="22,9"
+                            AutomationProperties.Name="{DynamicResource Template.Editor.SaveName}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

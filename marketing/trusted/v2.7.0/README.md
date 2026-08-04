@@ -7,12 +7,17 @@ reviewed evidence under
 Only files from this trusted directory may be used as reviewed v2.7.0 marketing
 or announcement attachments.
 
-- [Current SessionDock release](https://github.com/Makmatoe/SessionDock/releases/latest)
-- [Archived v2.7.0 release and verification assets](https://github.com/Makmatoe/SessionDock/releases/tag/v2.7.0)
-- [Install SessionDock v2.7.0](https://github.com/Makmatoe/SessionDock/releases/download/v2.7.0/SessionDock-win-x64-Setup.exe)
+> **Immutable historical evidence:** this directory predates integrated
+> HandleScope, ExactWheel, clickable cascade, and session templates. It is not a
+> current user guide or evidence that those source-tree features were released.
 
-The installer link is intentionally historical. These images must not be used
-to imply that 2.7.0 is current or that its UI is unchanged in a later release.
+- [SessionDock release archive (distribution hold)](https://github.com/Makmatoe/SessionDock/releases)
+- [Archived v2.7.0 release and verification assets](https://github.com/Makmatoe/SessionDock/releases/tag/v2.7.0)
+
+The archived release is provenance evidence, not an installation path. These
+images must not be used to imply that 2.7.0 is current or that its UI is
+unchanged in a later release. Existing binaries are under a 2026-08-04
+distribution hold.
 
 ## Verify before publication
 

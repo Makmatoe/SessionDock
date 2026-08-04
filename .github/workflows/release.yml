@@ -28,6 +28,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Enforce ExactWheel release provenance
+        shell: pwsh
+        run: >-
+          ./scripts/Verify-ExactWheelReleaseProvenance.ps1
+          -ManifestPath ./SessionDock.ExactWheel/exactwheel-provenance.json
+
       - name: Anchor bundled HandleScope bytes to the immutable upstream commit
         shell: pwsh
         run: |
@@ -118,16 +124,20 @@ jobs:
           Copy-Item SessionDock/Resources/update-public-key.pem artifacts/release-input/update-public-key.pem
           Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap.json artifacts/release-input/handlescope-compatibility-bootstrap.json
           Copy-Item SessionDock.HandleScope/handlescope-upstream.json artifacts/release-input/handlescope-upstream.json
+          Copy-Item SessionDock.ExactWheel/exactwheel-provenance.json artifacts/release-input/exactwheel-provenance.json
           Copy-Item SessionDock/SessionDock.csproj artifacts/release-input/application.csproj
           Copy-Item SessionDock/packages.lock.json artifacts/release-input/packages.lock.json
           Copy-Item global.json artifacts/release-input/global.json
           New-Item -ItemType Directory artifacts/release-input/scripts -Force | Out-Null
           Copy-Item scripts/New-ReleaseChecksums.ps1 artifacts/release-input/scripts/New-ReleaseChecksums.ps1
           Copy-Item scripts/New-ReleaseSbom.ps1 artifacts/release-input/scripts/New-ReleaseSbom.ps1
-          Copy-Item scripts/Rename-SessionDockReleaseAssets.ps1 artifacts/release-input/scripts/Rename-SessionDockReleaseAssets.ps1
+          Copy-Item scripts/Finalize-SessionDockReleaseAssets.ps1 artifacts/release-input/scripts/Finalize-SessionDockReleaseAssets.ps1
+          Copy-Item scripts/Invoke-DefenderReleaseScan.ps1 artifacts/release-input/scripts/Invoke-DefenderReleaseScan.ps1
           Copy-Item scripts/ReleaseJson.ps1 artifacts/release-input/scripts/ReleaseJson.ps1
           Copy-Item scripts/Sign-ReleaseDescriptorDigest.ps1 artifacts/release-input/scripts/Sign-ReleaseDescriptorDigest.ps1
           Copy-Item scripts/Verify-Assets.ps1 artifacts/release-input/scripts/Verify-Assets.ps1
+          Copy-Item scripts/Verify-UnsignedRelease.ps1 artifacts/release-input/scripts/Verify-UnsignedRelease.ps1
+          Copy-Item scripts/Verify-ExactWheelReleaseProvenance.ps1 artifacts/release-input/scripts/Verify-ExactWheelReleaseProvenance.ps1
           Copy-Item scripts/Verify-ReleaseLicense.ps1 artifacts/release-input/scripts/Verify-ReleaseLicense.ps1
           Copy-Item discord-release-bot/src/release-automation.js artifacts/release-input/release-automation.mjs
 
@@ -208,8 +218,8 @@ jobs:
           --expected-ref "$SOURCE_REF"
           --expected-commit "$SOURCE_COMMIT"
 
-  sign-attest-and-stage:
-    name: Sign, attest, and stage verified draft
+  attest-and-stage:
+    name: Attest and stage verified draft
     needs:
       - validate-and-build
       - preflight-discord-announcement
@@ -244,6 +254,12 @@ jobs:
           & ./release-input/scripts/Verify-ReleaseLicense.ps1 `
             -LicensePath ./release-input/app/LICENSE.md
 
+      - name: Verify the exact unsigned application PE set
+        shell: pwsh
+        run: |
+          & ./release-input/scripts/Verify-UnsignedRelease.ps1 `
+            -Directory ./release-input/app
+
       - name: Build Velopack assets
         shell: pwsh
         env:
@@ -263,11 +279,13 @@ jobs:
             --releaseNotes ./release-input/notes.md `
             --runtime win-x64 `
             --channel win-x64-sessiondock `
+            --noInst true `
             --outputDir ./release-output
           if ($LASTEXITCODE -ne 0) { throw "Velopack packaging failed with exit code $LASTEXITCODE." }
-          & ./release-input/scripts/Rename-SessionDockReleaseAssets.ps1 `
+          & ./release-input/scripts/Finalize-SessionDockReleaseAssets.ps1 `
             -Directory ./release-output `
-            -Channel win-x64-sessiondock
+            -Channel win-x64-sessiondock `
+            -ApplicationDirectory ./release-input/app
 
       - name: Prepare the canonical unsigned release descriptor
         shell: pwsh
@@ -476,8 +494,24 @@ jobs:
             -LockFile ./release-input/packages.lock.json `
             -License ./release-input/app/LICENSE.md `
             -BundledHandleScopeManifest ./release-input/handlescope-upstream.json `
+            -BundledExactWheelManifest ./release-input/exactwheel-provenance.json `
             -Output "./release-output/SessionDock-$env:RELEASE_VERSION-sbom.spdx.json"
           & ./release-input/scripts/New-ReleaseChecksums.ps1 -Directory ./release-output
+
+      - name: Scan the application and distributable payloads with Microsoft Defender
+        shell: pwsh
+        run: |
+          $portable = @(Get-ChildItem ./release-output -File `
+            -Filter SessionDock-win-x64-Portable.zip)
+          $package = @(Get-ChildItem ./release-output -File -Filter *-full.nupkg)
+          if ($portable.Count -ne 1 -or $package.Count -ne 1) {
+            throw 'Expected one portable ZIP and one full NUPKG before Defender scanning.'
+          }
+          & ./release-input/scripts/Invoke-DefenderReleaseScan.ps1 `
+            -Path @(
+              './release-input/app'
+              $portable[0].FullName
+              $package[0].FullName)
 
       - name: Verify the final release asset set
         shell: pwsh
@@ -545,7 +579,7 @@ jobs:
     needs:
       - validate-and-build
       - preflight-discord-announcement
-      - sign-attest-and-stage
+      - attest-and-stage
     runs-on: windows-latest
     timeout-minutes: 15
     environment: release-publication
@@ -620,7 +654,6 @@ jobs:
             'sessiondock-handlescope-compatibility.json'
             'sessiondock-release.json'
             'SessionDock-win-x64-Portable.zip'
-            'SessionDock-win-x64-Setup.exe'
             "SessionDockApp-$env:RELEASE_VERSION-win-x64-sessiondock-full.nupkg"
             'SHA256SUMS.txt'
           ) | Sort-Object
@@ -654,6 +687,14 @@ jobs:
             if ($actualHash -cne $checksumEntries[$name]) {
               throw "Approved draft checksum mismatch: $name"
             }
+          }
+
+          & ./release-verification/signer/ReleaseSigner.exe verify `
+            --manifest ./approved-assets/sessiondock-release.json `
+            --package "./approved-assets/SessionDockApp-$env:RELEASE_VERSION-win-x64-sessiondock-full.nupkg" `
+            --public-key ./release-verification/update-public-key.pem
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Approved release descriptor cryptographic verification failed.'
           }
 
           & ./release-verification/signer/ReleaseSigner.exe verify-catalog `
@@ -829,15 +870,58 @@ jobs:
           PRIOR_PUBLICATION_INTENT_VERIFIED: ${{ steps.prior-publication-intent.outputs.verified }}
         run: |
           $catalogName = 'sessiondock-handlescope-compatibility.json'
-          New-Item -ItemType Directory final-catalog-verification -Force | Out-Null
+          $descriptorName = 'sessiondock-release.json'
+          $packageName = "SessionDockApp-$env:RELEASE_VERSION-win-x64-sessiondock-full.nupkg"
+          New-Item -ItemType Directory final-asset-verification -Force | Out-Null
           gh release download $env:RELEASE_TAG `
             --repo $env:GITHUB_REPOSITORY `
-            --dir ./final-catalog-verification `
-            --pattern $catalogName
+            --dir ./final-asset-verification `
+            --pattern '*'
           if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to re-download the HandleScope catalog immediately before publication.'
+            throw 'Unable to re-download every approved asset immediately before publication.'
           }
-          $finalCatalogs = @(Get-ChildItem ./final-catalog-verification -File -Force)
+
+          $approvedAssets = @(
+            Get-ChildItem ./approved-assets -File -Force | Sort-Object Name)
+          $finalAssets = @(
+            Get-ChildItem ./final-asset-verification -File -Force | Sort-Object Name)
+          $finalInventoryDifference = @(Compare-Object `
+            @($approvedAssets.Name) `
+            @($finalAssets.Name) `
+            -CaseSensitive)
+          if ($approvedAssets.Count -ne $finalAssets.Count -or
+              $finalInventoryDifference.Count -ne 0) {
+            throw 'Final pre-publication asset inventory differs from the approved draft.'
+          }
+          for ($index = 0; $index -lt $finalAssets.Count; $index++) {
+            if ($finalAssets[$index].Name -cne $approvedAssets[$index].Name) {
+              throw 'Final pre-publication asset order no longer matches the approved draft.'
+            }
+            $approvedHash = (Get-FileHash `
+              -LiteralPath $approvedAssets[$index].FullName `
+              -Algorithm SHA256).Hash
+            $finalHash = (Get-FileHash `
+              -LiteralPath $finalAssets[$index].FullName `
+              -Algorithm SHA256).Hash
+            if ($finalHash -cne $approvedHash) {
+              throw "Final pre-publication asset hash mismatch: $($finalAssets[$index].Name)"
+            }
+          }
+
+          $finalDescriptors = @($finalAssets | Where-Object { $_.Name -ceq $descriptorName })
+          $finalPackages = @($finalAssets | Where-Object { $_.Name -ceq $packageName })
+          if ($finalDescriptors.Count -ne 1 -or $finalPackages.Count -ne 1) {
+            throw 'The final release descriptor verification download is not exact.'
+          }
+          & ./release-verification/signer/ReleaseSigner.exe verify `
+            --manifest $finalDescriptors[0].FullName `
+            --package $finalPackages[0].FullName `
+            --public-key ./release-verification/update-public-key.pem
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Final release descriptor cryptographic verification failed.'
+          }
+
+          $finalCatalogs = @($finalAssets | Where-Object { $_.Name -ceq $catalogName })
           if ($finalCatalogs.Count -ne 1 -or $finalCatalogs[0].Name -cne $catalogName) {
             throw 'The final HandleScope catalog verification download is not exact.'
           }
@@ -903,6 +987,60 @@ jobs:
               $published.name -cne "SessionDock $env:RELEASE_VERSION" -or
               $publishedBody -cne $expectedBody) {
             throw 'The published release does not exactly match the reverified release.'
+          }
+
+      - name: Re-download and verify public release assets
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+        run: |
+          if ($env:GITHUB_REPOSITORY -cne 'Makmatoe/SessionDock') {
+            throw 'Anonymous public verification is restricted to Makmatoe/SessionDock.'
+          }
+          if ($env:RELEASE_TAG -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
+            throw 'The public release tag is not a canonical stable version.'
+          }
+          $approved = @(Get-ChildItem ./approved-assets -File | Sort-Object Name)
+          if ($approved.Count -eq 0) {
+            throw 'The approved draft asset inventory is empty.'
+          }
+          New-Item -ItemType Directory published-assets | Out-Null
+          foreach ($asset in $approved) {
+            if ($asset.Name -cnotmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') {
+              throw "Approved asset name is not URL-safe: $($asset.Name)"
+            }
+            $assetUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:RELEASE_TAG/$($asset.Name)"
+            $destination = Join-Path ./published-assets $asset.Name
+            & curl.exe --disable `
+              --fail `
+              --location `
+              --proto '=https' `
+              --proto-redir '=https' `
+              --max-redirs 5 `
+              --connect-timeout 30 `
+              --max-time 600 `
+              --silent `
+              --show-error `
+              --user-agent SessionDock-public-release-verifier `
+              --output $destination `
+              $assetUrl
+            if ($LASTEXITCODE -ne 0) {
+              Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+              throw "Unable to anonymously download public release asset: $($asset.Name)"
+            }
+          }
+          $published = @(Get-ChildItem ./published-assets -File | Sort-Object Name)
+          if (Compare-Object @($approved.Name) @($published.Name) -CaseSensitive) {
+            throw 'Public release asset inventory differs from the approved draft.'
+          }
+          for ($index = 0; $index -lt $published.Count; $index++) {
+            $approvedHash = (Get-FileHash `
+              -LiteralPath $approved[$index].FullName `
+              -Algorithm SHA256).Hash
+            $publishedHash = (Get-FileHash -LiteralPath $published[$index].FullName -Algorithm SHA256).Hash
+            if ($publishedHash -cne $approvedHash) {
+              throw "Public release asset hash mismatch: $($published[$index].Name)"
+            }
           }
 
   announce-published-release:

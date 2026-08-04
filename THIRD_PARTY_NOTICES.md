@@ -59,10 +59,11 @@ SessionDock 3.0 includes reviewed source from
 [HandleScope](https://github.com/Makmatoe/HandleScope) 0.3.0 under the MIT
 License. The synchronized upstream version, tag, commit, file allowlist, and
 hashes are recorded in `SessionDock.HandleScope/handlescope-upstream.json`; the code is
-compiled into `SessionDock.exe` and is not shipped as a separate executable,
-installer, script, or license sidecar. HandleScope uses the same MIT terms in
-the repository's root `LICENSE.md`; this notice and the release SBOM identify
-the bundled component and upstream provenance.
+compiled into the inspectable `SessionDock.HandleScope.dll` component in the
+same SessionDock package. It is not a separate application, installer, script,
+or independently updated payload. HandleScope uses the same MIT terms in the
+repository's root `LICENSE.md`; this notice and the release SBOM identify the
+bundled component and upstream provenance.
 
 ## External optional software
 

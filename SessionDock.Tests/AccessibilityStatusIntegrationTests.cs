@@ -36,12 +36,25 @@ public sealed class AccessibilityStatusIntegrationTests
         var runningClientsSource = ReadProductionFile(
             "RunningClientsDialog.xaml.cs");
         var soundSource = ReadProductionFile("SoundSettingsDialog.xaml.cs");
+        var tourSource = ReadProductionFile("GuidedTourOverlay.xaml.cs");
+        var templateEditorSource = ReadProductionFile(
+            "TemplateEditorDialog.xaml.cs");
+        var templateRunSource = ReadProductionFile(
+            "RunTemplateDialog.xaml.cs");
+        var macroRecorderSource = ReadProductionFile(
+            "MacroRecorderDialog.xaml.cs");
+        var automationSettingsSource = ReadProductionFile(
+            "SessionAutomationSettingsDialog.xaml.cs");
         var localizationSource = ReadProductionFile(
             "MainWindow.Localization.cs");
         var mainXaml = ReadProductionFile("MainWindow.xaml");
 
         Assert.Contains(
             "new AccessibilityLiveRegion(StatusTitle)",
+            mainSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(HomeStatusText)",
             mainSource,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -95,6 +108,30 @@ public sealed class AccessibilityStatusIntegrationTests
         Assert.Contains(
             "new AccessibilityLiveRegion(ValidationText)",
             soundSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(TitleText)",
+            tourSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(ValidationText)",
+            templateEditorSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(TemplateSummaryText)",
+            templateRunSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(ValidationText)",
+            templateRunSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(StatusText)",
+            macroRecorderSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new AccessibilityLiveRegion(ValidationText)",
+            automationSettingsSource,
             StringComparison.Ordinal);
         Assert.Contains(
             "SetValidation(Localize(\"Sound.ImportCancelled\"))",

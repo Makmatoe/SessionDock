@@ -1,0 +1,112 @@
+<UserControl x:Class="SessionDock.GuidedTourOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="True"
+             Visibility="Collapsed"
+             IsTabStop="True"
+             PreviewKeyDown="Overlay_PreviewKeyDown"
+             SizeChanged="Overlay_SizeChanged">
+    <Canvas x:Name="OverlayCanvas"
+            Background="Transparent"
+            ClipToBounds="True">
+        <Border x:Name="TopShade"
+                Background="{DynamicResource TutorialOverlayBrush}"/>
+        <Border x:Name="LeftShade"
+                Background="{DynamicResource TutorialOverlayBrush}"/>
+        <Border x:Name="RightShade"
+                Background="{DynamicResource TutorialOverlayBrush}"/>
+        <Border x:Name="BottomShade"
+                Background="{DynamicResource TutorialOverlayBrush}"/>
+
+        <Border x:Name="TargetOutline"
+                IsHitTestVisible="False"
+                BorderBrush="{DynamicResource FocusBrush}"
+                BorderThickness="3"
+                CornerRadius="10">
+        </Border>
+
+        <Border x:Name="Callout"
+                Width="360"
+                MaxWidth="420"
+                ClipToBounds="True"
+                Padding="18"
+                CornerRadius="14"
+                Background="{DynamicResource PanelBrush}"
+                BorderBrush="{DynamicResource FocusBrush}"
+                BorderThickness="2"
+                KeyboardNavigation.TabNavigation="Cycle">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel>
+                    <TextBlock x:Name="ProgressText"
+                               Foreground="{DynamicResource AccentBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold"/>
+                    <TextBlock x:Name="PreviewText"
+                               Margin="0,5,0,0"
+                               Text="{DynamicResource Tutorial.Preview}"
+                               Foreground="{DynamicResource MutedBrush}"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"/>
+                    <TextBlock x:Name="TitleText"
+                               Margin="0,5,0,0"
+                               Foreground="{DynamicResource TextBrush}"
+                               FontSize="19"
+                               FontWeight="SemiBold"
+                               AutomationProperties.HeadingLevel="Level2"
+                               AutomationProperties.LiveSetting="Assertive"
+                               TextWrapping="Wrap"/>
+                </StackPanel>
+                <ScrollViewer Grid.Row="1"
+                              Margin="0,10,0,0"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled"
+                              Focusable="True"
+                              IsTabStop="True"
+                              AutomationProperties.Name="{Binding Text, ElementName=BodyText}">
+                    <TextBlock x:Name="BodyText"
+                               Margin="0,0,8,0"
+                               Foreground="{DynamicResource MutedBrush}"
+                               FontSize="13"
+                               LineHeight="19"
+                               TextWrapping="Wrap"/>
+                </ScrollViewer>
+                <Grid x:Name="NavigationGrid"
+                      Grid.Row="2"
+                      Margin="0,18,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition x:Name="CompactNavigationRow"
+                                       Height="0"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="SkipButton"
+                            Click="SkipButton_Click"
+                            Padding="12,7"
+                            HorizontalAlignment="Left"
+                            Background="Transparent"
+                            Foreground="{DynamicResource MutedBrush}"/>
+                    <Button x:Name="BackButton"
+                            Grid.Column="1"
+                            Click="BackButton_Click"
+                            Margin="0,0,8,0"
+                            Padding="12,7"/>
+                    <Button x:Name="NextButton"
+                            Grid.Column="2"
+                            Click="NextButton_Click"
+                            Padding="14,7"
+                            IsDefault="True"/>
+                </Grid>
+            </Grid>
+        </Border>
+    </Canvas>
+</UserControl>

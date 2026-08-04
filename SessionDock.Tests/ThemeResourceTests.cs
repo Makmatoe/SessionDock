@@ -41,6 +41,11 @@ public sealed class ThemeResourceTests
         "FieldHoverBorderBrush",
         "FieldCaretBrush",
         "SelectionBrush",
+        "ListSurfaceBrush",
+        "ListBorderBrush",
+        "ListItemHoverBrush",
+        "ListItemSelectedBrush",
+        "ListItemSelectedBorderBrush",
         "ScrollTrackBrush",
         "ScrollThumbBrush",
         "ScrollThumbHoverBrush",
@@ -235,6 +240,12 @@ public sealed class ThemeResourceTests
             ("TextBrush", "PanelBrush"),
             ("MutedBrush", "BackgroundBrush"),
             ("SubtleBrush", "BackgroundBrush"),
+            ("TextBrush", "ListSurfaceBrush"),
+            ("MutedBrush", "ListSurfaceBrush"),
+            ("TextBrush", "ListItemHoverBrush"),
+            ("MutedBrush", "ListItemHoverBrush"),
+            ("TextBrush", "ListItemSelectedBrush"),
+            ("MutedBrush", "ListItemSelectedBrush"),
             ("ControlTextBrush", "ControlSurfaceBrush"),
             ("MenuSelectedTextBrush", "MenuSelectedBrush"),
             ("SelectedControlTextBrush", "SelectedControlSurfaceBrush"),
@@ -279,6 +290,8 @@ public sealed class ThemeResourceTests
         {
             ("FocusBrush", "BackgroundBrush"),
             ("FieldBorderBrush", "FieldBackgroundBrush"),
+            ("ListBorderBrush", "ListSurfaceBrush"),
+            ("ListItemSelectedBorderBrush", "ListItemSelectedBrush"),
             ("ScrollThumbBrush", "ScrollTrackBrush"),
             ("CardSelectedBorderBrush", "CardSelectedBackgroundBrush")
         };
@@ -323,6 +336,46 @@ public sealed class ThemeResourceTests
         Assert.Contains(
             "SystemColors.HighlightTextColor",
             colors["CaptionButtonHoverTextBrush"],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void HighContrastListStates_PreserveWindowTextPairingAndHighlightOutline()
+    {
+        var path = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Themes",
+            "HighContrastTheme.xaml");
+        XNamespace xaml = "http://schemas.microsoft.com/winfx/2006/xaml";
+        var colors = XDocument.Load(path).Root!
+            .Elements()
+            .Where(element => element.Name.LocalName == "SolidColorBrush")
+            .ToDictionary(
+                element => (string)element.Attribute(xaml + "Key")!,
+                element => (string)element.Attribute("Color")!,
+                StringComparer.Ordinal);
+
+        foreach (var surfaceKey in new[]
+                 {
+                     "ListSurfaceBrush",
+                     "ListItemHoverBrush",
+                     "ListItemSelectedBrush"
+                 })
+        {
+            Assert.Contains(
+                "SystemColors.WindowColor",
+                colors[surfaceKey],
+                StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "SystemColors.WindowTextColor",
+            colors["ListBorderBrush"],
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SystemColors.HighlightColor",
+            colors["ListItemSelectedBorderBrush"],
             StringComparison.Ordinal);
     }
 

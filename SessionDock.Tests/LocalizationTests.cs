@@ -42,6 +42,39 @@ public sealed class LocalizationTests : IDisposable
         "Language.Spanish"
     ];
 
+    private static readonly IReadOnlyDictionary<string, string[]>
+        SessionAutomationEnglishEquivalenceAllowlist =
+            new Dictionary<string, string[]>(StringComparer.Ordinal)
+            {
+                [LocalizationPreference.Dutch] =
+                [
+                    "AutomationSettings.Layout.Cascade",
+                    "AutomationSettings.MonitorSummary",
+                    "Macro.PlaybackBadge",
+                    "Template.Editor.MacroPerClient"
+                ],
+                [LocalizationPreference.German] =
+                [
+                    "AutomationSettings.MonitorSummary",
+                    "Destinations.Name"
+                ],
+                [LocalizationPreference.French] =
+                [
+                    "AutomationSettings.Layout.Cascade",
+                    "AutomationSettings.MonitorSummary",
+                    "Destinations.Title",
+                    "Home.Destinations",
+                    "Home.RecordMacro",
+                    "Macro.PlaybackBadge"
+                ],
+                [LocalizationPreference.Spanish] =
+                [
+                    "AutomationSettings.MonitorSummary",
+                    "Home.RecordMacro",
+                    "Macro.PlaybackBadge"
+                ]
+            };
+
     private readonly string _storageDirectory = Path.Combine(
         Path.GetTempPath(),
         $"SessionDock-localization-tests-{Guid.NewGuid():N}");
@@ -230,6 +263,51 @@ public sealed class LocalizationTests : IDisposable
                     ReadPlaceholderIndexes(englishValue),
                     ReadPlaceholderIndexes(localized[key]));
             }
+        }
+    }
+
+    [Fact]
+    public void SessionAutomationResources_KeepOnlyReviewedEnglishEquivalents()
+    {
+        var directory = Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "Localization");
+        var english = ReadStrings(Path.Combine(
+            directory,
+            "Strings.en-US.xaml"));
+        string[] prefixes =
+        [
+            "Accounts.",
+            "AutomationSettings.",
+            "Destinations.",
+            "Home.",
+            "Macro.",
+            "Template.",
+            "Tutorial."
+        ];
+
+        foreach (var cultureName in SupportedCultureNames.Skip(1))
+        {
+            var localized = ReadStrings(Path.Combine(
+                directory,
+                $"Strings.{cultureName}.xaml"));
+            var identicalKeys = localized
+                .Where(pair =>
+                    prefixes.Any(prefix => pair.Key.StartsWith(
+                        prefix,
+                        StringComparison.Ordinal)) &&
+                    string.Equals(
+                        pair.Value,
+                        english[pair.Key],
+                        StringComparison.Ordinal))
+                .Select(pair => pair.Key)
+                .Order(StringComparer.Ordinal);
+
+            Assert.Equal(
+                SessionAutomationEnglishEquivalenceAllowlist[cultureName]
+                    .Order(StringComparer.Ordinal),
+                identicalKeys);
         }
     }
 

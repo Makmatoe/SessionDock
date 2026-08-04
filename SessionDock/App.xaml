@@ -1,6 +1,7 @@
 <Application x:Class="SessionDock.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:SessionDock">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -11,6 +12,9 @@
                      localization service adds a selected-language overlay. -->
                 <ResourceDictionary Source="Localization/Strings.en-US.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+
+        <local:DropdownSelectedLabelResolver
+            x:Key="DropdownSelectedLabelResolver"/>
 
         <!-- Shared 24px vector icon set. Keeping icons in XAML makes them DPI-safe
              and avoids depending on emoji, symbol fonts, or external assets. -->
@@ -42,6 +46,10 @@
         <Geometry x:Key="IconSun">M 12,7 A 5,5 0 1 1 11.9,7 M 12,2 V 4 M 12,20 V 22 M 2,12 H 4 M 20,12 H 22 M 4.9,4.9 L 6.3,6.3 M 17.7,17.7 L 19.1,19.1 M 19.1,4.9 L 17.7,6.3 M 6.3,17.7 L 4.9,19.1</Geometry>
         <Geometry x:Key="IconMoon">M 19.5,15.5 A 8,8 0 0 1 8.5,4.5 A 8.5,8.5 0 1 0 19.5,15.5</Geometry>
         <Geometry x:Key="IconLanguage">M 3,12 H 21 M 12,3 A 9,9 0 1 1 11.9,3 M 12,3 C 8.5,6 8.5,18 12,21 M 12,3 C 15.5,6 15.5,18 12,21</Geometry>
+        <Geometry x:Key="IconSettings">M 12,8 A 4,4 0 1 1 11.9,8 M 12,2 V 5 M 12,19 V 22 M 2,12 H 5 M 19,12 H 22 M 4.9,4.9 L 7,7 M 17,17 L 19.1,19.1 M 19.1,4.9 L 17,7 M 7,17 L 4.9,19.1</Geometry>
+        <Geometry x:Key="IconRecord">M 12,5 A 7,7 0 1 1 11.9,5</Geometry>
+        <Geometry x:Key="IconTemplate">M 4,4 H 20 V 20 H 4 Z M 8,4 V 20 M 8,9 H 20</Geometry>
+        <Geometry x:Key="IconSave">M 5,3 H 17 L 21,7 V 21 H 3 V 3 Z M 7,3 V 9 H 17 V 3 M 7,14 H 17 V 21 H 7 Z</Geometry>
 
         <Style x:Key="KeyboardFocusVisual">
             <Setter Property="Control.Template">
@@ -381,7 +389,77 @@
             </Style.Triggers>
         </Style>
 
+        <!-- WPF's stock ListBox palette follows the operating-system control
+             theme, which can leave a light list surface inside SessionDock's
+             dark theme. Own both the list chrome and item states so custom
+             item templates keep readable semantic text in every palette. -->
+        <Style TargetType="ListBox">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource ListSurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource ListBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="2"/>
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusVisual}"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+            <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+            <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+        </Style>
+
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="Padding" Value="6,4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusVisual}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="ItemBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter
+                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background"
+                                        Value="{DynamicResource ListItemHoverBrush}"/>
+                                <Setter TargetName="ItemBorder" Property="BorderBrush"
+                                        Value="{DynamicResource ListItemSelectedBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background"
+                                        Value="{DynamicResource ListItemSelectedBrush}"/>
+                                <Setter TargetName="ItemBorder" Property="BorderBrush"
+                                        Value="{DynamicResource ListItemSelectedBorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ComboBox">
+            <Setter Property="local:DropdownLabel.Placeholder"
+                    Value="{DynamicResource Common.SelectOption}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <Setter Property="Background" Value="{DynamicResource MenuBackgroundBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource MenuBorderBrush}"/>
@@ -439,13 +517,49 @@
                                 </ToggleButton.Template>
                             </ToggleButton>
 
-                            <ContentPresenter Margin="{TemplateBinding Padding}"
-                                              IsHitTestVisible="False"
-                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"/>
+                            <!-- Resolve selected labels deliberately. WPF's default
+                                 ContentPresenter falls back to object.ToString(),
+                                 which can expose record/type names when a selector
+                                 is populated with domain objects. -->
+                            <TextBlock x:Name="SelectedItemLabel"
+                                       Margin="{TemplateBinding Padding}"
+                                       IsHitTestVisible="False"
+                                       HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                       VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                       TextTrimming="CharacterEllipsis">
+                                <TextBlock.Text>
+                                    <MultiBinding Converter="{StaticResource DropdownSelectedLabelResolver}">
+                                        <Binding RelativeSource="{RelativeSource TemplatedParent}"
+                                                 Path="SelectedItem"/>
+                                        <Binding RelativeSource="{RelativeSource TemplatedParent}"
+                                                 Path="DisplayMemberPath"/>
+                                        <Binding RelativeSource="{RelativeSource TemplatedParent}"
+                                                 Path="SelectionBoxItem"/>
+                                        <Binding RelativeSource="{RelativeSource TemplatedParent}"
+                                                 Path="(local:DropdownLabel.Placeholder)"/>
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+
+                            <!-- WPF requires this named part for editable
+                                 ComboBoxes. Keep it out of the arrow column so
+                                 the drop-down remains directly clickable. -->
+                            <TextBox x:Name="PART_EditableTextBox"
+                                     Margin="0,0,34,0"
+                                     Padding="{TemplateBinding Padding}"
+                                     Visibility="Collapsed"
+                                     Background="Transparent"
+                                     Foreground="{TemplateBinding Foreground}"
+                                     BorderThickness="0"
+                                     FontFamily="{TemplateBinding FontFamily}"
+                                     FontSize="{TemplateBinding FontSize}"
+                                     FontStretch="{TemplateBinding FontStretch}"
+                                     FontStyle="{TemplateBinding FontStyle}"
+                                     FontWeight="{TemplateBinding FontWeight}"
+                                     IsReadOnly="{TemplateBinding IsReadOnly}"
+                                     HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                     VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                     Text="{Binding Path=Text, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
                             <Popup x:Name="PART_Popup" Placement="Bottom"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
@@ -466,6 +580,14 @@
                             </Popup>
                         </Grid>
                         <ControlTemplate.Triggers>
+                            <Trigger Property="IsEditable" Value="True">
+                                <Setter TargetName="SelectedItemLabel"
+                                        Property="Visibility"
+                                        Value="Collapsed"/>
+                                <Setter TargetName="PART_EditableTextBox"
+                                        Property="Visibility"
+                                        Value="Visible"/>
+                            </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter Property="Opacity" Value="0.45"/>
                             </Trigger>

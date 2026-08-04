@@ -1,3 +1,4 @@
+using Microsoft.Win32.SafeHandles;
 using SessionDock.Services;
 
 namespace SessionDock.Tests;
@@ -84,6 +85,44 @@ public sealed class RobloxExecutableTrustTests
             bool forceRefresh)
         {
             signer = new("CN=Unrelated Publisher", "Unrelated Publisher");
+            return true;
+        }
+    }
+
+    [Fact]
+    public void RetainedHandleOverload_ForwardsExactHandleAndRefreshRequest()
+    {
+        using var retainedHandle = File.OpenHandle(
+            typeof(RobloxExecutableTrustTests).Assembly.Location,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            FileOptions.RandomAccess);
+        SafeFileHandle? requestedHandle = null;
+        var requestedForceRefresh = false;
+
+        var trusted = RobloxExecutableTrust.IsTrustedPlayerPath(
+            ValidPath,
+            LocalRoot,
+            ProgramRoot,
+            retainedHandle,
+            forceRefresh: true,
+            TryGetSigner);
+
+        Assert.True(trusted);
+        Assert.Same(retainedHandle, requestedHandle);
+        Assert.True(requestedForceRefresh);
+        return;
+
+        bool TryGetSigner(
+            string path,
+            SafeFileHandle handle,
+            out TrustedWindowsSigner signer,
+            bool forceRefresh)
+        {
+            requestedHandle = handle;
+            requestedForceRefresh = forceRefresh;
+            signer = new("CN=Roblox Corporation", "Roblox Corporation");
             return true;
         }
     }

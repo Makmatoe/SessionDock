@@ -60,7 +60,8 @@ An approved pull request should:
 - keep account and browser-profile data out of fixtures and screenshots;
 - update user and maintainer documentation when behavior changes;
 - preserve the included HandleScope source/provenance allowlist and prove that
-  the release still embeds it only in `SessionDock.exe`;
+  the transparent release carries it only as the reviewed
+  `SessionDock.HandleScope.dll` component beside `SessionDock.exe`;
 - pass formatting, build, test, dependency, and secret-scanning checks; and
 - avoid generated build output, local settings, or release secrets.
 

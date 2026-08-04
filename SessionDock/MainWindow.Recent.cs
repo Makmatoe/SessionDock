@@ -61,6 +61,16 @@ public partial class MainWindow
 
     private void RenderRecentExperiences()
     {
+        // Recent cards are one of the largest visual trees in the main
+        // window. Keep the hidden Advanced tab data-driven and rebuild its
+        // visuals only when the user can see them. Every route that reveals
+        // the tab calls this method after making it visible.
+        if (AdvancedWorkspace.Visibility != Visibility.Visible ||
+            RecentTabPanel.Visibility != Visibility.Visible)
+        {
+            return;
+        }
+
         var restoreKeyboardFocus =
             RecentExperiencesList.IsKeyboardFocusWithin;
         var focusedButton = Keyboard.FocusedElement as Button;
@@ -419,7 +429,10 @@ public partial class MainWindow
                     {
                         return;
                     }
-                    currentProfile.Destination = destination;
+                    NamedDestinationPolicy.SetAccountDestination(
+                        _settings,
+                        currentProfile.Key,
+                        destination);
                     mutationApplied = true;
                 },
                 Localize("Main.RecentDestinationSaveFailureTitle"),
@@ -489,7 +502,10 @@ public partial class MainWindow
                     {
                         return;
                     }
-                    currentProfile.Destination = destination;
+                    NamedDestinationPolicy.SetAccountDestination(
+                        _settings,
+                        currentProfile.Key,
+                        destination);
                     mutationApplied = true;
                 },
                 Localize("Main.TrackedServerSaveFailureTitle"),

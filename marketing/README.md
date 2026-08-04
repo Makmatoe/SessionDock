@@ -3,15 +3,19 @@
 This directory is the publishing entry point for reviewed SessionDock artwork.
 At present it contains one archived evidence set: SessionDock 2.7.0.
 
-- [Current SessionDock release](https://github.com/Makmatoe/SessionDock/releases/latest)
+> **Artwork-maintainer scope:** this page does not install SessionDock and does
+> not document the current HandleScope/ExactWheel/template workflow. The only
+> files here are historical 2.7.0 images; never use them to imply that the
+> integrated source has shipped.
+
+- [SessionDock release archive (distribution hold)](https://github.com/Makmatoe/SessionDock/releases)
 - [Archived v2.7.0 release](https://github.com/Makmatoe/SessionDock/releases/tag/v2.7.0)
-- [Install SessionDock v2.7.0](https://github.com/Makmatoe/SessionDock/releases/download/v2.7.0/SessionDock-win-x64-Setup.exe)
 - [Trusted v2.7.0 marketing assets](trusted/v2.7.0/README.md)
 
 The version number in the asset path describes the UI that was captured. Do
 not use the v2.7.0 images to represent a newer release or imply that they show
-the current interface. The installer link is intentionally pinned to the same
-historical version; use the current-release link for new installations.
+the current interface. This archive is not an installation path; existing
+release binaries are under a 2026-08-04 distribution hold.
 
 ## Publish a reviewed asset
 

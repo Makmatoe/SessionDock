@@ -1,0 +1,75 @@
+<Window x:Class="SessionDock.RunTemplateDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="{DynamicResource Template.RunTitle}"
+        Width="520" SizeToContent="Height" MaxHeight="720"
+        MinWidth="440" MinHeight="300"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResizeWithGrip"
+        Background="{DynamicResource BackgroundBrush}"
+        FontFamily="Segoe UI Variable Text"
+        UseLayoutRounding="True"
+        ShowInTaskbar="False">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel>
+            <TextBlock Text="{DynamicResource Template.RunHeading}"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="22" FontWeight="SemiBold"/>
+            <TextBlock Text="{DynamicResource Template.RunDescription}"
+                       Margin="0,5,0,0"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="12" TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Margin="0,18,0,0">
+            <TextBlock Text="{DynamicResource Template.TemplateLabel}"
+                       Foreground="{DynamicResource SubtleBrush}"
+                       FontSize="11" FontWeight="SemiBold"/>
+            <ComboBox x:Name="TemplateComboBox"
+                      Margin="0,6,0,0" MinHeight="38"
+                      SelectionChanged="TemplateComboBox_SelectionChanged"
+                      DisplayMemberPath="DisplayName"
+                      AutomationProperties.Name="{DynamicResource Template.TemplateLabel}"
+                      AutomationProperties.HelpText="{DynamicResource Template.RunDescription}"/>
+        </StackPanel>
+
+        <Border Grid.Row="2" Margin="0,16,0,0" Padding="14"
+                Background="{DynamicResource WorkspaceSurfaceBrush}"
+                BorderBrush="{DynamicResource WorkspaceBorderBrush}"
+                BorderThickness="1" CornerRadius="10">
+            <StackPanel>
+                <TextBlock x:Name="TemplateSummaryTitle"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="14" FontWeight="SemiBold"/>
+                <TextBlock x:Name="TemplateSummaryText"
+                           Margin="0,6,0,0"
+                           Foreground="{DynamicResource MutedBrush}"
+                           FontSize="12" LineHeight="18"
+                           TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Polite"/>
+                <TextBlock x:Name="ValidationText"
+                           Margin="0,9,0,0"
+                           Foreground="{DynamicResource ErrorTextBrush}"
+                           FontSize="12" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Assertive"
+                           Visibility="Collapsed"/>
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="3" Margin="0,20,0,0"
+                    Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="{DynamicResource Common.Cancel}"
+                    IsCancel="True" Padding="14,8" Margin="0,0,8,0"/>
+            <Button x:Name="RunButton"
+                    Content="{DynamicResource Template.RunAction}"
+                    Click="RunButton_Click"
+                    IsDefault="True" Padding="16,8"/>
+        </StackPanel>
+    </Grid>
+</Window>

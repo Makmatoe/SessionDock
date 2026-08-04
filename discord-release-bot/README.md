@@ -3,15 +3,31 @@
 This directory contains two separate Discord paths. Choose the path that matches
 your job; they are deliberately not interchangeable.
 
+> **Scope:** these are maintainer/community announcement tools. SessionDock
+> users do not install or run them, and they have no role in HandleScope,
+> ExactWheel, macros, templates, or the laptop execution-policy issue. A Discord
+> message cannot turn an untested or provenance-blocked source tree into a
+> release.
+
+> **Distribution hold — 2026-08-04:** the current latest release is a
+> zero-asset security-hold record. Do not stage or announce a replacement until
+> its reviewed draft has passed the complete release gate and separate laptop
+> validation, and the publication approval explicitly lifts the hold.
+
 | Path | Audience | What it does | Official release authority |
 | --- | --- | --- | --- |
 | Protected release announcement | SessionDock maintainers | Posts the canonical release notes automatically after the guarded GitHub release becomes public | Yes |
 | Optional `/release` community bot | Discord server administrators | Publishes an administrator-written community update through a Discord form | No |
 
-The optional community bot is **not used by the release workflow** and **must not be used to publish official
-SessionDock releases**. Submitting its form
+The optional community bot is **not used by the release workflow** and **must
+not be used to publish official SessionDock releases**. Submitting its form
 creates only a Discord message: it does not build, sign, attest, upload, or
 publish a GitHub release.
+
+Before configuring an announcement for the integrated workflow, confirm the
+complete build/manual-test gate and every component provenance/licensing block
+is cleared. This README does not claim that the current source has been
+published.
 
 ## Official release announcements
 
@@ -19,6 +35,14 @@ The tag-triggered GitHub Actions workflow owns the official path. It generates
 the announcement from
 `SessionDock/ReleaseNotes/<version>.en-US.md`; there is no announcement form,
 preview confirmation, or assistant-operated posting step.
+
+The announcement's **Download** field identifies the
+**Windows x64 portable ZIP** and links only to the canonical
+`SessionDock-win-x64-Portable.zip` release asset. The protected path does not
+advertise or accept a Setup executable. Announcement schema 2 makes that
+portable-only identity mandatory; legacy schema-1 artifacts containing
+`installerUrl` or `SessionDock-win-x64-Setup.exe` are rejected rather than
+silently upgraded.
 
 ### Configure the protected path
 
@@ -55,7 +79,7 @@ preview confirmation, or assistant-operated posting step.
    from an older version. See [the maintainer release guide](../docs/RELEASING.md#optional-reviewed-discord-images)
    for the exact schema and limits.
 7. Follow the validation and annotated-tag procedure in
-   [the maintainer release guide](../docs/RELEASING.md#prepare-and-validate).
+   [the maintainer release guide](../docs/RELEASING.md#release-admission).
    Approve the separate `release` and `release-publication` environments only
    after reviewing their evidence.
 8. Let the post-publication job deliver and read back the announcement. If it

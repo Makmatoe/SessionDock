@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.Win32.SafeHandles;
 
 namespace SessionDock.Services;
 
@@ -8,18 +9,61 @@ internal static class RobloxExecutableTrust
         string path,
         bool forceRefresh = false)
     {
-        var localVersionsRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Roblox", "Versions");
-        var programFilesRoot = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "Roblox");
+        var (localVersionsRoot, programFilesRoot) = GetTrustedRoots();
         return IsTrustedPlayerPath(
             path,
             localVersionsRoot,
             programFilesRoot,
             forceRefresh,
             WindowsExecutableTrust.TryGetTrustedSigner);
+    }
+
+    internal static bool IsTrustedPlayerPath(
+        string path,
+        SafeFileHandle retainedFileHandle,
+        bool forceRefresh = false)
+    {
+        var (localVersionsRoot, programFilesRoot) = GetTrustedRoots();
+        return IsTrustedPlayerPath(
+            path,
+            localVersionsRoot,
+            programFilesRoot,
+            retainedFileHandle,
+            forceRefresh,
+            WindowsExecutableTrust.TryGetTrustedSigner);
+    }
+
+    internal static bool IsTrustedPlayerPath(
+        string path,
+        string localVersionsRoot,
+        string programFilesRoot,
+        SafeFileHandle retainedFileHandle,
+        bool forceRefresh,
+        TryGetWindowsSignerWithHandle tryGetSigner)
+    {
+        ArgumentNullException.ThrowIfNull(tryGetSigner);
+        if (retainedFileHandle is null ||
+            retainedFileHandle.IsInvalid ||
+            retainedFileHandle.IsClosed)
+        {
+            return false;
+        }
+
+        return IsTrustedPlayerPath(
+            path,
+            localVersionsRoot,
+            programFilesRoot,
+            forceRefresh,
+            TryGetSigner);
+
+        bool TryGetSigner(
+            string candidate,
+            out TrustedWindowsSigner signer,
+            bool refresh) => tryGetSigner(
+                candidate,
+                retainedFileHandle,
+                out signer,
+                refresh);
     }
 
     internal static bool IsTrustedPlayerPath(
@@ -79,8 +123,28 @@ internal static class RobloxExecutableTrust
         }
     }
 
+    private static (string LocalVersionsRoot, string ProgramFilesRoot)
+        GetTrustedRoots() =>
+        (
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "Roblox",
+                "Versions"),
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.ProgramFiles),
+                "Roblox")
+        );
+
     internal delegate bool TryGetWindowsSigner(
         string path,
+        out TrustedWindowsSigner signer,
+        bool forceRefresh);
+
+    internal delegate bool TryGetWindowsSignerWithHandle(
+        string path,
+        SafeFileHandle retainedFileHandle,
         out TrustedWindowsSigner signer,
         bool forceRefresh);
 }
