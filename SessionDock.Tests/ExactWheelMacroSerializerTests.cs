@@ -43,6 +43,421 @@ public sealed class ExactWheelMacroSerializerTests
     }
 
     [Fact]
+    public void Serialize_UnreleasedInputTransition_IsRejected()
+    {
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                new ExactWheelInputEvent(
+                    0,
+                    1,
+                    ExactWheelInputEventType.KeyDown,
+                    0,
+                    0,
+                    0x41,
+                    0x1E)
+            ],
+            durationMicroseconds: 10_000);
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            ExactWheelMacroSerializer.Serialize(recording));
+
+        Assert.Contains(
+            "release every key and mouse button",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyDuplicatedMouseDown_DropsDuplicateAndClosesHold()
+    {
+        var bytes = ExactWheelMacroSerializer.Serialize(
+            ExactWheelTestData.Recording());
+        var firstEvent = checked((int)ReadUInt32(bytes, 12));
+        var mouseUpTypeOffset = checked(
+            firstEvent + 2 * (int)ExactWheelMacroSerializer.EventRecordBytes +
+            4);
+        bytes[mouseUpTypeOffset] =
+            (byte)ExactWheelInputEventType.MouseButtonDown;
+        RewriteCrc(bytes);
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(bytes);
+
+        ExactWheelRecordingValidator.ValidatePlayable(loaded);
+        Assert.Equal(7, loaded.Events.Count);
+        Assert.Single(
+            loaded.Events,
+            inputEvent =>
+                inputEvent.Type == ExactWheelInputEventType.MouseButtonDown);
+        Assert.Single(
+            loaded.Events,
+            inputEvent =>
+                inputEvent.Type == ExactWheelInputEventType.MouseButtonUp);
+        var release = loaded.Events[^1];
+        Assert.Equal(ExactWheelInputEventType.MouseButtonUp, release.Type);
+        Assert.Equal(loaded.DurationMicroseconds, release.TimestampMicroseconds);
+        Assert.Equal(8UL, release.Sequence);
+    }
+
+    [Fact]
+    public void ValidatePlayable_AllowsKeyboardTypematicDownsBeforeOneRelease()
+    {
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                new ExactWheelInputEvent(
+                    0,
+                    1,
+                    ExactWheelInputEventType.KeyDown,
+                    0,
+                    0,
+                    0x41,
+                    0x1E),
+                new ExactWheelInputEvent(
+                    5_000,
+                    2,
+                    ExactWheelInputEventType.KeyDown,
+                    0,
+                    0,
+                    0x41,
+                    0x1E),
+                new ExactWheelInputEvent(
+                    10_000,
+                    3,
+                    ExactWheelInputEventType.KeyUp,
+                    0,
+                    0,
+                    0x41,
+                    0x1E)
+            ],
+            durationMicroseconds: 10_000);
+
+        ExactWheelRecordingValidator.ValidatePlayable(recording);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyUnmatchedKeyDown_PreservesRepeatsAndAppendsRelease()
+    {
+        var keyDown = new ExactWheelInputEvent(
+            100,
+            2,
+            ExactWheelInputEventType.KeyDown,
+            0,
+            0,
+            0x41,
+            0x1E,
+            ExactWheelKeyboardFlags.Extended |
+            ExactWheelKeyboardFlags.AltContext);
+        var keyRepeat = keyDown with
+        {
+            TimestampMicroseconds = 200,
+            Sequence = 3
+        };
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(0, 1),
+                keyDown,
+                keyRepeat,
+                keyDown with
+                {
+                    TimestampMicroseconds = 300,
+                    Sequence = 4,
+                    Type = ExactWheelInputEventType.KeyUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+        var legacyBytes = RemoveLastEvent(
+            ExactWheelMacroSerializer.Serialize(recording));
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(legacyBytes);
+
+        ExactWheelRecordingValidator.ValidatePlayable(loaded);
+        Assert.Equal(4, loaded.Events.Count);
+        Assert.Equal(keyDown, loaded.Events[1]);
+        Assert.Equal(keyRepeat, loaded.Events[2]);
+        Assert.Equal(
+            keyDown with
+            {
+                TimestampMicroseconds = 1_000,
+                Sequence = 4,
+                Type = ExactWheelInputEventType.KeyUp
+            },
+            loaded.Events[3]);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyUnmatchedMouseDown_AppendsExactRelease()
+    {
+        var mouseDown = new ExactWheelInputEvent(
+            100,
+            2,
+            ExactWheelInputEventType.MouseButtonDown,
+            777,
+            444,
+            (int)ExactWheelMouseButton.X2,
+            0);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(0, 1),
+                mouseDown,
+                mouseDown with
+                {
+                    TimestampMicroseconds = 200,
+                    Sequence = 3,
+                    Type = ExactWheelInputEventType.MouseButtonUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+        var legacyBytes = RemoveLastEvent(
+            ExactWheelMacroSerializer.Serialize(recording));
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(legacyBytes);
+
+        ExactWheelRecordingValidator.ValidatePlayable(loaded);
+        Assert.Equal(3, loaded.Events.Count);
+        Assert.Equal(mouseDown, loaded.Events[1]);
+        Assert.Equal(
+            mouseDown with
+            {
+                TimestampMicroseconds = 1_000,
+                Sequence = 3,
+                Type = ExactWheelInputEventType.MouseButtonUp
+            },
+            loaded.Events[2]);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyMixedHolds_AppendsReleasesInReversePressOrder()
+    {
+        var controlDown = new ExactWheelInputEvent(
+            100,
+            2,
+            ExactWheelInputEventType.KeyDown,
+            0,
+            0,
+            0x11,
+            0x1D);
+        var mouseDown = new ExactWheelInputEvent(
+            200,
+            3,
+            ExactWheelInputEventType.MouseButtonDown,
+            777,
+            444,
+            (int)ExactWheelMouseButton.Left,
+            0);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(0, 1),
+                controlDown,
+                mouseDown,
+                mouseDown with
+                {
+                    TimestampMicroseconds = 300,
+                    Sequence = 4,
+                    Type = ExactWheelInputEventType.MouseButtonUp
+                },
+                controlDown with
+                {
+                    TimestampMicroseconds = 400,
+                    Sequence = 5,
+                    Type = ExactWheelInputEventType.KeyUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+        var legacyBytes = RemoveLastEvent(RemoveLastEvent(
+            ExactWheelMacroSerializer.Serialize(recording)));
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(legacyBytes);
+
+        ExactWheelRecordingValidator.ValidatePlayable(loaded);
+        Assert.Equal(
+            mouseDown with
+            {
+                TimestampMicroseconds = 1_000,
+                Sequence = 4,
+                Type = ExactWheelInputEventType.MouseButtonUp
+            },
+            loaded.Events[^2]);
+        Assert.Equal(
+            controlDown with
+            {
+                TimestampMicroseconds = 1_000,
+                Sequence = 5,
+                Type = ExactWheelInputEventType.KeyUp
+            },
+            loaded.Events[^1]);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyUnmatchedUp_IsDropped()
+    {
+        var mouseDown = new ExactWheelInputEvent(
+            100,
+            2,
+            ExactWheelInputEventType.MouseButtonDown,
+            777,
+            444,
+            (int)ExactWheelMouseButton.Left,
+            0);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(0, 1),
+                mouseDown,
+                mouseDown with
+                {
+                    TimestampMicroseconds = 200,
+                    Sequence = 3,
+                    Type = ExactWheelInputEventType.MouseButtonUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+        var legacyBytes = ExactWheelMacroSerializer.Serialize(recording);
+        WriteEvent(
+            legacyBytes,
+            1,
+            new ExactWheelInputEvent(
+                100,
+                2,
+                ExactWheelInputEventType.MouseMove,
+                777,
+                444,
+                0,
+                0));
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(legacyBytes);
+
+        ExactWheelRecordingValidator.ValidatePlayable(loaded);
+        Assert.Equal(2, loaded.Events.Count);
+        Assert.All(
+            loaded.Events,
+            inputEvent => Assert.Equal(
+                ExactWheelInputEventType.MouseMove,
+                inputEvent.Type));
+    }
+
+    [Fact]
+    public void Deserialize_BalancedTypematicV1_RoundTripIsUnchanged()
+    {
+        var keyDown = new ExactWheelInputEvent(
+            100,
+            2,
+            ExactWheelInputEventType.KeyDown,
+            0,
+            0,
+            0x41,
+            0x1E);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(0, 1),
+                keyDown,
+                keyDown with
+                {
+                    TimestampMicroseconds = 200,
+                    Sequence = 3
+                },
+                keyDown with
+                {
+                    TimestampMicroseconds = 300,
+                    Sequence = 4,
+                    Type = ExactWheelInputEventType.KeyUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(
+            ExactWheelMacroSerializer.Serialize(recording));
+
+        Assert.Equal(recording.Events, loaded.Events);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyDownAtSequenceLimit_RemovesOnlyThatTransaction()
+    {
+        var keyDown = new ExactWheelInputEvent(
+            100,
+            2,
+            ExactWheelInputEventType.KeyDown,
+            0,
+            0,
+            0x41,
+            0x1E);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                MouseMove(0, 1),
+                keyDown,
+                keyDown with
+                {
+                    TimestampMicroseconds = 200,
+                    Sequence = 3,
+                    Type = ExactWheelInputEventType.KeyUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+        var legacyBytes = RemoveLastEvent(
+            ExactWheelMacroSerializer.Serialize(recording));
+        WriteEvent(
+            legacyBytes,
+            0,
+            MouseMove(0, ulong.MaxValue - 1));
+        WriteEvent(
+            legacyBytes,
+            1,
+            keyDown with { Sequence = ulong.MaxValue });
+
+        var loaded = ExactWheelMacroSerializer.Deserialize(legacyBytes);
+
+        ExactWheelRecordingValidator.ValidatePlayable(loaded);
+        Assert.Single(loaded.Events);
+        Assert.Equal(ExactWheelInputEventType.MouseMove, loaded.Events[0].Type);
+        Assert.Equal(ulong.MaxValue - 1, loaded.Events[0].Sequence);
+    }
+
+    [Fact]
+    public void Deserialize_LegacyOnlyDownAtSequenceLimit_NeverReturnsEmptyMacro()
+    {
+        var keyDown = new ExactWheelInputEvent(
+            100,
+            1,
+            ExactWheelInputEventType.KeyDown,
+            0,
+            0,
+            0x41,
+            0x1E);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                keyDown,
+                keyDown with
+                {
+                    TimestampMicroseconds = 200,
+                    Sequence = 2,
+                    Type = ExactWheelInputEventType.KeyUp
+                }
+            ],
+            durationMicroseconds: 1_000);
+        var legacyBytes = RemoveLastEvent(
+            ExactWheelMacroSerializer.Serialize(recording));
+        WriteEvent(
+            legacyBytes,
+            0,
+            keyDown with { Sequence = ulong.MaxValue });
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            ExactWheelMacroSerializer.Deserialize(legacyBytes));
+
+        Assert.Contains(
+            "at least one input event",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Serialize_V1LayoutAndCrc_AreExact()
     {
         var recording = ExactWheelTestData.Recording();
@@ -312,6 +727,70 @@ public sealed class ExactWheelMacroSerializerTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static ExactWheelInputEvent MouseMove(
+        ulong timestampMicroseconds,
+        ulong sequence) =>
+        new(
+            timestampMicroseconds,
+            sequence,
+            ExactWheelInputEventType.MouseMove,
+            100,
+            80,
+            0,
+            0);
+
+    private static byte[] RemoveLastEvent(byte[] bytes)
+    {
+        var eventCount = ReadUInt64(bytes, 28);
+        if (eventCount == 0)
+            throw new ArgumentException("The macro has no event to remove.");
+        var retainedBytes = checked(
+            bytes.Length - sizeof(uint) -
+            (int)ExactWheelMacroSerializer.EventRecordBytes);
+        var result = new byte[checked(
+            bytes.Length -
+            (int)ExactWheelMacroSerializer.EventRecordBytes)];
+        bytes.AsSpan(0, retainedBytes).CopyTo(result);
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            result.AsSpan(28),
+            eventCount - 1);
+        RewriteCrc(result);
+        return result;
+    }
+
+    private static void WriteEvent(
+        byte[] bytes,
+        int eventIndex,
+        ExactWheelInputEvent inputEvent)
+    {
+        var eventOffset = checked(
+            (int)ReadUInt32(bytes, 12) +
+            eventIndex * (int)ExactWheelMacroSerializer.EventRecordBytes);
+        bytes[eventOffset + 4] = (byte)inputEvent.Type;
+        BinaryPrimitives.WriteUInt32LittleEndian(
+            bytes.AsSpan(eventOffset + 8),
+            (uint)inputEvent.Flags);
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            bytes.AsSpan(eventOffset + 16),
+            inputEvent.TimestampMicroseconds);
+        BinaryPrimitives.WriteUInt64LittleEndian(
+            bytes.AsSpan(eventOffset + 24),
+            inputEvent.Sequence);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(eventOffset + 32),
+            inputEvent.X);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(eventOffset + 36),
+            inputEvent.Y);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(eventOffset + 40),
+            inputEvent.Data1);
+        BinaryPrimitives.WriteInt32LittleEndian(
+            bytes.AsSpan(eventOffset + 44),
+            inputEvent.Data2);
+        RewriteCrc(bytes);
     }
 
     private static ushort ReadUInt16(byte[] bytes, int offset) =>

@@ -460,12 +460,13 @@ public partial class MainWindow
         // each short n=1 cycle; every PlayAsync still verifies its health.
         await using var playbackSequence =
             playbackSession.BeginPlaybackSequence();
+        var clientModeActive = prepared.ClientTemplate is not null;
+        var wholeModeActive = prepared.WholeTemplate is not null;
         await SessionMacroPlaybackLoop.RunUntilStoppedAsync(
             async cycleCancellationToken =>
             {
-                var mayContinue = true;
                 var madeProgress = false;
-                if (prepared.ClientTemplate is not null)
+                if (clientModeActive && prepared.ClientTemplate is not null)
                 {
                     var result = await PlayTemplateMacrosAsync(
                         prepared.ClientTemplate,
@@ -474,12 +475,14 @@ public partial class MainWindow
                         rate,
                         playbackText,
                         cycleCancellationToken);
-                    mayContinue = result.MayContinue;
-                    madeProgress |= result.MadeProgress;
                     if (!string.IsNullOrWhiteSpace(result.Warning))
                         warnings.Add(result.Warning);
+                    if (result.StopAll)
+                        return SessionMacroPlaybackCycleResult.Stop;
+                    clientModeActive = result.MayContinue;
+                    madeProgress |= result.MadeProgress;
                 }
-                if (mayContinue && prepared.WholeTemplate is not null)
+                if (wholeModeActive && prepared.WholeTemplate is not null)
                 {
                     var result = await PlayTemplateMacrosAsync(
                         prepared.WholeTemplate,
@@ -488,13 +491,19 @@ public partial class MainWindow
                         rate,
                         playbackText,
                         cycleCancellationToken);
-                    mayContinue = result.MayContinue;
-                    madeProgress |= result.MadeProgress;
                     if (!string.IsNullOrWhiteSpace(result.Warning))
                         warnings.Add(result.Warning);
+                    if (result.StopAll)
+                        return SessionMacroPlaybackCycleResult.Stop;
+                    wholeModeActive = result.MayContinue;
+                    madeProgress |= result.MadeProgress;
                 }
 
-                if (!mayContinue)
+                // A corrupt or permanently invalid assignment retires only
+                // its own mode. The other independently valid mode keeps
+                // looping; only an unsafe global input/monitor failure sets
+                // StopAll above.
+                if (!clientModeActive && !wholeModeActive)
                     return SessionMacroPlaybackCycleResult.Stop;
                 if (madeProgress)
                     return SessionMacroPlaybackCycleResult.Continue();

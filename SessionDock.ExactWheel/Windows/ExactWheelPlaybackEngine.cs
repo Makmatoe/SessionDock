@@ -186,10 +186,10 @@ internal sealed class Win32PlaybackWaiter : IPlaybackWaiter
 
 internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
 {
-    // A paused whole-session macro can remain here indefinitely. Ten
-    // milliseconds keeps refocus responsive without polling foreground and
-    // process identity hundreds of times per second on a laptop.
-    private const ulong TargetGuardPollMicroseconds = 10_000;
+    // A paused whole-session macro can remain here indefinitely. Twenty
+    // checks per second keeps refocus responsive without repeatedly polling
+    // foreground and process identity on a constrained laptop.
+    private const ulong TargetGuardPollMicroseconds = 50_000;
     // A malformed or legacy zero-duration timeline must never turn an
     // infinite repeat into a dedicated-thread busy loop. The playable
     // boundary rejects empty recordings; this floor is the final defense for
@@ -197,9 +197,6 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
     private const ulong MinimumInfiniteInterLoopDelayMicroseconds = 10_000;
     private static readonly TimeSpan FocusTransitionPollInterval =
         TimeSpan.FromMilliseconds(50);
-    private const string UnsafeHeldInputPauseMessage =
-        "Playback stopped before pausing because an injected key or mouse button was still held. Cleanup emitted the required global release input to avoid leaving Windows in a stuck state.";
-
     private readonly object _gate = new();
     private readonly ExactWheelInputInjector _injector;
     private readonly IPlaybackClock _clock;
@@ -431,13 +428,8 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             Array.Empty<int>());
         if (!physicalInputPrevalidated)
         {
-            if (!physicalInputReleased)
-            {
-                return ExactWheelFocusTransitionWaitResult
-                    .PhysicalInputHeld;
-            }
-
-            MarkRetainedPhysicalInputPrevalidated(capture);
+            if (physicalInputReleased)
+                MarkRetainedPhysicalInputPrevalidated(capture);
         }
 
         // The common serial transition performs no polling or authorization
@@ -479,6 +471,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                         GetResumeAuthorization(resumeAuthorization) ==
                             ExactWheelDispatchAuthorization.Authorized)
                     {
+                        MarkRetainedPhysicalInputPrevalidated(capture);
                         return ExactWheelFocusTransitionWaitResult.Ready;
                     }
                 }
@@ -742,16 +735,23 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         }
         catch (Win32Exception exception)
         {
-            return Result(
+            return Cleanup(Result(
                 ExactWheelPlaybackStopReason.TimerFailed,
                 exception.NativeErrorCode,
-                message: exception.Message);
+                message: exception.Message));
         }
         catch (InvalidOperationException exception)
         {
-            return Result(
+            return Cleanup(Result(
                 ExactWheelPlaybackStopReason.InvalidTimeline,
-                message: exception.Message);
+                message: exception.Message));
+        }
+        catch
+        {
+            // Unexpected worker failures remain terminal, but no exception is
+            // allowed to bypass the global injected-input release guard.
+            _ = _injector.ReleaseHeld();
+            throw;
         }
         finally
         {
@@ -935,6 +935,7 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             .DestinationDisplay ?? recording.Display;
 
         var result = Result(ExactWheelPlaybackStopReason.Completed);
+        NeutralizedInputTransaction? neutralizedTransaction = null;
         var progress = new PlaybackProgressReporter(
             options.Progress,
             options.ProgressIntervalMicroseconds,
@@ -988,43 +989,39 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                         break;
                     }
 
+                    var suppressInterruptedTransaction =
+                        neutralizedTransaction?.IsActive == true;
                     var dispatchWait = WaitUntilDispatchReady(
                         ref deadline,
-                        inputEvent,
+                        suppressInterruptedTransaction ? null : inputEvent,
                         options,
                         stopEvent,
                         interventionEvent,
                         retainedInterventionCapture,
                         frequency,
                         out var dispatchWaitError,
-                        out var playbackPauseTicks);
+                        out var playbackPauseTicks,
+                        out var dispatchHeldInputAttempt,
+                        out var dispatchNeutralizedInputs);
                     if (dispatchWait != DispatchGuardWaitResult.Authorized)
                     {
                         result = Result(
-                            dispatchWait switch
-                            {
-                                DispatchGuardWaitResult.Cancelled =>
-                                    ExactWheelPlaybackStopReason.Cancelled,
-                                DispatchGuardWaitResult.PhysicalIntervention =>
-                                    ExactWheelPlaybackStopReason
-                                        .PhysicalIntervention,
-                                DispatchGuardWaitResult.TimerFailed =>
-                                    ExactWheelPlaybackStopReason.TimerFailed,
-                                _ => ExactWheelPlaybackStopReason.TargetLost
-                            },
+                            GetStopReason(dispatchWait),
                             dispatchWaitError,
+                            dispatchHeldInputAttempt.Submitted,
+                            dispatchHeldInputAttempt.Expected,
                             loopIndex: loopIndex,
                             eventIndex: eventIndex,
-                            message: dispatchWait switch
-                            {
-                                DispatchGuardWaitResult.UnsafeHeldInputs =>
-                                    UnsafeHeldInputPauseMessage,
-                                DispatchGuardWaitResult.Denied =>
-                                    "The verified playback target is no longer available.",
-                                _ =>
-                                    "Playback stopped while waiting for the verified target."
-                            });
+                            message: GetDispatchFailureMessage(dispatchWait));
                         break;
+                    }
+
+                    if (dispatchNeutralizedInputs is not null)
+                    {
+                        neutralizedTransaction ??=
+                            new NeutralizedInputTransaction();
+                        neutralizedTransaction.Add(
+                            dispatchNeutralizedInputs);
                     }
 
                     if (playbackPauseTicks > 0)
@@ -1092,16 +1089,6 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                     }
                     if (interventionEvent?.WaitOne(0) == true)
                     {
-                        if (_injector.HasHeldInputs &&
-                            options.PauseOnPhysicalInput)
-                        {
-                            result = Result(
-                                ExactWheelPlaybackStopReason.TargetLost,
-                                loopIndex: loopIndex,
-                                eventIndex: eventIndex,
-                                message: UnsafeHeldInputPauseMessage);
-                            break;
-                        }
                         if (!options.PauseOnPhysicalInput)
                         {
                             result = Result(
@@ -1111,10 +1098,21 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                                 eventIndex: eventIndex);
                             break;
                         }
-                        ResetPhysicalPauseSignal(
-                            interventionEvent,
-                            retainedInterventionCapture);
                         continue;
+                    }
+
+                    if (neutralizedTransaction?.IsActive == true)
+                    {
+                        neutralizedTransaction.Suppress(inputEvent);
+                        progress.Report(
+                            _clock.Timestamp,
+                            new ExactWheelPlaybackProgress(
+                                loopIndex,
+                                eventIndex,
+                                recording.Events.Count,
+                                timelineEvent.TimestampMicroseconds,
+                                0));
+                        break;
                     }
 
                     // This single event-aware authorization is deliberately
@@ -1138,54 +1136,39 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                     if (finalAuthorization ==
                         ExactWheelDispatchAuthorization.TemporarilyUnavailable)
                     {
-                        if (_injector.HasHeldInputs)
-                        {
-                            result = Result(
-                                ExactWheelPlaybackStopReason.TargetLost,
-                                loopIndex: loopIndex,
-                                eventIndex: eventIndex,
-                                message: UnsafeHeldInputPauseMessage);
-                            break;
-                        }
-
                         var authorizationWait = WaitForDispatchAuthorization(
                             inputEvent,
+                            targetWaitAlreadyStarted: true,
                             options,
                             stopEvent,
                             interventionEvent,
                             retainedInterventionCapture,
                             frequency,
                             out var authorizationError,
-                            out var authorizationPauseTicks);
+                            out var authorizationPauseTicks,
+                            out var authorizationHeldInputAttempt,
+                            out var authorizationNeutralizedInputs);
                         if (authorizationWait !=
                             DispatchGuardWaitResult.Authorized)
                         {
                             result = Result(
-                                authorizationWait switch
-                                {
-                                    DispatchGuardWaitResult.Cancelled =>
-                                        ExactWheelPlaybackStopReason.Cancelled,
-                                    DispatchGuardWaitResult
-                                        .PhysicalIntervention =>
-                                        ExactWheelPlaybackStopReason
-                                            .PhysicalIntervention,
-                                    DispatchGuardWaitResult.TimerFailed =>
-                                        ExactWheelPlaybackStopReason.TimerFailed,
-                                    _ => ExactWheelPlaybackStopReason.TargetLost
-                                },
+                                GetStopReason(authorizationWait),
                                 authorizationError,
+                                authorizationHeldInputAttempt.Submitted,
+                                authorizationHeldInputAttempt.Expected,
                                 loopIndex: loopIndex,
                                 eventIndex: eventIndex,
-                                message: authorizationWait switch
-                                {
-                                    DispatchGuardWaitResult.UnsafeHeldInputs =>
-                                        UnsafeHeldInputPauseMessage,
-                                    DispatchGuardWaitResult.Denied =>
-                                        "The verified playback target is no longer available.",
-                                    _ =>
-                                        "Playback stopped while waiting for the verified target."
-                                });
+                                message: GetDispatchFailureMessage(
+                                    authorizationWait));
                             break;
+                        }
+
+                        if (authorizationNeutralizedInputs is not null)
+                        {
+                            neutralizedTransaction ??=
+                                new NeutralizedInputTransaction();
+                            neutralizedTransaction.Add(
+                                authorizationNeutralizedInputs);
                         }
 
                         try
@@ -1264,21 +1247,8 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                     }
                     if (interventionEvent?.WaitOne(0) == true)
                     {
-                        if (_injector.HasHeldInputs &&
-                            options.PauseOnPhysicalInput)
-                        {
-                            result = Result(
-                                ExactWheelPlaybackStopReason.TargetLost,
-                                loopIndex: loopIndex,
-                                eventIndex: eventIndex,
-                                message: UnsafeHeldInputPauseMessage);
-                            break;
-                        }
                         if (options.PauseOnPhysicalInput)
                         {
-                            ResetPhysicalPauseSignal(
-                                interventionEvent,
-                                retainedInterventionCapture);
                             continue;
                         }
                         result = Result(
@@ -1304,6 +1274,30 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                             lateness,
                             message: "SendInput accepted only part of an event; it was not retried.");
                         break;
+                    }
+
+                    if (options.DispatchCompleted is { } dispatchCompleted)
+                    {
+                        try
+                        {
+                            // This acknowledgement is deliberately after a
+                            // complete SendInput acceptance and before any
+                            // later event can be authorized. A host can bind a
+                            // click-driven focus change to the exact event that
+                            // caused it instead of guessing that authorization
+                            // also meant injection.
+                            dispatchCompleted(inputEvent);
+                        }
+                        catch (Exception)
+                        {
+                            result = Result(
+                                ExactWheelPlaybackStopReason.TargetLost,
+                                loopIndex: loopIndex,
+                                eventIndex: eventIndex,
+                                latenessMicroseconds: lateness,
+                                message: "The playback target rejected the completed input acknowledgement.");
+                            break;
+                        }
                     }
 
                     progress.Report(
@@ -1352,27 +1346,26 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 retainedInterventionCapture,
                 frequency,
                 out var endWaitError,
-                out var endPauseTicks);
+                out var endPauseTicks,
+                out var endHeldInputAttempt,
+                out var endNeutralizedInputs);
             if (endWait != DispatchGuardWaitResult.Authorized)
             {
                 result = Result(
-                    endWait switch
-                    {
-                        DispatchGuardWaitResult.Cancelled =>
-                            ExactWheelPlaybackStopReason.Cancelled,
-                        DispatchGuardWaitResult.PhysicalIntervention =>
-                            ExactWheelPlaybackStopReason.PhysicalIntervention,
-                        DispatchGuardWaitResult.TimerFailed =>
-                            ExactWheelPlaybackStopReason.TimerFailed,
-                        _ => ExactWheelPlaybackStopReason.TargetLost
-                    },
+                    GetStopReason(endWait),
                     endWaitError,
+                    endHeldInputAttempt.Submitted,
+                    endHeldInputAttempt.Expected,
                     loopIndex: loopIndex,
-                    message: endWait ==
-                        DispatchGuardWaitResult.UnsafeHeldInputs
-                        ? UnsafeHeldInputPauseMessage
-                        : string.Empty);
+                    message: GetDispatchFailureMessage(endWait));
                 break;
+            }
+
+            if (endNeutralizedInputs is not null)
+            {
+                neutralizedTransaction ??=
+                    new NeutralizedInputTransaction();
+                neutralizedTransaction.Add(endNeutralizedInputs);
             }
 
             if (endPauseTicks > 0)
@@ -1599,10 +1592,14 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         IExactWheelInputCapture? retainedInterventionCapture,
         long frequency,
         out int win32Error,
-        out long playbackPauseTicks)
+        out long playbackPauseTicks,
+        out InjectionAttempt heldInputAttempt,
+        out ExactWheelHeldInputSuspension? neutralizedInputs)
     {
         win32Error = 0;
         playbackPauseTicks = 0;
+        heldInputAttempt = default;
+        neutralizedInputs = null;
         while (true)
         {
             if (!IsInterventionMonitorHealthy(
@@ -1636,15 +1633,22 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
 
             var authorization = WaitForDispatchAuthorization(
                 inputEvent,
+                targetWaitAlreadyStarted: false,
                 options,
                 stopEvent,
                 interventionEvent,
                 retainedInterventionCapture,
                 frequency,
                 out win32Error,
-                out var currentPauseTicks);
+                out var currentPauseTicks,
+                out var currentHeldInputAttempt,
+                out var currentNeutralizedInputs);
             if (authorization != DispatchGuardWaitResult.Authorized)
+            {
+                heldInputAttempt = currentHeldInputAttempt;
                 return authorization;
+            }
+            neutralizedInputs ??= currentNeutralizedInputs;
             if (currentPauseTicks == 0)
                 continue;
 
@@ -1666,17 +1670,54 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
 
     private DispatchGuardWaitResult WaitForDispatchAuthorization(
         ExactWheelInputEvent? inputEvent,
+        bool targetWaitAlreadyStarted,
         ExactWheelPlaybackOptions options,
         EventWaitHandle stopEvent,
         EventWaitHandle? interventionEvent,
         IExactWheelInputCapture? retainedInterventionCapture,
         long frequency,
         out int win32Error,
-        out long playbackPauseTicks)
+        out long playbackPauseTicks,
+        out InjectionAttempt heldInputAttempt,
+        out ExactWheelHeldInputSuspension? neutralizedInputs)
     {
         win32Error = 0;
         playbackPauseTicks = 0;
+        heldInputAttempt = default;
+        neutralizedInputs = null;
         long? pauseStarted = null;
+        long? authorizationStableSince = null;
+        long? targetWaitDeadline = null;
+        long? targetWaitPhysicalPauseStarted = null;
+        long recoverySettleTicks;
+        long authorizationTimeoutTicks;
+        try
+        {
+            recoverySettleTicks = ExactWheelTiming.EventDeadlineTicks(
+                0,
+                options.DispatchRecoverySettleMicroseconds,
+                ExactWheelPlaybackRate.Recorded,
+                frequency);
+            authorizationTimeoutTicks = ExactWheelTiming.EventDeadlineTicks(
+                0,
+                options.DispatchAuthorizationTimeoutMicroseconds,
+                ExactWheelPlaybackRate.Recorded,
+                frequency);
+        }
+        catch (Exception exception) when (
+            exception is OverflowException or ArgumentException)
+        {
+            return DispatchGuardWaitResult.TimerFailed;
+        }
+        if (targetWaitAlreadyStarted && authorizationTimeoutTicks > 0)
+        {
+            var timestamp = _clock.Timestamp;
+            targetWaitDeadline = timestamp >
+                long.MaxValue - authorizationTimeoutTicks
+                ? long.MaxValue
+                : timestamp + authorizationTimeoutTicks;
+        }
+        ExactWheelHeldInputSuspension? heldInputSuspension = null;
         while (true)
         {
             if (!IsInterventionMonitorHealthy(
@@ -1693,8 +1734,6 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 return DispatchGuardWaitResult.PhysicalIntervention;
             if (physicalIntervention)
             {
-                if (_injector.HasHeldInputs)
-                    return DispatchGuardWaitResult.UnsafeHeldInputs;
                 pauseStarted ??= _clock.Timestamp;
                 // Reset first. A hook callback racing the physical-state read
                 // will set the manual-reset event again and survive the final
@@ -1711,12 +1750,6 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 inputEvent);
             if (authorization == ExactWheelDispatchAuthorization.Denied)
                 return DispatchGuardWaitResult.Denied;
-            if (authorization ==
-                    ExactWheelDispatchAuthorization.TemporarilyUnavailable &&
-                _injector.HasHeldInputs)
-            {
-                return DispatchGuardWaitResult.UnsafeHeldInputs;
-            }
 
             var interventionStillActive =
                 interventionEvent?.WaitOne(0) == true;
@@ -1729,29 +1762,124 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
                 interventionEvent!.Set();
                 interventionStillActive = true;
             }
-            if (interventionStillActive && _injector.HasHeldInputs)
-                return DispatchGuardWaitResult.UnsafeHeldInputs;
-            if (authorization == ExactWheelDispatchAuthorization.Authorized &&
+            if (physicalIntervention ||
+                authorization != ExactWheelDispatchAuthorization.Authorized ||
+                interventionStillActive)
+            {
+                authorizationStableSince = null;
+            }
+
+            // Once a target gap begins, an Authorized blip does not erase its
+            // budget: authorization must remain stable through the settle
+            // window before this method returns. Otherwise a B-A-B foreground
+            // bounce could monopolize the serial n-client player forever.
+            // Human intervention is different; freeze and shift the target
+            // deadline for the complete physical pause.
+            var physicalPauseActive =
+                physicalIntervention || interventionStillActive;
+            var authorizationTimestamp = _clock.Timestamp;
+            if (authorizationTimeoutTicks > 0 &&
+                targetWaitDeadline is null &&
+                authorization ==
+                    ExactWheelDispatchAuthorization.TemporarilyUnavailable)
+            {
+                targetWaitDeadline = authorizationTimestamp >
+                    long.MaxValue - authorizationTimeoutTicks
+                    ? long.MaxValue
+                    : authorizationTimestamp + authorizationTimeoutTicks;
+            }
+            if (targetWaitDeadline is not null)
+            {
+                if (physicalPauseActive)
+                {
+                    targetWaitPhysicalPauseStarted ??=
+                        authorizationTimestamp;
+                }
+                else
+                {
+                    if (targetWaitPhysicalPauseStarted is not null)
+                    {
+                        var excludedTicks = Math.Max(
+                            0,
+                            authorizationTimestamp -
+                                targetWaitPhysicalPauseStarted.Value);
+                        targetWaitDeadline = targetWaitDeadline.Value >
+                            long.MaxValue - excludedTicks
+                            ? long.MaxValue
+                            : targetWaitDeadline.Value + excludedTicks;
+                        targetWaitPhysicalPauseStarted = null;
+                    }
+                    if (authorizationTimestamp >=
+                        targetWaitDeadline.Value)
+                    {
+                        return DispatchGuardWaitResult
+                            .TemporarilyUnavailable;
+                    }
+                }
+            }
+            if (!physicalIntervention &&
+                authorization == ExactWheelDispatchAuthorization.Authorized &&
                 !interventionStillActive)
             {
-                if (pauseStarted is not null)
+                authorizationStableSince ??= _clock.Timestamp;
+                var stableTicks = Math.Max(
+                    0,
+                    _clock.Timestamp - authorizationStableSince.Value);
+                if (stableTicks >= recoverySettleTicks)
                 {
-                    playbackPauseTicks = Math.Max(
-                        0,
-                        _clock.Timestamp - pauseStarted.Value);
+                    neutralizedInputs = heldInputSuspension;
+                    if (pauseStarted is not null)
+                    {
+                        playbackPauseTicks = Math.Max(
+                            0,
+                            _clock.Timestamp - pauseStarted.Value);
+                    }
+                    return DispatchGuardWaitResult.Authorized;
                 }
-                return DispatchGuardWaitResult.Authorized;
             }
 
             pauseStarted ??= _clock.Timestamp;
+            if (heldInputSuspension is null && _injector.HasHeldInputs)
+            {
+                var suspended = _injector.SuspendHeld(
+                    out heldInputSuspension);
+                if (!suspended.Succeeded)
+                {
+                    heldInputAttempt = suspended;
+                    win32Error = suspended.Win32Error;
+                    return DispatchGuardWaitResult
+                        .HeldInputReleaseFailed;
+                }
+            }
+
             long pollDeadline;
             try
             {
-                pollDeadline = ExactWheelTiming.EventDeadlineTicks(
-                    _clock.Timestamp,
+                var pollTicks = ExactWheelTiming.EventDeadlineTicks(
+                    0,
                     TargetGuardPollMicroseconds,
                     ExactWheelPlaybackRate.Recorded,
                     frequency);
+                if (authorizationStableSince is not null)
+                {
+                    var stableTicks = Math.Max(
+                        0,
+                        _clock.Timestamp -
+                            authorizationStableSince.Value);
+                    pollTicks = Math.Min(
+                        pollTicks,
+                        Math.Max(1, recoverySettleTicks - stableTicks));
+                }
+                if (targetWaitDeadline is not null &&
+                    targetWaitPhysicalPauseStarted is null)
+                {
+                    pollTicks = Math.Min(
+                        pollTicks,
+                        Math.Max(
+                            1,
+                            targetWaitDeadline.Value - _clock.Timestamp));
+                }
+                pollDeadline = checked(_clock.Timestamp + pollTicks);
             }
             catch (Exception exception) when (
                 exception is OverflowException or ArgumentException)
@@ -1779,10 +1907,10 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         ExactWheelPlaybackResult result)
     {
         // SendInput state is global, so a held transition must always receive
-        // its matching release—even after fail-closed target loss. The unsafe
-        // pause path stops every further recorded event first; this cleanup
-        // release is the unavoidable action that prevents a system-wide stuck
-        // modifier or mouse button and is surfaced in that result's message.
+        // a matching release even after fail-closed target loss. A normal
+        // pause neutralizes its interrupted transaction earlier; this final
+        // release remains the last defense against a system-wide stuck key or
+        // mouse button on cancellation or a hard native failure.
         var cleanup = _injector.ReleaseHeld();
         if (cleanup.Succeeded)
             return result with { CleanupSucceeded = true };
@@ -1836,6 +1964,36 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             return ExactWheelDispatchAuthorization.Denied;
         }
     }
+
+    private static ExactWheelPlaybackStopReason GetStopReason(
+        DispatchGuardWaitResult waitResult) =>
+        waitResult switch
+        {
+            DispatchGuardWaitResult.Cancelled =>
+                ExactWheelPlaybackStopReason.Cancelled,
+            DispatchGuardWaitResult.PhysicalIntervention =>
+                ExactWheelPlaybackStopReason.PhysicalIntervention,
+            DispatchGuardWaitResult.TimerFailed =>
+                ExactWheelPlaybackStopReason.TimerFailed,
+            DispatchGuardWaitResult.HeldInputReleaseFailed =>
+                ExactWheelPlaybackStopReason.InjectionFailed,
+            DispatchGuardWaitResult.TemporarilyUnavailable =>
+                ExactWheelPlaybackStopReason.TargetUnavailable,
+            _ => ExactWheelPlaybackStopReason.TargetLost
+        };
+
+    private static string GetDispatchFailureMessage(
+        DispatchGuardWaitResult waitResult) =>
+        waitResult switch
+        {
+            DispatchGuardWaitResult.HeldInputReleaseFailed =>
+                "Windows could not temporarily release held macro input before pausing.",
+            DispatchGuardWaitResult.Denied =>
+                "The verified playback target is no longer available.",
+            DispatchGuardWaitResult.TemporarilyUnavailable =>
+                "Playback yielded this target after it remained temporarily unavailable.",
+            _ => "Playback stopped while waiting for the verified target."
+        };
 
     private static ExactWheelDispatchAuthorization GetResumeAuthorization(
         Func<ExactWheelDispatchAuthorization> resumeAuthorization)
@@ -1893,19 +2051,6 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             ? tracked.AreKeysReleased(virtualKeys)
             : _physicalInput.AreKeysReleased(virtualKeys);
 
-    private void ResetPhysicalPauseSignal(
-        EventWaitHandle interventionEvent,
-        IExactWheelInputCapture? capture)
-    {
-        interventionEvent.Reset();
-        if (!ArePhysicalInputsReleased(
-                capture,
-                Array.Empty<int>()))
-        {
-            interventionEvent.Set();
-        }
-    }
-
     private static void ValidateOptions(ExactWheelPlaybackOptions options)
     {
         var dispatchGuardCount =
@@ -1916,6 +2061,10 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
             options.Rate.Denominator == 0 ||
             options.LoopCount == 0 ||
             options.InterLoopDelayMicroseconds >
+                ExactWheelLimits.MaximumDurationMicroseconds ||
+            options.DispatchRecoverySettleMicroseconds >
+                ExactWheelLimits.MaximumDurationMicroseconds ||
+            options.DispatchAuthorizationTimeoutMicroseconds >
                 ExactWheelLimits.MaximumDurationMicroseconds ||
             options.MaximumCatchUpMicroseconds >
                 ExactWheelLimits.MaximumDurationMicroseconds ||
@@ -2055,13 +2204,103 @@ internal sealed class ExactWheelPlaybackEngine : IAsyncDisposable
         }
     }
 
+    private sealed class NeutralizedInputTransaction
+    {
+        private readonly List<ExactWheelInputEvent> _pendingDowns = [];
+
+        internal bool IsActive => _pendingDowns.Count != 0;
+
+        internal void Add(ExactWheelHeldInputSuspension suspension)
+        {
+            ArgumentNullException.ThrowIfNull(suspension);
+            foreach (var downEvent in suspension.HeldInputs)
+            {
+                if (FindIdentity(downEvent) < 0)
+                    _pendingDowns.Add(downEvent);
+            }
+        }
+
+        // Once Windows has emitted the safety release for an interrupted
+        // chord, drag, or click, replaying any remainder can turn one action
+        // into two or remove its modifier. Suppress the complete logical
+        // transaction through its neutral boundary. Downs that begin inside
+        // that interval are tracked so their later Ups are also consumed.
+        internal void Suppress(ExactWheelInputEvent inputEvent)
+        {
+            if (inputEvent.Type is ExactWheelInputEventType.KeyDown or
+                ExactWheelInputEventType.MouseButtonDown)
+            {
+                if (FindIdentity(inputEvent) < 0)
+                    _pendingDowns.Add(inputEvent);
+                return;
+            }
+
+            if (inputEvent.Type is not ExactWheelInputEventType.KeyUp and
+                not ExactWheelInputEventType.MouseButtonUp)
+            {
+                return;
+            }
+
+            var index = FindIdentity(inputEvent);
+            if (index >= 0)
+                _pendingDowns.RemoveAt(index);
+        }
+
+        private int FindIdentity(ExactWheelInputEvent inputEvent)
+        {
+            for (var index = 0; index < _pendingDowns.Count; index++)
+            {
+                if (HasSameHeldIdentity(
+                        _pendingDowns[index],
+                        inputEvent))
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool HasSameHeldIdentity(
+            ExactWheelInputEvent downEvent,
+            ExactWheelInputEvent candidate)
+        {
+            if (downEvent.Type == ExactWheelInputEventType.KeyDown)
+            {
+                if (candidate.Type is not ExactWheelInputEventType.KeyDown and
+                    not ExactWheelInputEventType.KeyUp)
+                {
+                    return false;
+                }
+
+                var downUsesScanCode =
+                    downEvent.Data2 is > 0 and <= ushort.MaxValue;
+                var candidateUsesScanCode =
+                    candidate.Data2 is > 0 and <= ushort.MaxValue;
+                return downUsesScanCode == candidateUsesScanCode &&
+                    (downUsesScanCode
+                        ? downEvent.Data2 == candidate.Data2
+                        : downEvent.Data1 == candidate.Data1) &&
+                    (downEvent.Flags & ExactWheelKeyboardFlags.Extended) ==
+                    (candidate.Flags & ExactWheelKeyboardFlags.Extended);
+            }
+
+            return downEvent.Type ==
+                    ExactWheelInputEventType.MouseButtonDown &&
+                candidate.Type is ExactWheelInputEventType.MouseButtonDown or
+                    ExactWheelInputEventType.MouseButtonUp &&
+                downEvent.Data1 == candidate.Data1;
+        }
+    }
+
     private enum DispatchGuardWaitResult
     {
         Authorized,
         Denied,
         Cancelled,
         PhysicalIntervention,
-        UnsafeHeldInputs,
+        TemporarilyUnavailable,
+        HeldInputReleaseFailed,
         TimerFailed
     }
 }

@@ -103,6 +103,9 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
     private DateTimeOffset _lastObservedUtc;
     private DateTimeOffset _nextLivenessSweepUtc;
     private RobloxPlaybackTargetLeaseFailure? _failure;
+    private FocusTransferIntent? _authorizedFocusTransfer;
+    private nint _pendingFocusTarget;
+    private bool _pendingFocusTargetObserved;
     private bool _pinsReleased;
     private bool _disposed;
 
@@ -375,6 +378,45 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
         return ToDispatchAuthorization(failure);
     }
 
+    // Called only after ExactWheel confirms that Windows accepted an event.
+    // Authorization alone cannot arm this boundary because cancellation or a
+    // failed SendInput could otherwise leave the lease waiting for a focus
+    // change that no input ever requested.
+    internal void NotifyDispatchCompleted(ExactWheelInputEvent inputEvent)
+    {
+        lock (_sync)
+        {
+            if (_failure is not null || _disposed)
+                return;
+
+            var nextFocusTarget =
+                _authorizedFocusTransfer is { } transfer &&
+                transfer.InputEvent == inputEvent
+                    ? transfer.TargetHandle
+                    : nint.Zero;
+            // A successfully accepted event completes any older settled focus
+            // boundary. If this exact event initiated another cross-client
+            // click, atomically replace it with the new expected HWND.
+            _pendingFocusTarget = nextFocusTarget;
+            _pendingFocusTargetObserved = false;
+            _authorizedFocusTransfer = null;
+        }
+    }
+
+    // A segment can end after an interrupted transaction was neutralized, so
+    // no later event exists to acknowledge the settled focus boundary. Once
+    // ExactWheel has returned and released held input, clearing it is safe and
+    // prevents that completed segment from constraining the next loop.
+    internal void CompletePlaybackSegment()
+    {
+        lock (_sync)
+        {
+            _authorizedFocusTransfer = null;
+            _pendingFocusTarget = nint.Zero;
+            _pendingFocusTargetObserved = false;
+        }
+    }
+
     internal bool TryAuthorizeDispatch(
         out RobloxPlaybackTargetLeaseFailure? failure) =>
         TryAuthorizeDispatch(inputEvent: null, out failure);
@@ -448,6 +490,43 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                         out failure))
                     return false;
 
+                _authorizedFocusTransfer = null;
+                if (_pendingFocusTarget != nint.Zero)
+                {
+                    var expectedTarget = _targetsByHandle[
+                        _pendingFocusTarget];
+                    if (foreground != _pendingFocusTarget)
+                    {
+                        _pendingFocusTargetObserved = false;
+                        if (!TryValidateDispatchTargetLocked(
+                                expectedTarget,
+                                now,
+                                clockRegressed,
+                                out failure))
+                        {
+                            return false;
+                        }
+
+                        failure = FocusTransitionFailure(
+                            "Playback paused until the Roblox window clicked by the macro becomes foreground.");
+                        return false;
+                    }
+
+                    if (!_pendingFocusTargetObserved)
+                    {
+                        // Return one temporary gap when the expected HWND is
+                        // first observed so ExactWheel starts its unscaled
+                        // stable-settle clock. Keep the HWND pinned until an
+                        // event is actually accepted: if focus flips during
+                        // the settle, authorization becomes temporary again
+                        // and the stable clock resets.
+                        _pendingFocusTargetObserved = true;
+                        failure = FocusTransitionFailure(
+                            "Playback paused briefly while the clicked Roblox window settles in the foreground.");
+                        return false;
+                    }
+                }
+
                 if (inputEvent is { } candidate && candidate.IsMouseEvent)
                 {
                     var pointedRoot = _native.GetRootWindowAtPoint(
@@ -470,6 +549,14 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
                             clockRegressed,
                             out failure))
                         return false;
+                    if (pointedTarget.Handle != foregroundTarget.Handle &&
+                        candidate.Type ==
+                            ExactWheelInputEventType.MouseButtonDown)
+                    {
+                        _authorizedFocusTransfer = new FocusTransferIntent(
+                            candidate,
+                            pointedTarget.Handle);
+                    }
                 }
 
                 failure = null;
@@ -683,6 +770,12 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
             RobloxPlaybackTargetLeaseFailureKind.WindowUnavailable,
             "A leased Roblox window is no longer a visible, usable top-level window.");
 
+    private static RobloxPlaybackTargetLeaseFailure FocusTransitionFailure(
+        string error) =>
+        new(
+            RobloxPlaybackTargetLeaseFailureKind.ForegroundMismatch,
+            error);
+
     private static bool IsExpectedNativeFailure(Exception exception) =>
         exception is InvalidOperationException or
             System.ComponentModel.Win32Exception or
@@ -702,4 +795,8 @@ internal sealed class RobloxPlaybackTargetLease : IDisposable
 
         internal DateTimeOffset NextIdentityRevalidationUtc { get; set; }
     }
+
+    private readonly record struct FocusTransferIntent(
+        ExactWheelInputEvent InputEvent,
+        nint TargetHandle);
 }

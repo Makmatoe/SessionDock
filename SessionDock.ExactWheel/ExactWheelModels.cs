@@ -164,6 +164,7 @@ public sealed class ExactWheelRecording
 {
     private readonly IReadOnlyList<ExactWheelInputEvent> _events;
     private int _clientRelativeValidationState;
+    private int _playableValidationState;
     private int _validationState;
 
     public ExactWheelRecording(
@@ -194,11 +195,17 @@ public sealed class ExactWheelRecording
     internal bool IsClientRelativeValidated =>
         Volatile.Read(ref _clientRelativeValidationState) != 0;
 
+    internal bool IsPlayableValidated =>
+        Volatile.Read(ref _playableValidationState) != 0;
+
     internal void MarkValidated() =>
         Volatile.Write(ref _validationState, 1);
 
     internal void MarkClientRelativeValidated() =>
         Volatile.Write(ref _clientRelativeValidationState, 1);
+
+    internal void MarkPlayableValidated() =>
+        Volatile.Write(ref _playableValidationState, 1);
 
     internal static ExactWheelRecording CreateFromOwnedEvents(
         ulong durationMicroseconds,
@@ -360,6 +367,8 @@ internal sealed class ExactWheelPageableRecording : IDisposable
                 recording.MarkValidated();
             if (source.IsClientRelativeValidated)
                 recording.MarkClientRelativeValidated();
+            if (source.IsPlayableValidated)
+                recording.MarkPlayableValidated();
             return new ExactWheelPageableRecording(
                 stream,
                 mapping,

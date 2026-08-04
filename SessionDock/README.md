@@ -137,7 +137,10 @@ cryptographically confirm that complete identity before publication.
   during ExactWheel playback and fails closed on PID/HWND ownership, lifetime,
   trust, or usability changes. Every playback mode treats physical input or an
   unavailable verified foreground target as a non-injecting pause and resumes
-  only when the safe input state and exact leased Roblox HWND return.
+  only when the safe input state and exact leased Roblox HWND return. A
+  click-driven cross-client focus change receives an unscaled settle boundary;
+  a target that stays unavailable yields with backoff so other clients and the
+  other macro mode continue looping.
 - `Services/RobloxWindowLayoutPolicy.cs` computes the top-left clickable
   cascade, reveal spacing, normalized saved geometry, and monitor fallback.
 - `Services/RobloxSessionLayoutCoordinator.cs` captures and restores

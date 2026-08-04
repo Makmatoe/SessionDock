@@ -252,6 +252,14 @@ does not undo the saved catalog.
    conditions recover. Replacing the batch or closing SessionDock cancels the
    loop.
 
+   Client switches include a short unscaled settle gap before the next input.
+   A temporarily unavailable client yields its turn and is retried with
+   backoff, so it cannot freeze the other clients. An invalid assignment is
+   isolated to that assignment or macro mode; it does not end another healthy
+   mode. Normal playback therefore ends only through **Stop**, controller/app
+   close, or batch replacement. SessionDock still fails closed if Windows
+   cannot release injected input or the physical-input safety monitor fails.
+
 7. Select **Save template**. Existing batch presets remain available as legacy
    launch-only choices; they are not silently rewritten.
 

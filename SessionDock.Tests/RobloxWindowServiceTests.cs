@@ -602,12 +602,105 @@ public sealed class RobloxWindowServiceTests
         Assert.Empty(pin.ForceTrustRefreshCalls);
         Assert.Equal(0, pin.VerificationCount);
         Assert.Equal(
-            3,
+            4,
             pin.RetainedLivenessCheckCount - livenessChecksBefore);
         Assert.Equal(
-            [(nint)100, (nint)100, (nint)100, (nint)100],
+            Enumerable.Repeat((nint)100, 6),
             native.WindowProcessIdReads);
-        Assert.Equal(3, native.UsableReadCount - usabilityChecksBefore);
+        Assert.Equal(4, native.UsableReadCount - usabilityChecksBefore);
+        Assert.Equal(
+            [TimeSpan.FromMilliseconds(12), TimeSpan.FromMilliseconds(34)],
+            native.Delays);
+    }
+
+    [Fact]
+    public async Task FocusAsync_WithRetainedLease_AlreadyFocusedSkipsSettle()
+    {
+        var native = ReadyNative();
+        native.ForegroundWindow = (nint)100;
+        var service = CreateService(native);
+        var acquisition = service.AcquirePlaybackTargetLease(
+            Identity,
+            (nint)100);
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(
+            acquisition.Lease);
+
+        var result = await service.FocusAsync(
+            lease,
+            Identity,
+            (nint)100,
+            TimeSpan.FromMilliseconds(20),
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error);
+        Assert.False(native.SetForegroundCalled);
+        Assert.Empty(native.Delays);
+    }
+
+    [Fact]
+    public async Task FocusAsync_WithRetainedLease_InterventionDuringSettleFails()
+    {
+        var native = ReadyNative();
+        native.SetForegroundResult = true;
+        native.SetForegroundChangesForeground = true;
+        var service = CreateService(native);
+        var acquisition = service.AcquirePlaybackTargetLease(
+            Identity,
+            (nint)100);
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(
+            acquisition.Lease);
+        var activationAllowed = true;
+        native.DelayAction = delay =>
+        {
+            if (delay == TimeSpan.FromMilliseconds(34))
+                activationAllowed = false;
+        };
+
+        var result = await service.FocusAsync(
+            lease,
+            Identity,
+            (nint)100,
+            TimeSpan.FromMilliseconds(20),
+            () => activationAllowed,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RobloxWindowOperationStatus.FocusDenied, result.Status);
+        Assert.True(native.SetForegroundCalled);
+        Assert.Equal(
+            [TimeSpan.FromMilliseconds(12), TimeSpan.FromMilliseconds(34)],
+            native.Delays);
+    }
+
+    [Fact]
+    public async Task FocusAsync_WithRetainedLease_InterventionDuringDrainDoesNotActivate()
+    {
+        var native = ReadyNative();
+        native.SetForegroundResult = true;
+        native.SetForegroundChangesForeground = true;
+        var service = CreateService(native);
+        var acquisition = service.AcquirePlaybackTargetLease(
+            Identity,
+            (nint)100);
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(
+            acquisition.Lease);
+        var activationAllowed = true;
+        native.DelayAction = delay =>
+        {
+            if (delay == TimeSpan.FromMilliseconds(12))
+                activationAllowed = false;
+        };
+
+        var result = await service.FocusAsync(
+            lease,
+            Identity,
+            (nint)100,
+            TimeSpan.FromMilliseconds(20),
+            () => activationAllowed,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(RobloxWindowOperationStatus.FocusDenied, result.Status);
+        Assert.False(native.SetForegroundCalled);
+        Assert.Equal([TimeSpan.FromMilliseconds(12)], native.Delays);
     }
 
     [Fact]
@@ -1501,6 +1594,125 @@ public sealed class RobloxWindowServiceTests
         Assert.True(lease.IsDispatchAuthorized(inputEvent));
     }
 
+    [Theory]
+    [InlineData(ExactWheelInputEventType.KeyDown)]
+    [InlineData(ExactWheelInputEventType.MouseMove)]
+    public void PlaybackTargetLease_AcknowledgedCrossClientClickPinsFocusThroughSettle(
+        ExactWheelInputEventType nextEventType)
+    {
+        var secondIdentity = Identity with
+        {
+            ProcessId = 43,
+            StartTimeUtc = Identity.StartTimeUtc.AddSeconds(1)
+        };
+        var native = ReadyNative();
+        native.AcceptedIdentities = [Identity, secondIdentity];
+        native.WindowProcessIds[(nint)100] = Identity.ProcessId;
+        native.WindowProcessIds[(nint)101] = secondIdentity.ProcessId;
+        native.ForegroundWindow = (nint)100;
+        native.RootWindowAtPoint = (nint)101;
+        var result = CreateService(native).AcquirePlaybackTargetLease(
+            [
+                new RobloxPlaybackTarget(Identity, (nint)100),
+                new RobloxPlaybackTarget(secondIdentity, (nint)101)
+            ]);
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(result.Lease);
+        var click = new ExactWheelInputEvent(
+            0,
+            1,
+            ExactWheelInputEventType.MouseButtonDown,
+            420,
+            260,
+            (int)ExactWheelMouseButton.Left,
+            0);
+        var nextEvent = new ExactWheelInputEvent(
+            1_000,
+            2,
+            nextEventType,
+            nextEventType == ExactWheelInputEventType.MouseMove ? 420 : 0,
+            nextEventType == ExactWheelInputEventType.MouseMove ? 260 : 0,
+            nextEventType == ExactWheelInputEventType.KeyDown ? 0x41 : 0,
+            nextEventType == ExactWheelInputEventType.KeyDown ? 0x1E : 0);
+
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.Authorized,
+            lease.GetDispatchAuthorization(click));
+        lease.NotifyDispatchCompleted(click);
+
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.TemporarilyUnavailable,
+            lease.GetDispatchAuthorization(nextEvent));
+
+        native.ForegroundWindow = (nint)101;
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.TemporarilyUnavailable,
+            lease.GetDispatchAuthorization(nextEvent));
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.Authorized,
+            lease.GetDispatchAuthorization(nextEvent));
+
+        // Seeing the expected HWND once is not enough. If another allowed
+        // client takes foreground during ExactWheel's settle interval, the
+        // event must become temporary again instead of being misdirected.
+        native.ForegroundWindow = (nint)100;
+        native.RootWindowAtPoint = (nint)100;
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.TemporarilyUnavailable,
+            lease.GetDispatchAuthorization(nextEvent));
+
+        native.ForegroundWindow = (nint)101;
+        native.RootWindowAtPoint = (nint)101;
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.TemporarilyUnavailable,
+            lease.GetDispatchAuthorization(nextEvent));
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.Authorized,
+            lease.GetDispatchAuthorization(nextEvent));
+        lease.NotifyDispatchCompleted(nextEvent);
+        Assert.Null(lease.Failure);
+    }
+
+    [Fact]
+    public void PlaybackTargetLease_CompletedSegmentClearsUnconsumedFocusBoundary()
+    {
+        var secondIdentity = Identity with
+        {
+            ProcessId = 43,
+            StartTimeUtc = Identity.StartTimeUtc.AddSeconds(1)
+        };
+        var native = ReadyNative();
+        native.AcceptedIdentities = [Identity, secondIdentity];
+        native.WindowProcessIds[(nint)100] = Identity.ProcessId;
+        native.WindowProcessIds[(nint)101] = secondIdentity.ProcessId;
+        native.ForegroundWindow = (nint)100;
+        native.RootWindowAtPoint = (nint)101;
+        var result = CreateService(native).AcquirePlaybackTargetLease(
+            [
+                new RobloxPlaybackTarget(Identity, (nint)100),
+                new RobloxPlaybackTarget(secondIdentity, (nint)101)
+            ]);
+        using var lease = Assert.IsType<RobloxPlaybackTargetLease>(result.Lease);
+        var click = new ExactWheelInputEvent(
+            0,
+            1,
+            ExactWheelInputEventType.MouseButtonDown,
+            420,
+            260,
+            (int)ExactWheelMouseButton.Left,
+            0);
+
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.Authorized,
+            lease.GetDispatchAuthorization(click));
+        lease.NotifyDispatchCompleted(click);
+        lease.CompletePlaybackSegment();
+
+        Assert.Equal(
+            ExactWheelDispatchAuthorization.Authorized,
+            lease.GetDispatchAuthorization());
+        Assert.Null(lease.Failure);
+    }
+
     [Fact]
     public void PlaybackTargetLease_KeyboardDispatchUsesForegroundNotPointer()
     {
@@ -1859,6 +2071,8 @@ public sealed class RobloxWindowServiceTests
         public List<nint> DemotedWindows { get; } = [];
         public List<RobloxWindowZOrderPlacement> AppliedZOrderPlacements
         { get; } = [];
+        public List<TimeSpan> Delays { get; } = [];
+        public Action<TimeSpan>? DelayAction { get; set; }
 
         public RobloxProcessVerificationStatus VerifyProcess(
             RobloxClientProcessIdentity identity,
@@ -2052,7 +2266,9 @@ public sealed class RobloxWindowServiceTests
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Delays.Add(delay);
             UtcNow += delay;
+            DelayAction?.Invoke(delay);
             return Task.CompletedTask;
         }
 

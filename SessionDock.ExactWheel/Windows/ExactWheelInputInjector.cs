@@ -117,6 +117,23 @@ internal sealed class Win32PhysicalInputState : IPhysicalInputState
 
 }
 
+internal sealed class ExactWheelHeldInputSuspension
+{
+    private readonly IReadOnlyList<ExactWheelInputEvent> _heldInputs;
+
+    internal ExactWheelHeldInputSuspension(ExactWheelInputEvent[] heldInputs)
+    {
+        ArgumentNullException.ThrowIfNull(heldInputs);
+        if (heldInputs.Length == 0)
+            throw new ArgumentException(
+                "A held-input suspension cannot be empty.",
+                nameof(heldInputs));
+        _heldInputs = Array.AsReadOnly(heldInputs);
+    }
+
+    internal IReadOnlyList<ExactWheelInputEvent> HeldInputs => _heldInputs;
+}
+
 internal sealed class ExactWheelInputInjector : IDisposable
 {
     private const int MaximumHeldKeyboardInputs = 256;
@@ -129,8 +146,8 @@ internal sealed class ExactWheelInputInjector : IDisposable
         new ExactWheelNativeMethods.NativeInput[1];
     private readonly ExactWheelNativeMethods.NativeInput[] _doubleInputBatch =
         new ExactWheelNativeMethods.NativeInput[2];
-    private readonly List<HeldKey> _heldKeys = [];
-    private readonly bool[] _heldMouseButtons = new bool[6];
+    private readonly List<HeldInputState> _heldInputs = [];
+    private int _heldKeyboardInputCount;
     private bool _disposed;
 
     internal ExactWheelInputInjector()
@@ -143,21 +160,7 @@ internal sealed class ExactWheelInputInjector : IDisposable
         _backend = backend ?? throw new ArgumentNullException(nameof(backend));
     }
 
-    internal bool HasHeldInputs
-    {
-        get
-        {
-            if (_heldKeys.Count != 0)
-                return true;
-            for (var index = 1; index < _heldMouseButtons.Length; index++)
-            {
-                if (_heldMouseButtons[index])
-                    return true;
-            }
-
-            return false;
-        }
-    }
+    internal bool HasHeldInputs => _heldInputs.Count != 0;
 
     internal InjectionAttempt Inject(
         ExactWheelInputEvent inputEvent,
@@ -172,8 +175,8 @@ internal sealed class ExactWheelInputInjector : IDisposable
         if (inputEvent.Type == ExactWheelInputEventType.KeyDown)
         {
             var identity = GetHeldKey(inputEvent);
-            if (!_heldKeys.Contains(identity) &&
-                _heldKeys.Count >= MaximumHeldKeyboardInputs)
+            if (FindHeldKeyboardIndex(identity) < 0 &&
+                _heldKeyboardInputCount >= MaximumHeldKeyboardInputs)
             {
                 return new InjectionAttempt(
                     false,
@@ -195,42 +198,58 @@ internal sealed class ExactWheelInputInjector : IDisposable
             error);
     }
 
+    internal InjectionAttempt SuspendHeld(
+        out ExactWheelHeldInputSuspension? suspension)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!HasHeldInputs)
+        {
+            suspension = null;
+            return new InjectionAttempt(true, 0, 0, 0);
+        }
+
+        var heldInputs = new ExactWheelInputEvent[_heldInputs.Count];
+        for (var index = 0; index < _heldInputs.Count; index++)
+            heldInputs[index] = _heldInputs[index].DownEvent;
+
+        var candidate = new ExactWheelHeldInputSuspension(heldInputs);
+        var release = ReleaseHeld();
+        if (!release.Succeeded)
+        {
+            suspension = null;
+            return release;
+        }
+
+        suspension = candidate;
+        return release;
+    }
+
     internal InjectionAttempt ReleaseHeld()
     {
         if (!HasHeldInputs)
             return new InjectionAttempt(true, 0, 0, 0);
 
-        var inputs = new List<ExactWheelNativeMethods.NativeInput>();
-        var releases = new List<ReleaseIdentity>();
-        foreach (var key in _heldKeys)
+        var batch = new ExactWheelNativeMethods.NativeInput[_heldInputs.Count];
+        for (var releaseIndex = 0;
+             releaseIndex < batch.Length;
+             releaseIndex++)
         {
-            inputs.Add(BuildKeyboardRelease(key));
-            releases.Add(new ReleaseIdentity(key, 0));
+            var heldInput = _heldInputs[^(releaseIndex + 1)];
+            batch[releaseIndex] = heldInput.IsKeyboard
+                ? BuildKeyboardRelease(heldInput.KeyboardIdentity)
+                : BuildMouseRelease(heldInput.MouseButton);
         }
 
-        for (var index = 1; index < _heldMouseButtons.Length; index++)
-        {
-            if (!_heldMouseButtons[index])
-                continue;
-            inputs.Add(BuildMouseRelease((ExactWheelMouseButton)index));
-            releases.Add(new ReleaseIdentity(default, index));
-        }
-
-        if (inputs.Count == 0)
-            return new InjectionAttempt(true, 0, 0, 0);
-
-        var batch = inputs.ToArray();
         var submitted = _backend.Send(batch, out var error);
         var accepted = Math.Min(
             checked((int)submitted),
-            releases.Count);
+            batch.Length);
         for (var index = 0; index < accepted; index++)
         {
-            var identity = releases[index];
-            if (identity.MouseButton != 0)
-                _heldMouseButtons[identity.MouseButton] = false;
-            else
-                _heldKeys.Remove(identity.Key);
+            var heldInput = _heldInputs[^1];
+            if (heldInput.IsKeyboard)
+                _heldKeyboardInputCount--;
+            _heldInputs.RemoveAt(_heldInputs.Count - 1);
         }
 
         var expected = checked((uint)batch.Length);
@@ -520,14 +539,22 @@ internal sealed class ExactWheelInputInjector : IDisposable
             ExactWheelInputEventType.KeyUp)
         {
             var identity = GetHeldKey(inputEvent);
+            var heldIndex = FindHeldKeyboardIndex(identity);
             if (inputEvent.Type == ExactWheelInputEventType.KeyDown)
             {
-                if (!_heldKeys.Contains(identity))
-                    _heldKeys.Add(identity);
+                if (heldIndex < 0)
+                {
+                    _heldInputs.Add(new HeldInputState(
+                        inputEvent,
+                        identity,
+                        default));
+                    _heldKeyboardInputCount++;
+                }
             }
-            else
+            else if (heldIndex >= 0)
             {
-                _heldKeys.Remove(identity);
+                _heldInputs.RemoveAt(heldIndex);
+                _heldKeyboardInputCount--;
             }
 
             return;
@@ -540,12 +567,47 @@ internal sealed class ExactWheelInputInjector : IDisposable
             return;
         }
 
-        var index = inputEvent.Data1;
-        if (index > 0 && index < _heldMouseButtons.Length)
+        var button = (ExactWheelMouseButton)inputEvent.Data1;
+        var mouseIndex = FindHeldMouseIndex(button);
+        if (inputEvent.Type == ExactWheelInputEventType.MouseButtonDown)
         {
-            _heldMouseButtons[index] = inputEvent.Type ==
-                ExactWheelInputEventType.MouseButtonDown;
+            if (mouseIndex < 0)
+                _heldInputs.Add(new HeldInputState(
+                    inputEvent,
+                    default,
+                    button));
         }
+        else if (mouseIndex >= 0)
+        {
+            _heldInputs.RemoveAt(mouseIndex);
+        }
+    }
+
+    private int FindHeldKeyboardIndex(HeldKey identity)
+    {
+        for (var index = 0; index < _heldInputs.Count; index++)
+        {
+            var heldInput = _heldInputs[index];
+            if (heldInput.IsKeyboard &&
+                heldInput.KeyboardIdentity == identity)
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private int FindHeldMouseIndex(ExactWheelMouseButton button)
+    {
+        for (var index = 0; index < _heldInputs.Count; index++)
+        {
+            var heldInput = _heldInputs[index];
+            if (!heldInput.IsKeyboard && heldInput.MouseButton == button)
+                return index;
+        }
+
+        return -1;
     }
 
     private static HeldKey GetHeldKey(ExactWheelInputEvent inputEvent)
@@ -564,7 +626,12 @@ internal sealed class ExactWheelInputInjector : IDisposable
         bool ScanCode,
         bool Extended);
 
-    private readonly record struct ReleaseIdentity(
-        HeldKey Key,
-        int MouseButton);
+    private readonly record struct HeldInputState(
+        ExactWheelInputEvent DownEvent,
+        HeldKey KeyboardIdentity,
+        ExactWheelMouseButton MouseButton)
+    {
+        internal bool IsKeyboard =>
+            DownEvent.Type == ExactWheelInputEventType.KeyDown;
+    }
 }

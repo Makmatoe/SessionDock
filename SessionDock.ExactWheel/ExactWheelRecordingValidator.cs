@@ -73,12 +73,269 @@ public static class ExactWheelRecordingValidator
 
     public static void ValidatePlayable(ExactWheelRecording recording)
     {
+        ArgumentNullException.ThrowIfNull(recording);
+        if (recording.IsPlayableValidated)
+            return;
         Validate(recording);
         if (recording.Events.Count == 0)
         {
             throw new InvalidDataException(
                 "A playable macro must contain at least one input event.");
         }
+
+        ValidateBalancedTransitions(recording.Events);
+        recording.MarkPlayableValidated();
+    }
+
+    internal static ExactWheelRecording NormalizeLegacyV1Playable(
+        ExactWheelRecording recording)
+    {
+        ArgumentNullException.ThrowIfNull(recording);
+        Validate(recording);
+
+        // Current recordings are already balanced. Keep that overwhelmingly
+        // common path allocation-free; only legacy files that fail transition
+        // validation need the migration structures below.
+        if (recording.Events.Count == 0)
+        {
+            ValidatePlayable(recording);
+        }
+        try
+        {
+            ValidatePlayable(recording);
+            return recording;
+        }
+        catch (InvalidDataException)
+        {
+            // The base format has already passed Validate and the recording is
+            // nonempty, so the remaining failure is a legacy held-transition
+            // imbalance that can be normalized safely below.
+        }
+
+        var normalizedEvents = new List<ExactWheelInputEvent>(
+            recording.Events.Count);
+        var heldKeys = new Dictionary<
+            KeyboardIdentity,
+            LegacyHeldTransition>();
+        var heldMouseButtons = new Dictionary<
+            ExactWheelMouseButton,
+            LegacyHeldTransition>();
+        var heldOrder = new List<LegacyHeldTransition>();
+        var changed = false;
+
+        foreach (var inputEvent in recording.Events)
+        {
+            switch (inputEvent.Type)
+            {
+                case ExactWheelInputEventType.KeyDown:
+                    {
+                        var identity = GetKeyboardIdentity(inputEvent);
+                        var normalizedIndex = normalizedEvents.Count;
+                        normalizedEvents.Add(inputEvent);
+                        if (heldKeys.TryGetValue(identity, out var heldKey))
+                        {
+                            // Typematic key-down events are real input and
+                            // remain part of the original held transaction.
+                            heldKey.AddRepeat(normalizedIndex);
+                            break;
+                        }
+
+                        var transition = new LegacyHeldTransition(
+                            inputEvent,
+                            normalizedIndex);
+                        heldKeys.Add(identity, transition);
+                        heldOrder.Add(transition);
+                        break;
+                    }
+                case ExactWheelInputEventType.KeyUp:
+                    {
+                        var identity = GetKeyboardIdentity(inputEvent);
+                        if (!heldKeys.Remove(identity, out var heldKey))
+                        {
+                            changed = true;
+                            break;
+                        }
+
+                        heldKey.Complete();
+                        normalizedEvents.Add(inputEvent);
+                        break;
+                    }
+                case ExactWheelInputEventType.MouseButtonDown:
+                    {
+                        var button =
+                            (ExactWheelMouseButton)inputEvent.Data1;
+                        if (heldMouseButtons.ContainsKey(button))
+                        {
+                            // Mouse buttons do not have typematic repeats.
+                            // A second Down cannot form another transaction.
+                            changed = true;
+                            break;
+                        }
+
+                        var normalizedIndex = normalizedEvents.Count;
+                        normalizedEvents.Add(inputEvent);
+                        var transition = new LegacyHeldTransition(
+                            inputEvent,
+                            normalizedIndex);
+                        heldMouseButtons.Add(button, transition);
+                        heldOrder.Add(transition);
+                        break;
+                    }
+                case ExactWheelInputEventType.MouseButtonUp:
+                    {
+                        var button =
+                            (ExactWheelMouseButton)inputEvent.Data1;
+                        if (!heldMouseButtons.Remove(
+                                button,
+                                out var heldButton))
+                        {
+                            changed = true;
+                            break;
+                        }
+
+                        heldButton.Complete();
+                        normalizedEvents.Add(inputEvent);
+                        break;
+                    }
+                default:
+                    normalizedEvents.Add(inputEvent);
+                    break;
+            }
+        }
+
+        var unresolvedCount = 0;
+        foreach (var transition in heldOrder)
+        {
+            if (transition.IsHeld)
+                unresolvedCount++;
+        }
+
+        if (unresolvedCount == 0 && !changed)
+        {
+            ValidatePlayable(recording);
+            return recording;
+        }
+
+        if (unresolvedCount > 0)
+        {
+            var lastSequence = normalizedEvents.Count == 0
+                ? 0UL
+                : normalizedEvents[^1].Sequence;
+            var canAppendEveryRelease =
+                (ulong)normalizedEvents.Count <=
+                    ExactWheelLimits.MaximumEventCount -
+                    (ulong)unresolvedCount &&
+                lastSequence <= ulong.MaxValue - (ulong)unresolvedCount;
+            if (canAppendEveryRelease)
+            {
+                for (var index = heldOrder.Count - 1;
+                     index >= 0;
+                     index--)
+                {
+                    var transition = heldOrder[index];
+                    if (!transition.IsHeld)
+                        continue;
+                    lastSequence++;
+                    normalizedEvents.Add(transition.CreateRelease(
+                        recording.DurationMicroseconds,
+                        lastSequence));
+                }
+            }
+            else
+            {
+                var remove = new bool[normalizedEvents.Count];
+                var removeCount = 0;
+                foreach (var transition in heldOrder)
+                {
+                    if (transition.IsHeld)
+                    {
+                        removeCount += transition
+                            .MarkDownEventsForRemoval(remove);
+                    }
+                }
+
+                var retained = new List<ExactWheelInputEvent>(
+                    normalizedEvents.Count - removeCount);
+                for (var index = 0; index < normalizedEvents.Count; index++)
+                {
+                    if (!remove[index])
+                        retained.Add(normalizedEvents[index]);
+                }
+                normalizedEvents = retained;
+            }
+        }
+
+        var normalized = ExactWheelRecording.CreateFromOwnedEvents(
+            recording.DurationMicroseconds,
+            recording.Display,
+            recording.Target,
+            normalizedEvents.ToArray());
+        ValidatePlayable(normalized);
+        return normalized;
+    }
+
+    private static void ValidateBalancedTransitions(
+        IReadOnlyList<ExactWheelInputEvent> events)
+    {
+        var heldKeys = new HashSet<KeyboardIdentity>();
+        var heldMouseButtons = new HashSet<ExactWheelMouseButton>();
+        for (var index = 0; index < events.Count; index++)
+        {
+            var inputEvent = events[index];
+            switch (inputEvent.Type)
+            {
+                case ExactWheelInputEventType.KeyDown:
+                    // Repeated key-down messages while a key remains held are
+                    // legitimate typematic input. They do not create another
+                    // logical hold and still require only one final KeyUp.
+                    _ = heldKeys.Add(GetKeyboardIdentity(inputEvent));
+                    break;
+                case ExactWheelInputEventType.KeyUp:
+                    if (!heldKeys.Remove(GetKeyboardIdentity(inputEvent)))
+                    {
+                        throw InvalidEvent(
+                            index,
+                            "Key-up does not have a matching key-down.");
+                    }
+                    break;
+                case ExactWheelInputEventType.MouseButtonDown:
+                    if (!heldMouseButtons.Add(
+                            (ExactWheelMouseButton)inputEvent.Data1))
+                    {
+                        throw InvalidEvent(
+                            index,
+                            "Mouse-button down is duplicated before its release.");
+                    }
+                    break;
+                case ExactWheelInputEventType.MouseButtonUp:
+                    if (!heldMouseButtons.Remove(
+                            (ExactWheelMouseButton)inputEvent.Data1))
+                    {
+                        throw InvalidEvent(
+                            index,
+                            "Mouse-button up does not have a matching down.");
+                    }
+                    break;
+            }
+        }
+
+        if (heldKeys.Count != 0 || heldMouseButtons.Count != 0)
+        {
+            throw new InvalidDataException(
+                "A playable macro must release every key and mouse button before it ends.");
+        }
+    }
+
+    private static KeyboardIdentity GetKeyboardIdentity(
+        ExactWheelInputEvent inputEvent)
+    {
+        var usesScanCode = inputEvent.Data2 is > 0 and <= ushort.MaxValue;
+        return new KeyboardIdentity(
+            checked((ushort)(usesScanCode
+                ? inputEvent.Data2
+                : inputEvent.Data1)),
+            usesScanCode,
+            (inputEvent.Flags & ExactWheelKeyboardFlags.Extended) != 0);
     }
 
     internal static void ValidatePlaybackDestination(
@@ -320,5 +577,48 @@ public static class ExactWheelRecordingValidator
         }
 
         return true;
+    }
+
+    private readonly record struct KeyboardIdentity(
+        ushort Code,
+        bool UsesScanCode,
+        bool Extended);
+
+    private sealed class LegacyHeldTransition(
+        ExactWheelInputEvent downEvent,
+        int normalizedIndex)
+    {
+        private List<int>? _repeatIndexes;
+
+        internal bool IsHeld { get; private set; } = true;
+
+        internal void AddRepeat(int index)
+        {
+            (_repeatIndexes ??= []).Add(index);
+        }
+
+        internal void Complete() => IsHeld = false;
+
+        internal ExactWheelInputEvent CreateRelease(
+            ulong timestampMicroseconds,
+            ulong sequence) =>
+            downEvent with
+            {
+                TimestampMicroseconds = timestampMicroseconds,
+                Sequence = sequence,
+                Type = downEvent.Type == ExactWheelInputEventType.KeyDown
+                    ? ExactWheelInputEventType.KeyUp
+                    : ExactWheelInputEventType.MouseButtonUp
+            };
+
+        internal int MarkDownEventsForRemoval(bool[] remove)
+        {
+            remove[normalizedIndex] = true;
+            if (_repeatIndexes is null)
+                return 1;
+            foreach (var index in _repeatIndexes)
+                remove[index] = true;
+            return checked(1 + _repeatIndexes.Count);
+        }
     }
 }

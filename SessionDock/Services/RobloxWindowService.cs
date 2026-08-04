@@ -149,6 +149,14 @@ internal sealed partial class RobloxWindowService
         TimeSpan.FromSeconds(2);
     private static readonly TimeSpan DefaultPollInterval =
         TimeSpan.FromMilliseconds(100);
+    // A real foreground hand-off needs a very small queue drain before the
+    // activation request and two display frames afterward. These waits occur
+    // only when playback changes clients; an already-focused target pays no
+    // delay and no foreground API call.
+    private static readonly TimeSpan PlaybackFocusInputDrain =
+        TimeSpan.FromMilliseconds(12);
+    private static readonly TimeSpan PlaybackFocusSettle =
+        TimeSpan.FromMilliseconds(34);
     private static readonly TimeSpan ProcessRevalidationInterval =
         TimeSpan.FromSeconds(1);
     private static readonly TimeSpan WindowReadinessStability =
@@ -821,15 +829,64 @@ internal sealed partial class RobloxWindowService
         cancellationToken.ThrowIfCancellationRequested();
         if (!CanProgrammaticallyActivate(canProgrammaticallyActivate))
             return PhysicalInterventionFocusFailure();
-        _ = _native.TrySetForeground(windowHandle);
+        var foreground = _native.GetForegroundWindow();
+        var focusChanged = foreground != windowHandle ||
+            _native.GetWindowProcessId(foreground) != identity.ProcessId;
+        if (focusChanged)
+        {
+            // Let the previous client's final queued release settle before
+            // moving foreground ownership. Recheck every authorization after
+            // the asynchronous boundary and immediately before Windows can
+            // activate anything.
+            await _native.DelayAsync(
+                PlaybackFocusInputDrain,
+                cancellationToken);
+            leaseFailure = playbackLease.ValidateExactTarget(
+                identity,
+                windowHandle,
+                revalidateIdentityAndToken: false);
+            if (leaseFailure is not null)
+                return LeaseValidationFailure(leaseFailure);
+            if (!CanProgrammaticallyActivate(canProgrammaticallyActivate))
+                return PhysicalInterventionFocusFailure();
+
+            foreground = _native.GetForegroundWindow();
+            if (foreground != windowHandle ||
+                _native.GetWindowProcessId(foreground) != identity.ProcessId)
+            {
+                _ = _native.TrySetForeground(windowHandle);
+            }
+        }
         var deadline = _native.UtcNow + effectiveTimeout;
         do
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var foreground = _native.GetForegroundWindow();
+            foreground = _native.GetForegroundWindow();
             if (foreground == windowHandle &&
                 _native.GetWindowProcessId(foreground) == identity.ProcessId)
             {
+                if (focusChanged)
+                {
+                    await _native.DelayAsync(
+                        PlaybackFocusSettle,
+                        cancellationToken);
+                    if (!CanProgrammaticallyActivate(
+                            canProgrammaticallyActivate))
+                    {
+                        return PhysicalInterventionFocusFailure();
+                    }
+
+                    foreground = _native.GetForegroundWindow();
+                    if (foreground != windowHandle ||
+                        _native.GetWindowProcessId(foreground) !=
+                            identity.ProcessId)
+                    {
+                        return RobloxWindowOperationResult.Failed(
+                            RobloxWindowOperationStatus.FocusDenied,
+                            "The Roblox window changed focus before macro input could begin.");
+                    }
+                }
+
                 // The retained lease schedules start-time, path, user,
                 // session, and token checks per exact target. Honor that
                 // deadline here rather than forcing the same expensive check

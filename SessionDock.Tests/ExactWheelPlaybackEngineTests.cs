@@ -314,6 +314,48 @@ public sealed class ExactWheelPlaybackEngineTests
     }
 
     [Fact]
+    public async Task PlayAsync_UnexpectedFailureAfterHeldDownStillReleasesInput()
+    {
+        var clock = new SwitchableFailureClock();
+        var backend = new FakeInputBackend((inputs, call) =>
+        {
+            if (call == 0)
+                clock.ThrowOnTimestamp = true;
+            return (checked((uint)inputs.Length), 0);
+        });
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            new PassiveWaiter(),
+            new FakePhysicalInputState(),
+            static () => new FakeCapture());
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(10_000, 2, down: false)
+            ],
+            durationMicroseconds: 10_000);
+
+        await Assert.ThrowsAsync<ApplicationException>(() =>
+            engine.PlayAsync(
+                recording,
+                new ExactWheelPlaybackOptions
+                {
+                    StopOnPhysicalInput = false
+                },
+                CancellationToken.None));
+
+        Assert.Equal(2, backend.Batches.Count);
+        Assert.Equal(
+            ExactWheelNativeMethods.KeyboardEventKeyUp |
+            ExactWheelNativeMethods.KeyboardEventScanCode,
+            backend.Batches[1][0].Data.Keyboard.Flags);
+        await Assert.ThrowsAsync<ApplicationException>(async () =>
+            await engine.DisposeAsync());
+    }
+
+    [Fact]
     public async Task PlayAsync_InfiniteZeroDurationRecording_UsesSafeLoopFloor()
     {
         using var cancellation = new CancellationTokenSource();
@@ -569,9 +611,9 @@ public sealed class ExactWheelPlaybackEngineTests
         Assert.Equal(10, guardCalls);
         Assert.Equal(7, backend.Batches.Count);
         Assert.Equal(
-            [10L, 10_010L, 10_010L],
+            [10L, 50_010L, 50_010L],
             waiter.Deadlines.Take(3));
-        Assert.Equal(260_010L, waiter.Deadlines[^1]);
+        Assert.Equal(300_010L, waiter.Deadlines[^1]);
         await engine.DisposeAsync();
     }
 
@@ -599,7 +641,7 @@ public sealed class ExactWheelPlaybackEngineTests
         Assert.Equal(4, guardCalls);
         Assert.Empty(backend.Batches);
         Assert.Equal(
-            [10L, 10_010L, 20_010L],
+            [10L, 50_010L, 100_010L],
             waiter.Deadlines);
         await engine.DisposeAsync();
     }
@@ -632,6 +674,300 @@ public sealed class ExactWheelPlaybackEngineTests
 
         Assert.Equal(ExactWheelPlaybackStopReason.Cancelled, result.Reason);
         Assert.Empty(backend.Batches);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_TemporaryTargetTimeoutYieldsForAnotherClient()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 0);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                DispatchAuthorizationTimeoutMicroseconds = 120_000,
+                EventDispatchAuthorization = static _ =>
+                    ExactWheelDispatchAuthorization.TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.TargetUnavailable,
+            result.Reason);
+        Assert.True(result.CleanupSucceeded);
+        Assert.Contains("yielded this target", result.Message);
+        Assert.Empty(backend.Batches);
+        Assert.Equal(
+            [10L, 50_010L, 100_010L, 120_010L],
+            waiter.Deadlines);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_UnstableAuthorizedBlipsCannotResetTargetTimeout()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var authorizationCalls = 0;
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 0);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                DispatchAuthorizationTimeoutMicroseconds = 120_000,
+                DispatchRecoverySettleMicroseconds = 34_000,
+                EventDispatchAuthorization = _ =>
+                    ++authorizationCalls % 2 == 0
+                        ? ExactWheelDispatchAuthorization.Authorized
+                        : ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.TargetUnavailable,
+            result.Reason);
+        Assert.True(result.CleanupSucceeded);
+        Assert.Empty(backend.Batches);
+        Assert.Equal(120_010L, clock.Timestamp);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_PhysicalPauseDoesNotConsumeTargetTimeout()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var physicalInput = new FakePhysicalInputState();
+        var capture = new FakeCapture();
+        var targetReady = false;
+        var waiter = new FakeWaiter(
+            clock,
+            (_, call, _, _) =>
+            {
+                if (call == 1)
+                {
+                    physicalInput.AllReleased = false;
+                    capture.SignalIntervention();
+                }
+                else if (call == 3)
+                {
+                    physicalInput.AllReleased = true;
+                    targetReady = true;
+                }
+                return DeadlineWaitResult.Reached;
+            });
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            physicalInput,
+            () => capture);
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 0);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                DispatchAuthorizationTimeoutMicroseconds = 60_000,
+                EventDispatchAuthorization = _ =>
+                    targetReady
+                        ? ExactWheelDispatchAuthorization.Authorized
+                        : ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Single(backend.Batches);
+        Assert.True(clock.Timestamp >= 150_010);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_RepeatedPhysicalMouseMovesDoNotConsumeTargetTimeout()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var physicalInput = new FakePhysicalInputState();
+        var capture = new FakeCapture();
+        var targetReady = false;
+        var waiter = new FakeWaiter(
+            clock,
+            (_, call, _, _) =>
+            {
+                if (call is 1 or 2 or 3)
+                    capture.SignalIntervention();
+                else if (call == 4)
+                    targetReady = true;
+                return DeadlineWaitResult.Reached;
+            });
+        var backend = new FakeInputBackend();
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            physicalInput,
+            () => capture);
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 0);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                DispatchAuthorizationTimeoutMicroseconds = 60_000,
+                EventDispatchAuthorization = _ =>
+                    targetReady
+                        ? ExactWheelDispatchAuthorization.Authorized
+                        : ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Single(backend.Batches);
+        Assert.True(clock.Timestamp >= 200_010);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_RepeatedPhysicalMouseMovesRestartRecoverySettle()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var physicalInput = new FakePhysicalInputState();
+        var capture = new FakeCapture();
+        var authorizationCalls = 0;
+        var waiter = new FakeWaiter(
+            clock,
+            (_, call, _, _) =>
+            {
+                if (call is 1 or 2 or 3)
+                    capture.SignalIntervention();
+                return DeadlineWaitResult.Reached;
+            });
+        var injectionTimestamps = new List<long>();
+        var backend = new FakeInputBackend((inputs, _) =>
+        {
+            injectionTimestamps.Add(clock.Timestamp);
+            return (checked((uint)inputs.Length), 0);
+        });
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            physicalInput,
+            () => capture);
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 0);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                DispatchRecoverySettleMicroseconds = 34_000,
+                EventDispatchAuthorization = _ =>
+                    ++authorizationCalls == 1
+                        ? ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+                        : ExactWheelDispatchAuthorization.Authorized
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Single(injectionTimestamps);
+        Assert.True(injectionTimestamps[0] >= 218_010);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_DispatchCompletedRunsAfterSuccessfulInjection()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var inputEvent = MouseMove(0, 1, 100);
+        ExactWheelInputEvent? acknowledged = null;
+        var batchesAtAcknowledgement = 0;
+
+        var result = await engine.PlayAsync(
+            ExactWheelTestData.Recording(
+                events: [inputEvent],
+                durationMicroseconds: 0),
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                DispatchCompleted = completed =>
+                {
+                    acknowledged = completed;
+                    batchesAtAcknowledgement = backend.Batches.Count;
+                }
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(inputEvent, acknowledged);
+        Assert.Equal(1, batchesAtAcknowledgement);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_DispatchAcknowledgementFailureReleasesHeldInput()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(10_000, 2, down: false)
+            ],
+            durationMicroseconds: 10_000);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                DispatchCompleted = static _ =>
+                    throw new InvalidOperationException(
+                        "Synthetic acknowledgement failure.")
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ExactWheelPlaybackStopReason.TargetLost, result.Reason);
+        Assert.True(result.CleanupSucceeded);
+        Assert.Equal(2, backend.Batches.Count);
+        Assert.Equal(
+            ExactWheelNativeMethods.KeyboardEventKeyUp |
+            ExactWheelNativeMethods.KeyboardEventScanCode,
+            backend.Batches[1][0].Data.Keyboard.Flags);
         await engine.DisposeAsync();
     }
 
@@ -719,9 +1055,9 @@ public sealed class ExactWheelPlaybackEngineTests
             CancellationToken.None);
 
         Assert.True(result.Succeeded, result.Message);
-        Assert.Equal(9, authorizationCalls);
+        Assert.Equal(10, authorizationCalls);
         Assert.Equal(7, backend.Batches.Count);
-        Assert.Equal(810_010L, waiter.Deadlines[^1]);
+        Assert.Equal(900_010L, waiter.Deadlines[^1]);
         Assert.True(capture.InterventionStarted);
         Assert.True(capture.InterventionStopped);
         await engine.DisposeAsync();
@@ -778,7 +1114,7 @@ public sealed class ExactWheelPlaybackEngineTests
             CancellationToken.None);
 
         Assert.True(result.Succeeded, result.Message);
-        Assert.Equal(9, authorizationCalls);
+        Assert.Equal(10, authorizationCalls);
         Assert.Equal(7, backend.Batches.Count);
         await engine.DisposeAsync();
     }
@@ -1093,7 +1429,11 @@ public sealed class ExactWheelPlaybackEngineTests
         var backend = new FakeInputBackend();
         var engine = CreateEngine(clock, waiter, backend);
         var recording = ExactWheelTestData.Recording(
-            events: [Key(0, 1, down: true)],
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(10_000, 2, down: false)
+            ],
             durationMicroseconds: 10_000);
 
         var result = await engine.PlayAsync(
@@ -1527,31 +1867,49 @@ public sealed class ExactWheelPlaybackEngineTests
     }
 
     [Fact]
-    public async Task InterventionSequence_FocusTransitionRejectsInitiallyHeldInputWithoutAuthorization()
+    public async Task InterventionSequence_FocusTransitionWaitsForInitiallyHeldInput()
     {
+        using var releaseObserved = new ManualResetEventSlim(false);
         var authorizationCalls = 0;
         var clock = new FakeClock(1_000_000, 10);
         var capture = new FakeCapture();
+        var physicalInput = new FakePhysicalInputState
+        {
+            AllReleased = false
+        };
         var engine = new ExactWheelPlaybackEngine(
             new ExactWheelInputInjector(new FakeInputBackend()),
             clock,
             new FakeWaiter(clock),
-            new FakePhysicalInputState { AllReleased = false },
+            physicalInput,
             () => capture);
         await using var sequence = engine.BeginInterventionSequence();
 
-        var result = await engine.WaitForFocusTransitionAsync(
+        var transition = engine.WaitForFocusTransitionAsync(
             () =>
             {
                 Interlocked.Increment(ref authorizationCalls);
+                releaseObserved.Set();
                 return ExactWheelDispatchAuthorization.Authorized;
             },
             TestContext.Current.CancellationToken);
 
-        Assert.Equal(
-            ExactWheelFocusTransitionWaitResult.PhysicalInputHeld,
-            result);
+        await Task.Delay(
+            TimeSpan.FromMilliseconds(75),
+            TestContext.Current.CancellationToken);
+        Assert.False(transition.IsCompleted);
         Assert.Equal(0, Volatile.Read(ref authorizationCalls));
+
+        physicalInput.AllReleased = true;
+        Assert.True(releaseObserved.Wait(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken));
+        var result = await transition.WaitAsync(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExactWheelFocusTransitionWaitResult.Ready, result);
+        Assert.True(engine.IsProgrammaticFocusAllowed());
         await engine.DisposeAsync();
     }
 
@@ -1751,8 +2109,10 @@ public sealed class ExactWheelPlaybackEngineTests
                     100,
                     80,
                     0,
-                    0)
-            ]);
+                    0),
+                Key(200_000, 3, down: false)
+            ],
+            durationMicroseconds: 200_000);
 
         var playback = engine.PlayAsync(
             recording,
@@ -1775,12 +2135,13 @@ public sealed class ExactWheelPlaybackEngineTests
     }
 
     [Fact]
-    public async Task PlayAsync_TransientTargetWithHeldKeyStopsThenReleases()
+    public async Task PlayAsync_TransientTargetWithHeldKeyNeutralizesTransaction()
     {
         var clock = new FakeClock(1_000_000, 10);
         var waiter = new FakeWaiter(clock);
         var backend = new FakeInputBackend();
         var engine = CreateEngine(clock, waiter, backend);
+        var keyUpAuthorizationCalls = 0;
         var recording = ExactWheelTestData.Recording(
             events:
             [
@@ -1799,31 +2160,373 @@ public sealed class ExactWheelPlaybackEngineTests
                     0,
                     0,
                     0x41,
-                    0x1E)
+                    0x1E),
+                new ExactWheelInputEvent(
+                    20_000,
+                    3,
+                    ExactWheelInputEventType.MouseMove,
+                    120,
+                    90,
+                    0,
+                    0)
             ],
-            durationMicroseconds: 10_000);
+            durationMicroseconds: 20_000);
 
         var result = await engine.PlayAsync(
             recording,
             new ExactWheelPlaybackOptions
             {
                 StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                Rate = ExactWheelPlaybackRate.FromRatio(8, 1),
+                EventDispatchAuthorization = inputEvent =>
+                    inputEvent.Sequence == 1
+                        ? ExactWheelDispatchAuthorization.Authorized
+                        : ++keyUpAuthorizationCalls >= 3
+                            ? ExactWheelDispatchAuthorization.Authorized
+                            : ExactWheelDispatchAuthorization
+                                .TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.True(result.CleanupSucceeded);
+        Assert.DoesNotContain("stopped before pausing", result.Message);
+        Assert.Equal(3, backend.Batches.Count);
+        Assert.Equal(
+            ExactWheelNativeMethods.KeyboardEventKeyUp |
+            ExactWheelNativeMethods.KeyboardEventScanCode,
+            backend.Batches[1][0].Data.Keyboard.Flags);
+        Assert.Equal(
+            ExactWheelNativeMethods.MouseEventMove |
+            ExactWheelNativeMethods.MouseEventAbsolute |
+            ExactWheelNativeMethods.MouseEventVirtualDesktop |
+            ExactWheelNativeMethods.MouseEventMoveNoCoalesce,
+            backend.Batches[2][0].Data.Mouse.Flags);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_RecoveredDispatchUsesUnscaledSettleDelay()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var injectionTimestamps = new List<long>();
+        var backend = new FakeInputBackend((inputs, _) =>
+        {
+            injectionTimestamps.Add(clock.Timestamp);
+            return (checked((uint)inputs.Length), 0);
+        });
+        var engine = CreateEngine(clock, waiter, backend);
+        var authorizationCalls = 0;
+        var recording = ExactWheelTestData.Recording(
+            events: [MouseMove(0, 1, 100)],
+            durationMicroseconds: 0);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                Rate = ExactWheelPlaybackRate.FromRatio(100, 1),
+                DispatchRecoverySettleMicroseconds = 34_000,
+                EventDispatchAuthorization = _ =>
+                    ++authorizationCalls == 1
+                        ? ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+                        : ExactWheelDispatchAuthorization.Authorized
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal([34_010L], injectionTimestamps);
+        Assert.True(authorizationCalls >= 4);
+        Assert.Contains(34_010L, waiter.Deadlines);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_TransientTargetDuringDragDoesNotDuplicateClick()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var moveAuthorizationCalls = 0;
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                new ExactWheelInputEvent(
+                    0,
+                    1,
+                    ExactWheelInputEventType.MouseButtonDown,
+                    100,
+                    80,
+                    (int)ExactWheelMouseButton.Left,
+                    0),
+                new ExactWheelInputEvent(
+                    10_000,
+                    2,
+                    ExactWheelInputEventType.MouseMove,
+                    140,
+                    120,
+                    0,
+                    0),
+                new ExactWheelInputEvent(
+                    20_000,
+                    3,
+                    ExactWheelInputEventType.MouseButtonUp,
+                    140,
+                    120,
+                    (int)ExactWheelMouseButton.Left,
+                    0)
+            ],
+            durationMicroseconds: 20_000);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                Rate = ExactWheelPlaybackRate.FromRatio(8, 1),
+                EventDispatchAuthorization = inputEvent =>
+                    inputEvent.Sequence == 2 &&
+                    ++moveAuthorizationCalls < 3
+                        ? ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+                        : ExactWheelDispatchAuthorization.Authorized
+            },
+            CancellationToken.None);
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(2, backend.Batches.Count);
+        Assert.Equal(
+            ExactWheelNativeMethods.MouseEventLeftUp,
+            backend.Batches[1][0].Data.Mouse.Flags);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_PhysicalInterventionWhileKeyHeldPausesAndResumes()
+    {
+        using var suspensionObserved = new ManualResetEventSlim(false);
+        using var allowPhysicalRelease = new ManualResetEventSlim(false);
+        var clock = new FakeClock(1_000_000, 10);
+        var backend = new FakeInputBackend();
+        var capture = new FakeCapture();
+        var physicalInput = new FakePhysicalInputState();
+        var waiter = new FakeWaiter(
+            clock,
+            (_, call, _, _) =>
+            {
+                if (call == 1)
+                {
+                    physicalInput.AllReleased = false;
+                    capture.SignalIntervention();
+                    return DeadlineWaitResult.PhysicalIntervention;
+                }
+                if (call == 2)
+                {
+                    suspensionObserved.Set();
+                    if (!allowPhysicalRelease.Wait(TimeSpan.FromSeconds(5)))
+                    {
+                        throw new TimeoutException(
+                            "Synthetic physical input was not released.");
+                    }
+                    physicalInput.AllReleased = true;
+                }
+                return DeadlineWaitResult.Reached;
+            });
+        var engine = new ExactWheelPlaybackEngine(
+            new ExactWheelInputInjector(backend),
+            clock,
+            waiter,
+            physicalInput,
+            () => capture);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(100_000, 2, down: false)
+            ],
+            durationMicroseconds: 100_000);
+
+        var playback = engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                EventDispatchAuthorization = static _ =>
+                    ExactWheelDispatchAuthorization.Authorized
+            },
+            CancellationToken.None);
+
+        Assert.True(suspensionObserved.Wait(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken));
+        Assert.False(playback.IsCompleted);
+        Assert.Equal(2, backend.Batches.Count);
+        Assert.Equal(
+            ExactWheelNativeMethods.KeyboardEventKeyUp |
+            ExactWheelNativeMethods.KeyboardEventScanCode,
+            backend.Batches[1][0].Data.Keyboard.Flags);
+
+        allowPhysicalRelease.Set();
+        var result = await playback;
+
+        Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(2, backend.Batches.Count);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_CancelledWhileHeldInputIsSuspendedDoesNotRestore()
+    {
+        using var suspensionObserved = new ManualResetEventSlim(false);
+        using var cancellation = new CancellationTokenSource();
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(
+            clock,
+            (_, call, stop, _) =>
+            {
+                if (call != 2)
+                    return DeadlineWaitResult.Reached;
+                suspensionObserved.Set();
+                Assert.True(stop.WaitOne(TimeSpan.FromSeconds(5)));
+                return DeadlineWaitResult.Cancelled;
+            });
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(100_000, 2, down: false)
+            ],
+            durationMicroseconds: 100_000);
+
+        var playback = engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
                 EventDispatchAuthorization = inputEvent =>
                     inputEvent.Sequence == 1
                         ? ExactWheelDispatchAuthorization.Authorized
                         : ExactWheelDispatchAuthorization
                             .TemporarilyUnavailable
             },
-            CancellationToken.None);
+            cancellation.Token);
 
-        Assert.Equal(ExactWheelPlaybackStopReason.TargetLost, result.Reason);
+        Assert.True(suspensionObserved.Wait(
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken));
+        Assert.False(playback.IsCompleted);
+        cancellation.Cancel();
+        var result = await playback;
+
+        Assert.Equal(ExactWheelPlaybackStopReason.Cancelled, result.Reason);
         Assert.True(result.CleanupSucceeded);
-        Assert.Contains("global release input", result.Message);
         Assert.Equal(2, backend.Batches.Count);
         Assert.Equal(
             ExactWheelNativeMethods.KeyboardEventKeyUp |
             ExactWheelNativeMethods.KeyboardEventScanCode,
             backend.Batches[1][0].Data.Keyboard.Flags);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_DeniedAfterHeldInputSuspensionNeverRepressesInput()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var waiter = new FakeWaiter(clock);
+        var backend = new FakeInputBackend();
+        var engine = CreateEngine(clock, waiter, backend);
+        var releaseAuthorizationCalls = 0;
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(100_000, 2, down: false)
+            ],
+            durationMicroseconds: 100_000);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                EventDispatchAuthorization = inputEvent =>
+                    inputEvent.Sequence == 1
+                        ? ExactWheelDispatchAuthorization.Authorized
+                        : ++releaseAuthorizationCalls >= 3
+                            ? ExactWheelDispatchAuthorization.Denied
+                            : ExactWheelDispatchAuthorization
+                                .TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.Equal(ExactWheelPlaybackStopReason.TargetLost, result.Reason);
+        Assert.True(result.CleanupSucceeded);
+        Assert.Equal(2, backend.Batches.Count);
+        Assert.Equal(
+            ExactWheelNativeMethods.KeyboardEventScanCode,
+            backend.Batches[0][0].Data.Keyboard.Flags);
+        Assert.Equal(
+            ExactWheelNativeMethods.KeyboardEventKeyUp |
+            ExactWheelNativeMethods.KeyboardEventScanCode,
+            backend.Batches[1][0].Data.Keyboard.Flags);
+        await engine.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PlayAsync_HeldInputReleaseFailureIsExplicitAndCleanupRetries()
+    {
+        var clock = new FakeClock(1_000_000, 10);
+        var backend = new FakeInputBackend((inputs, call) =>
+            call == 1
+                ? (0, 5)
+                : (checked((uint)inputs.Length), 0));
+        var waiter = new FakeWaiter(clock);
+        var engine = CreateEngine(clock, waiter, backend);
+        var keyUpAuthorizationCalls = 0;
+        var recording = ExactWheelTestData.Recording(
+            events:
+            [
+                Key(0, 1, down: true),
+                Key(100_000, 2, down: false)
+            ],
+            durationMicroseconds: 100_000);
+
+        var result = await engine.PlayAsync(
+            recording,
+            new ExactWheelPlaybackOptions
+            {
+                StopOnPhysicalInput = false,
+                PauseOnPhysicalInput = true,
+                EventDispatchAuthorization = inputEvent =>
+                    inputEvent.Sequence == 1 ||
+                    ++keyUpAuthorizationCalls >= 3
+                        ? ExactWheelDispatchAuthorization.Authorized
+                        : ExactWheelDispatchAuthorization
+                            .TemporarilyUnavailable
+            },
+            CancellationToken.None);
+
+        Assert.Equal(
+            ExactWheelPlaybackStopReason.InjectionFailed,
+            result.Reason);
+        Assert.Equal(5, result.Win32Error);
+        Assert.Equal(0U, result.Submitted);
+        Assert.Equal(1U, result.Expected);
+        Assert.True(result.CleanupSucceeded);
+        Assert.Contains("temporarily release held macro input", result.Message);
+        Assert.Equal(3, backend.Batches.Count);
         await engine.DisposeAsync();
     }
 
@@ -1864,8 +2567,10 @@ public sealed class ExactWheelPlaybackEngineTests
                     100,
                     80,
                     0,
-                    0)
-            ]);
+                    0),
+                Key(200_000, 3, down: false)
+            ],
+            durationMicroseconds: 200_000);
 
         var result = await engine.PlayAsync(
             recording,
@@ -1969,6 +2674,17 @@ public sealed class ExactWheelPlaybackEngineTests
             throw new ApplicationException("Synthetic worker failure.");
 
         public long Timestamp => 1;
+    }
+
+    private sealed class SwitchableFailureClock : IPlaybackClock
+    {
+        internal bool ThrowOnTimestamp { get; set; }
+
+        public long Frequency => 1_000_000;
+
+        public long Timestamp => ThrowOnTimestamp
+            ? throw new ApplicationException("Synthetic worker failure.")
+            : 10;
     }
 
     private sealed class PassiveWaiter : IPlaybackWaiter

@@ -211,9 +211,15 @@ public sealed class SessionMacroPlaybackLoopTests
         Assert.Contains("string.Join(\" \", warnings)", host);
         Assert.Contains("SuppressDialog: externallyCancelled", host);
         Assert.Contains("!outcome.SuppressDialog", controller);
-        Assert.Contains("var mayContinue = true;", host);
         Assert.Contains(
-            "if (mayContinue && prepared.WholeTemplate is not null)",
+            "var clientModeActive = prepared.ClientTemplate is not null;",
+            host);
+        Assert.Contains(
+            "if (wholeModeActive && prepared.WholeTemplate is not null)",
+            host);
+        Assert.Contains("if (result.StopAll)", host);
+        Assert.Contains(
+            "if (!clientModeActive && !wholeModeActive)",
             host);
         Assert.Contains("LoopCount = 1", playback);
         Assert.Contains("Infinite = false", playback);
@@ -245,6 +251,24 @@ public sealed class SessionMacroPlaybackLoopTests
         Assert.Equal(
             2,
             CountOccurrences(playback, "pauseOnFocusLoss: true"));
+        Assert.Contains(
+            "MacroDispatchRecoverySettleMicroseconds = 34_000",
+            playback);
+        Assert.Contains(
+            "DispatchRecoverySettleMicroseconds =",
+            playback);
+        Assert.Contains(
+            "MacroDispatchAuthorizationTimeoutMicroseconds =",
+            playback);
+        Assert.Contains(
+            "DispatchAuthorizationTimeoutMicroseconds =",
+            playback);
+        Assert.Contains(
+            "DispatchCompleted = playbackLease.NotifyDispatchCompleted",
+            playback);
+        Assert.Contains(
+            "playbackLease.CompletePlaybackSegment();",
+            playback);
         Assert.Equal(
             2,
             CountOccurrences(playback, "requireForeground: false"));
@@ -284,6 +308,9 @@ public sealed class SessionMacroPlaybackLoopTests
             host);
         Assert.Contains(
             "SessionMacroPlaybackRetryDisposition.Terminal",
+            playback);
+        Assert.Contains(
+            "must not stop healthy clients",
             playback);
         Assert.Equal(
             3,
@@ -328,7 +355,10 @@ public sealed class SessionMacroPlaybackLoopTests
         Assert.True(wholeCleanup > wholeCompletion);
         Assert.True(wholeCleanup < wholeRetry);
         Assert.Contains(
-            "? TemplateMacroPlaybackResult.Stopped(warning)",
+            "? TemplateMacroPlaybackResult.Retired(warning)",
+            playback);
+        Assert.Contains(
+            "internal static TemplateMacroPlaybackResult Retired(",
             playback);
         Assert.Contains(
             "SessionMacroPlaybackCancellation.ThrowIfCleanCancellation(",

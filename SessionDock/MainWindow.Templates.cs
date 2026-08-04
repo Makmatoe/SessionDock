@@ -12,6 +12,9 @@ public partial class MainWindow
 {
     private const string WholeLayoutMacroRetryTargetKey =
         "sessiondock:whole-layout";
+    private const ulong MacroDispatchRecoverySettleMicroseconds = 34_000;
+    private const ulong MacroDispatchAuthorizationTimeoutMicroseconds =
+        750_000;
     private readonly SessionTemplateStore _sessionTemplateStore = new();
     private readonly RobloxWindowService _robloxWindowService = new();
     private RobloxSessionLayoutCoordinator? _robloxSessionLayoutCoordinator;
@@ -952,7 +955,7 @@ public partial class MainWindow
                         playbackRate,
                         playbackText,
                         cancellationToken),
-                _ => TemplateMacroPlaybackResult.Stopped(
+                _ => TemplateMacroPlaybackResult.Retired(
                     playbackText.InvalidAssignment)
             };
         }
@@ -961,7 +964,7 @@ public partial class MainWindow
         {
             Trace.WriteLine(
                 $"ExactWheel template playback stopped safely: {exception.GetType().Name}.");
-            return TemplateMacroPlaybackResult.Stopped(
+            return TemplateMacroPlaybackResult.Retired(
                 playbackText.PlaybackFailure(exception.Message));
         }
     }
@@ -983,7 +986,7 @@ public partial class MainWindow
     {
         if (sharedMacroId is not null && targetSlots.Count == 0)
         {
-            return TemplateMacroPlaybackResult.Stopped(
+            return TemplateMacroPlaybackResult.Retired(
                 playbackText.InvalidAssignment);
         }
 
@@ -1038,13 +1041,20 @@ public partial class MainWindow
                 if (focusTransition !=
                     ExactWheelFocusTransitionWaitResult.Ready)
                 {
-                    if (focusTransition is
-                        ExactWheelFocusTransitionWaitResult.PhysicalInputHeld or
-                        ExactWheelFocusTransitionWaitResult
+                    if (focusTransition == ExactWheelFocusTransitionWaitResult
                             .InterventionMonitorUnavailable)
                     {
                         return TemplateMacroPlaybackResult.Stopped(
                             playbackText.StoppedByPhysicalInput);
+                    }
+                    if (focusTransition == ExactWheelFocusTransitionWaitResult
+                            .PhysicalInputHeld)
+                    {
+                        playbackRetryTracker.ReportFailure(
+                            window.Key,
+                            SessionMacroPlaybackRetryDisposition.Transient);
+                        skipped++;
+                        continue;
                     }
 
                     if (playbackLease.Failure is { } transitionFailure)
@@ -1057,8 +1067,11 @@ public partial class MainWindow
                         continue;
                     }
 
-                    return TemplateMacroPlaybackResult.Stopped(
-                        playbackText.FocusDenied);
+                    playbackRetryTracker.ReportFailure(
+                        window.Key,
+                        SessionMacroPlaybackRetryDisposition.Transient);
+                    skipped++;
+                    continue;
                 }
                 var focused = await _robloxWindowService.FocusAsync(
                     playbackLease,
@@ -1159,12 +1172,21 @@ public partial class MainWindow
                     playbackRetryTracker.ReportFailure(
                         window.Key,
                         disposition);
-                    if (disposition ==
-                        SessionMacroPlaybackRetryDisposition.Transient)
-                    {
-                        skipped++;
-                        continue;
-                    }
+                    // A terminal identity failure retires only this exact
+                    // assignment. It must not stop healthy clients in the
+                    // same indefinitely looping n-client session.
+                    skipped++;
+                    continue;
+                }
+                if (ClassifyMacroPlaybackRetry(
+                        playbackOutcome.Result.Reason) is { }
+                    playbackDisposition)
+                {
+                    playbackRetryTracker.ReportFailure(
+                        window.Key,
+                        playbackDisposition);
+                    skipped++;
+                    continue;
                 }
                 return TemplateMacroPlaybackResult.Stopped(warning);
             }
@@ -1174,7 +1196,7 @@ public partial class MainWindow
 
         if (assigned == 0)
         {
-            return TemplateMacroPlaybackResult.Stopped(
+            return TemplateMacroPlaybackResult.Retired(
                 playbackText.InvalidAssignment);
         }
         if (completed == 0)
@@ -1184,7 +1206,7 @@ public partial class MainWindow
                 return TemplateMacroPlaybackResult.Deferred(
                     playbackText.SkippedInvalid(skipped));
             }
-            return TemplateMacroPlaybackResult.Stopped(
+            return TemplateMacroPlaybackResult.Retired(
                 playbackText.SkippedInvalid(skipped));
         }
         return skipped == 0
@@ -1192,7 +1214,8 @@ public partial class MainWindow
             : new TemplateMacroPlaybackResult(
                 playbackText.SkippedInvalid(skipped),
                 MayContinue: true,
-                MadeProgress: true);
+                MadeProgress: true,
+                StopAll: false);
     }
 
     internal static IReadOnlyList<SessionTemplateClientSlot>
@@ -1227,7 +1250,7 @@ public partial class MainWindow
             definition.Kind != SessionMacroKind.WholeLayout ||
             windows.Count == 0)
         {
-            return TemplateMacroPlaybackResult.Stopped(
+            return TemplateMacroPlaybackResult.Retired(
                 playbackText.InvalidAssignment);
         }
         if (!playbackRetryTracker.CanAttempt(
@@ -1259,12 +1282,19 @@ public partial class MainWindow
                 cancellationToken);
         if (focusTransition != ExactWheelFocusTransitionWaitResult.Ready)
         {
-            if (focusTransition is
-                ExactWheelFocusTransitionWaitResult.PhysicalInputHeld or
-                ExactWheelFocusTransitionWaitResult
+            if (focusTransition == ExactWheelFocusTransitionWaitResult
                     .InterventionMonitorUnavailable)
             {
                 return TemplateMacroPlaybackResult.Stopped(
+                    playbackText.StoppedByPhysicalInput);
+            }
+            if (focusTransition == ExactWheelFocusTransitionWaitResult
+                    .PhysicalInputHeld)
+            {
+                return ReportMacroPlaybackRetryFailure(
+                    playbackRetryTracker,
+                    WholeLayoutMacroRetryTargetKey,
+                    SessionMacroPlaybackRetryDisposition.Transient,
                     playbackText.StoppedByPhysicalInput);
             }
 
@@ -1277,7 +1307,10 @@ public partial class MainWindow
                     transitionFailure.Error);
             }
 
-            return TemplateMacroPlaybackResult.Stopped(
+            return ReportMacroPlaybackRetryFailure(
+                playbackRetryTracker,
+                WholeLayoutMacroRetryTargetKey,
+                SessionMacroPlaybackRetryDisposition.Transient,
                 playbackText.FocusDenied);
         }
         var focused = await _robloxWindowService.FocusAsync(
@@ -1363,6 +1396,16 @@ public partial class MainWindow
                 warning);
         }
 
+        if (ClassifyMacroPlaybackRetry(
+                playbackOutcome.Result.Reason) is { } disposition)
+        {
+            return ReportMacroPlaybackRetryFailure(
+                playbackRetryTracker,
+                WholeLayoutMacroRetryTargetKey,
+                disposition,
+                warning);
+        }
+
         return TemplateMacroPlaybackResult.Stopped(warning);
     }
 
@@ -1376,28 +1419,41 @@ public partial class MainWindow
         bool pauseOnFocusLoss = false,
         ExactWheelPlaybackCoordinateTransform? coordinateTransform = null)
     {
-        var result = await playbackSession.PlayAsync(
-            recording,
-            new ExactWheelPlaybackOptions
-            {
-                LoopCount = 1,
-                Rate = playbackRate,
-                Infinite = false,
-                StopOnPhysicalInput = !pauseOnFocusLoss,
-                PauseOnPhysicalInput = pauseOnFocusLoss,
-                EnforcePhysicalInputRelease = true,
-                CoordinateTransform = coordinateTransform,
-                EventDispatchAuthorization = inputEvent =>
+        ExactWheelPlaybackResult result;
+        try
+        {
+            result = await playbackSession.PlayAsync(
+                recording,
+                new ExactWheelPlaybackOptions
                 {
-                    var authorization = playbackLease
-                        .GetDispatchAuthorization(inputEvent);
-                    return pauseOnFocusLoss || authorization ==
-                        ExactWheelDispatchAuthorization.Authorized
-                        ? authorization
-                        : ExactWheelDispatchAuthorization.Denied;
-                }
-            },
-            cancellationToken);
+                    LoopCount = 1,
+                    Rate = playbackRate,
+                    Infinite = false,
+                    DispatchRecoverySettleMicroseconds =
+                    MacroDispatchRecoverySettleMicroseconds,
+                    DispatchAuthorizationTimeoutMicroseconds =
+                    MacroDispatchAuthorizationTimeoutMicroseconds,
+                    StopOnPhysicalInput = !pauseOnFocusLoss,
+                    PauseOnPhysicalInput = pauseOnFocusLoss,
+                    EnforcePhysicalInputRelease = true,
+                    CoordinateTransform = coordinateTransform,
+                    EventDispatchAuthorization = inputEvent =>
+                    {
+                        var authorization = playbackLease
+                            .GetDispatchAuthorization(inputEvent);
+                        return pauseOnFocusLoss || authorization ==
+                            ExactWheelDispatchAuthorization.Authorized
+                            ? authorization
+                            : ExactWheelDispatchAuthorization.Denied;
+                    },
+                    DispatchCompleted = playbackLease.NotifyDispatchCompleted
+                },
+                cancellationToken);
+        }
+        finally
+        {
+            playbackLease.CompletePlaybackSegment();
+        }
         SessionMacroPlaybackCancellation.ThrowIfCleanCancellation(
             result,
             cancellationToken);
@@ -1500,6 +1556,23 @@ public partial class MainWindow
         return SessionMacroPlaybackRetryDisposition.Transient;
     }
 
+    private static SessionMacroPlaybackRetryDisposition?
+        ClassifyMacroPlaybackRetry(
+        ExactWheelPlaybackStopReason reason) =>
+        reason switch
+        {
+            ExactWheelPlaybackStopReason.TargetLost or
+                ExactWheelPlaybackStopReason.TargetUnavailable or
+                ExactWheelPlaybackStopReason.DangerouslyLate or
+                ExactWheelPlaybackStopReason.InjectionFailed or
+                ExactWheelPlaybackStopReason.TimerFailed or
+                ExactWheelPlaybackStopReason.PhysicalInputHeld =>
+                SessionMacroPlaybackRetryDisposition.Transient,
+            ExactWheelPlaybackStopReason.InvalidTimeline =>
+                SessionMacroPlaybackRetryDisposition.Terminal,
+            _ => null
+        };
+
     private static TemplateMacroPlaybackResult
         ReportMacroPlaybackRetryFailure(
         SessionMacroPlaybackRetryTracker playbackRetryTracker,
@@ -1509,7 +1582,7 @@ public partial class MainWindow
     {
         playbackRetryTracker.ReportFailure(targetKey, disposition);
         return disposition == SessionMacroPlaybackRetryDisposition.Terminal
-            ? TemplateMacroPlaybackResult.Stopped(warning)
+            ? TemplateMacroPlaybackResult.Retired(warning)
             : TemplateMacroPlaybackResult.Deferred(warning);
     }
 
@@ -1526,15 +1599,35 @@ public partial class MainWindow
     private sealed record TemplateMacroPlaybackResult(
         string? Warning,
         bool MayContinue,
-        bool MadeProgress)
+        bool MadeProgress,
+        bool StopAll)
     {
         internal static TemplateMacroPlaybackResult Completed { get; } =
-            new(null, MayContinue: true, MadeProgress: true);
+            new(
+                null,
+                MayContinue: true,
+                MadeProgress: true,
+                StopAll: false);
 
         internal static TemplateMacroPlaybackResult Deferred(string warning) =>
-            new(warning, MayContinue: true, MadeProgress: false);
+            new(
+                warning,
+                MayContinue: true,
+                MadeProgress: false,
+                StopAll: false);
+
+        internal static TemplateMacroPlaybackResult Retired(string warning) =>
+            new(
+                warning,
+                MayContinue: false,
+                MadeProgress: false,
+                StopAll: false);
 
         internal static TemplateMacroPlaybackResult Stopped(string warning) =>
-            new(warning, MayContinue: false, MadeProgress: false);
+            new(
+                warning,
+                MayContinue: false,
+                MadeProgress: false,
+                StopAll: true);
     }
 }

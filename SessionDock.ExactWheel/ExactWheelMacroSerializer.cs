@@ -286,8 +286,8 @@ public static class ExactWheelMacroSerializer
                 windowRect,
                 clientRect),
             events);
-        ExactWheelRecordingValidator.Validate(recording);
-        return recording;
+        return ExactWheelRecordingValidator.NormalizeLegacyV1Playable(
+            recording);
     }
 
     public static ExactWheelRecording Load(string path)

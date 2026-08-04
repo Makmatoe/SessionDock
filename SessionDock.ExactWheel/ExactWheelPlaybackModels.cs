@@ -7,6 +7,7 @@ public enum ExactWheelPlaybackStopReason
     PhysicalIntervention,
     PhysicalInputHeld,
     TargetLost,
+    TargetUnavailable,
     DangerouslyLate,
     InjectionFailed,
     InvalidTimeline,
@@ -39,6 +40,16 @@ public sealed class ExactWheelPlaybackOptions
     public bool Infinite { get; init; }
 
     public ulong InterLoopDelayMicroseconds { get; init; }
+
+    // A recovered foreground/pointer authorization can need a small
+    // non-scaled drain before the next SendInput. Zero preserves the generic
+    // ExactWheel behavior; SessionDock enables this for cross-client macros.
+    public ulong DispatchRecoverySettleMicroseconds { get; init; }
+
+    // A permanently unavailable target must not monopolize a serial
+    // multi-target playback loop. Zero keeps the generic ExactWheel behavior
+    // of waiting indefinitely; hosts can opt into a bounded, retryable yield.
+    public ulong DispatchAuthorizationTimeoutMicroseconds { get; init; }
 
     public ulong DangerouslyLateMicroseconds { get; init; } = 250_000;
 
@@ -76,6 +87,11 @@ public sealed class ExactWheelPlaybackOptions
     public Func<ExactWheelInputEvent, ExactWheelDispatchAuthorization>?
         EventDispatchAuthorization
     { get; init; }
+
+    // Runs synchronously after Windows accepted the complete input event.
+    // Hosts can use this acknowledgement to bind a click-driven focus change
+    // to the exact event that caused it before any later input is authorized.
+    public Action<ExactWheelInputEvent>? DispatchCompleted { get; init; }
 
     /// <summary>
     /// Maps pointer coordinates immediately before authorization and

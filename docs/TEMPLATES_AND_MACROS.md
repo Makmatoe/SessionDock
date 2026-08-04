@@ -138,6 +138,14 @@ weaken foreground, timing, injection, or emergency-stop guards. Physical input
 or focus loss enters a non-injecting pause until the safe verified conditions
 recover; it is not permission to inject into the background.
 
+Focus changes use a small unscaled drain/settle boundary, including clicks in a
+whole-layout recording that move focus to another leased Roblox client. If one
+target stays unavailable, that target yields and retries with backoff instead
+of starving the other clients. A permanently invalid assignment retires only
+that assignment or mode. Healthy per-client and whole-layout modes continue
+independently until **Stop**. Failure to release global injected input or loss
+of the physical-input safety monitor remains a fail-closed exception.
+
 ## Explicit Play and the current batch
 
 Template launch and macro playback are separate actions:

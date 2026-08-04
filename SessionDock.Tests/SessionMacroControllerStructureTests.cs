@@ -161,15 +161,17 @@ public sealed class SessionMacroControllerStructureTests
     }
 
     [Fact]
-    public void PreparationWarnings_DoNotSuppressPreparedWholeMacro()
+    public void RetiredClientMode_DoesNotSuppressPreparedWholeMacro()
     {
         var source = File.ReadAllText(RepoFile(
             "SessionDock",
             "MainWindow.SessionMacros.cs"));
 
-        Assert.Contains("var mayContinue = true", source);
         Assert.Contains(
-            "if (mayContinue && prepared.WholeTemplate is not null)",
+            "var clientModeActive = prepared.ClientTemplate is not null;",
+            source);
+        Assert.Contains(
+            "if (wholeModeActive && prepared.WholeTemplate is not null)",
             source);
         Assert.DoesNotContain(
             "warnings.Count == 0 && prepared.WholeTemplate is not null",
