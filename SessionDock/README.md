@@ -109,7 +109,7 @@ monitor fallback, and 4K-to-1080p behavior.
 Local production packaging is intentionally unavailable. Follow
 [`docs/RELEASING.md`](../docs/RELEASING.md) only after every automated and
 manual gate passes. ExactWheel provenance pins 14 implementation/lock files at
-commit `f32799820fb4a31089523beb184314542f4fe521`, the separately pinned current
+commit `40023f516fe89977a35d94cc5580e790e48d54a1`, the separately pinned current
 build definition, and the root MIT license. The release verifier must
 cryptographically confirm that complete identity before publication.
 

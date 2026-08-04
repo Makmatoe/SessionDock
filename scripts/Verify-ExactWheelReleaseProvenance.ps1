@@ -11,8 +11,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$expectedSourceCommit = 'f32799820fb4a31089523beb184314542f4fe521'
-$expectedManifestSha256 = 'ef99e19b70a139841385391a9065f81bdd555df4401777d495c2fdd5554c26bd'
+$expectedSourceCommit = '40023f516fe89977a35d94cc5580e790e48d54a1'
+$expectedManifestSha256 = 'f64d149774f12a7b9240499c22f329751a6ed1f89d11fa3fc2a4dac1c41681ad'
 $expectedLicenseSha256 = '5944250b546861e4e616de520b7d06513fec435a5651fc49d83ae92d3cf14bf2'
 $expectedLicenseGitBlob = '730ba1584a9ef1002dfca75b3b18a8d889052fbc'
 $expectedCanonicalManifestSha256 =

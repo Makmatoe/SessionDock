@@ -68,10 +68,16 @@ Before creating a release tag:
    contracts, notices, and SBOM inputs.
 4. Confirm ExactWheel provenance. ExactWheel provenance pins 14
    implementation/lock files at commit
-   `f32799820fb4a31089523beb184314542f4fe521`, the separately pinned current
+   `40023f516fe89977a35d94cc5580e790e48d54a1`, the separately pinned current
    build definition, and the root MIT license. The verifier must reproduce
    every path, Git blob, byte count, SHA-256 value, canonical inventory hash,
    build-definition identity, and license identity. Any drift blocks release.
+   Because protected `main` permits squash merges only, ExactWheel source
+   changes use two protected PRs: first squash-merge the reviewed source bytes,
+   then use a provenance-only follow-up PR to pin that resulting protected-main
+   squash commit. Never pin a PR-head or predicted squash SHA.
+   Do not create a release tag between those merges. After the follow-up is
+   merged, the pinned source commit remains an ancestor of the release checkout.
 5. Complete the template/macro safety checklist on real Windows hardware:
    bounded recording, the global recording-stop keybind, explicit Play, every
    supported speed, continuous looping until Stop, focus/physical-input pause

@@ -784,7 +784,7 @@ if ($handleScopeSbomPackages.Count -ne 1 -or
         }).Count -ne 1) {
     throw 'Release SBOM does not contain the exact reviewed HandleScope 0.3.0 source identity.'
 }
-$exactWheelCommit = 'f32799820fb4a31089523beb184314542f4fe521'
+$exactWheelCommit = '40023f516fe89977a35d94cc5580e790e48d54a1'
 $exactWheelInventorySha256 =
     'd20c4933d8fcabbc9b00163ffb20868e74e7cca796344e72508c08e8b1118425'
 $exactWheelBuildBlob = '07fe8f9ec14088750f6d2a0d835c86b678a0f76e'
