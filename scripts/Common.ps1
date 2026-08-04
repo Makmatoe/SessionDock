@@ -24,7 +24,7 @@ function Get-ProjectVersion {
     }
 
     $version = [string] $versions[0]
-    if ($version -cnotmatch '^\d+\.\d+\.\d+$') {
+    if ($version -cnotmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
         throw "Project version '$version' must use stable major.minor.patch format."
     }
 
@@ -66,6 +66,98 @@ function Assert-LegacyReadableReleaseNotes {
         if ($notes -match $entry.Value) {
             throw "Release notes contain $($entry.Key), which are not readable in the 2.3.0 plain-text update dialog. Use plain headings and single-line '- ' bullets."
         }
+    }
+}
+
+function Read-CanonicalReleaseNotes {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [string] $Version,
+
+        [string] $Label = 'Canonical release notes'
+    )
+
+    if ($Version -cnotmatch '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$') {
+        throw "Release-note version '$Version' must use stable major.minor.patch format."
+    }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "${Label} are required: $Path"
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (Test-PathEntryIsLink -Item $item) {
+        throw "${Label} must be a regular non-link file."
+    }
+
+    [byte[]] $bytes = [IO.File]::ReadAllBytes($item.FullName)
+    if ($bytes.Length -eq 0 -or $bytes.Length -gt 65536) {
+        throw "${Label} must contain between 1 and 65,536 UTF-8 bytes."
+    }
+    if ($bytes.Length -ge 3 -and
+        $bytes[0] -eq 0xEF -and
+        $bytes[1] -eq 0xBB -and
+        $bytes[2] -eq 0xBF) {
+        throw "${Label} must not contain a UTF-8 byte-order mark."
+    }
+
+    try {
+        $strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+        $text = $strictUtf8.GetString($bytes)
+    }
+    catch [Text.DecoderFallbackException] {
+        throw "${Label} must contain valid UTF-8."
+    }
+    if ($text.Contains("`r")) {
+        throw "${Label} must use LF line endings."
+    }
+    if ($text -match '[\x00-\x08\x0B-\x1F\x7F]') {
+        throw "${Label} must not contain a prohibited control character."
+    }
+    if (-not $text.EndsWith("`n", [StringComparison]::Ordinal) -or
+        $text.EndsWith("`n`n", [StringComparison]::Ordinal)) {
+        throw "${Label} must end in exactly one LF."
+    }
+
+    $withoutTerminalLf = $text.Substring(0, $text.Length - 1)
+    $lines = $withoutTerminalLf.Split(
+        [char[]] @([char] 10),
+        [StringSplitOptions]::None)
+    if ($lines.Count -lt 3 -or
+        $lines[0] -cne "SessionDock $Version" -or
+        $lines[1] -cne '') {
+        throw "${Label} must start with 'SessionDock $Version' and a blank line."
+    }
+    [string[]] $descriptionLines = @($lines | Select-Object -Skip 2)
+    $description = [string]::Join("`n", $descriptionLines)
+    if ([string]::IsNullOrWhiteSpace($description)) {
+        throw "${Label} must contain a release-note body."
+    }
+
+    return [pscustomobject] @{
+        Bytes = $bytes.Length
+        Description = $description
+        Text = $text
+    }
+}
+
+function Assert-DiscordCompatibleReleaseNotes {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Path,
+
+        [Parameter(Mandatory)]
+        [string] $Version
+    )
+
+    $notes = Read-CanonicalReleaseNotes `
+        -Path $Path `
+        -Version $Version `
+        -Label 'Canonical English release notes'
+    $description = [string] $notes.Description
+    if ($description.Length -gt 4096) {
+        throw "Canonical English release notes exceed Discord's 4,096-character description limit."
     }
 }
 
