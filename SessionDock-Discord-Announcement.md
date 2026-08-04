@@ -1,41 +1,48 @@
-<!-- Attach: docs/images/sessiondock-v2.7.0/sessiondock-v2.7.0-social-wide.png -->
+@everyone
 
-> Archived v2.7.0 example only. The guarded release workflow never reads this
-> file, and it must not be used as an official release template. Bota posts
-> automatically after successful publication from the matching canonical
-> versioned notes and optional reviewed-image selection. No form or manual
-> confirmation is part of that path.
+# 🚀 Ready for a major SessionDock upgrade?
 
-Hello @everyone :wave:
+> **Launch your accounts. Arrange every window. Load your macros. All with one click.**
 
-# SessionDock 2.7.0 is available
+> 🪟 **SessionDock is available for Windows PCs only.**
 
-SessionDock is a free, open-source Windows app that keeps Roblox website
-sessions in separate local browser profiles. Choose the saved account and the
-destination before Roblox Player opens.
+## What is SessionDock?
 
-## What it does
+SessionDock makes managing multiple Roblox accounts simple. Add your accounts once, launch them together, and record your own macros for repetitive or AFK sessions.
 
-- Keeps saved Roblox sign-ins separate on this PC
-- Opens experiences, users, official private-server links, and tracked servers
-- Searches saved accounts and Recent or Favorite destinations
-- Launches one selected account or a batch with groups, presets, a remembered
-  delay, cancellation, and retry for failed accounts
-- Offers an explicit, cancelable Watch and auto-join option for a selected user;
-  Roblox still performs the final access check
-- Provides a reviewable privacy-safe diagnostics summary that is never sent
-  automatically
-- Supports System default, English, and Dutch display-language choices; some
-  runtime or technical text can still use the English fallback
+No more opening every account manually. No more rearranging the same windows every time.
 
-SessionDock has no project-operated cloud backend, advertising, or telemetry.
-Its optional integrations are off until you enable them. Roblox still decides
-whether an account can join a destination and whether multiple Players may run.
+## ✨ Introducing SessionDock Templates
 
-:arrow_right: **Official Windows x64 download:**
-https://github.com/Makmatoe/SessionDock/releases/download/v2.7.0/SessionDock-win-x64-Setup.exe
+A template saves your complete setup, including:
 
-**Source code, guides, and release details:**
-https://github.com/Makmatoe/SessionDock
+- 👥 The accounts you want to launch
+- 🖥️ The position and size of every window
+- 📏 Your preferred spacing and layout
+- 🎬 The macro prepared for each account
 
-*SessionDock is an independent project and is not affiliated with Roblox Corporation.*
+Set everything up once, save it as a template, and press **Play**.
+
+SessionDock handles the repetitive setup so your accounts are positioned, prepared, and ready to go within minutes.
+
+## 🔐 Is adding an account safe?
+
+**SessionDock never saves your Roblox username or password.**
+
+You sign in through the official Roblox website. SessionDock only keeps your authenticated Roblox session available locally—similar to how your browser remembers that you're logged in.
+
+## 🛡️ Privacy and transparency
+
+Want to know exactly how SessionDock works or which third-party libraries it uses?
+
+You can review the source code and read more about privacy on GitHub:
+
+🔗 **[View SessionDock on GitHub](https://github.com/Makmatoe/SessionDock)**
+
+---
+
+### One setup. One button. Every account ready.
+
+**Less time preparing. More time playing.**
+
+More details about the upgrade are coming soon. 👀

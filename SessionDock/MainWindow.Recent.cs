@@ -419,7 +419,10 @@ public partial class MainWindow
                     {
                         return;
                     }
-                    currentProfile.Destination = destination;
+                    NamedDestinationPolicy.SetAccountDestination(
+                        _settings,
+                        currentProfile.Key,
+                        destination);
                     mutationApplied = true;
                 },
                 Localize("Main.RecentDestinationSaveFailureTitle"),
@@ -489,7 +492,10 @@ public partial class MainWindow
                     {
                         return;
                     }
-                    currentProfile.Destination = destination;
+                    NamedDestinationPolicy.SetAccountDestination(
+                        _settings,
+                        currentProfile.Key,
+                        destination);
                     mutationApplied = true;
                 },
                 Localize("Main.TrackedServerSaveFailureTitle"),

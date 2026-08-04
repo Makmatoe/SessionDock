@@ -37,7 +37,12 @@ internal sealed record RunningClientAttribution(
     string? AccountColorHex,
     long PlaceId,
     string? ExperienceName,
+    string LaunchDestination,
     DateTimeOffset LaunchedAt);
+
+internal sealed record AttributedRunningClient(
+    RobloxClientProcessIdentity Identity,
+    RunningClientAttribution Attribution);
 
 internal sealed class RunningClientRegistry
 {
@@ -66,6 +71,15 @@ internal sealed class RunningClientRegistry
         _entries.Remove(identity);
 
     public void Clear() => _entries.Clear();
+
+    public IReadOnlyList<AttributedRunningClient> Snapshot() =>
+        _entries
+            .Select(entry => new AttributedRunningClient(
+                entry.Key,
+                entry.Value))
+            .OrderBy(entry => entry.Attribution.LaunchedAt)
+            .ThenBy(entry => entry.Identity.ProcessId)
+            .ToArray();
 
     public void Prune(IEnumerable<RobloxClientProcessIdentity> running)
     {

@@ -383,7 +383,7 @@ public partial class App : Application
             // This deliberately takes the normal Closing path so the smoke
             // validates bounded persistence and teardown before process exit.
             mainWindow.ShutdownCompleted += HandleShutdownCompleted;
-            mainWindow.CaptionControls.CloseForRuntimeSmoke();
+            mainWindow.HomeCaptionControls.CloseForRuntimeSmoke();
         }
         catch (Exception exception)
         {
@@ -409,7 +409,7 @@ public partial class App : Application
                 "The integrated native window chrome was not initialized.");
         }
 
-        mainWindow.CaptionControls.VerifyForRuntimeSmoke();
+        mainWindow.VerifyWorkspaceCaptionControlsForRuntimeSmoke();
     }
 
     private static void WriteRuntimeSmokeSuccessMarker(string resultPath)

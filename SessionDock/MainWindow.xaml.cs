@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private readonly DestinationPersistenceDebouncer _destinationPersistence;
     private readonly AccountVerificationGate _accountVerificationGate = new();
     private readonly AccessibilityLiveRegion _statusLiveRegion;
+    private readonly AccessibilityLiveRegion _homeStatusLiveRegion;
     private readonly AccessibilityLiveRegion? _destinationValidationLiveRegion;
     private string? _startupNotice;
     private AccountProfile? _activeProfile;
@@ -71,6 +72,7 @@ public partial class MainWindow : Window
     private bool _destinationModeAwaitingInput;
     private bool _webView2RecoveryPromptShown;
     private bool _shutdownComplete;
+    private bool _closingDestinationPromptInProgress;
     private bool _compactLayoutActive;
 
     internal Task<Exception?> StartupCompletion => _startupCompletion.Task;
@@ -262,9 +264,11 @@ public partial class MainWindow : Window
         InitializeComponent();
         AttachSemanticSelectorHandlers();
         _statusLiveRegion = new AccessibilityLiveRegion(StatusTitle);
+        _homeStatusLiveRegion = new AccessibilityLiveRegion(HomeStatusText);
         _destinationValidationLiveRegion =
             new AccessibilityLiveRegion(DestinationValidationText);
         CaptionControls.AttachToWindow(this);
+        HomeCaptionControls.AttachToWindow(this);
         _soundService = app.SoundService;
         _settings = _settingsService.Load();
         if (!WindowLayoutService.RestoreMainWindowPlacement(
@@ -273,6 +277,8 @@ public partial class MainWindow : Window
         {
             WindowLayoutService.FitToWorkArea(this);
         }
+        InitializeHomeWorkspace();
+        InitializeMacroSessionUi();
         app.LocalizationService.ApplyPreference(_settings.Language);
         app.ThemeService.ApplyPreference(_settings.UseLightTheme);
         UpdateUpdateTooltip();
@@ -535,16 +541,9 @@ public partial class MainWindow : Window
                         .Distinct(StringComparer.OrdinalIgnoreCase)
                         .Take(SettingsService.MaximumPendingProfileDeletions)
                         .ToList();
-                    _settings.Accounts.RemoveAll(account =>
-                        journaledSet.Contains(account.Key));
-                    BatchLaunchPreferences.PrunePresetsForCurrentAccounts(
-                        _settings);
-                    if (_settings.ActiveAccountKey is not null &&
-                        journaledSet.Contains(_settings.ActiveAccountKey))
-                    {
-                        _settings.ActiveAccountKey =
-                            _settings.Accounts.FirstOrDefault()?.Key;
-                    }
+                    AccountRemovalSettingsPolicy.RemoveAccounts(
+                        _settings,
+                        journaledSet);
                     prepared = true;
                 },
                 Localize("Main.PendingRemovalRestoreFailureTitle"),
@@ -981,6 +980,7 @@ public partial class MainWindow : Window
         BrowserPanel.Visibility = Visibility.Collapsed;
         LauncherPanel.Visibility = Visibility.Visible;
         SetReadyState();
+        ReturnToAccountsAfterBrowserIfRequested(_activeProfile.Key);
     }
 
     private bool IsCurrentWebSessionOwner(WebSessionToken token)
@@ -1085,15 +1085,24 @@ public partial class MainWindow : Window
         StatusTone tone,
         bool announceChanges = true)
     {
+        var announcement = CreateStatusAnnouncement(title, detail, badge);
+        var severity = tone is StatusTone.Error or StatusTone.Warning
+            ? AccessibilityLiveRegionSeverity.Assertive
+            : AccessibilityLiveRegionSeverity.Polite;
+        var advancedIsVisible = AdvancedWorkspace.Visibility ==
+            Visibility.Visible;
         _statusLiveRegion.Update(
             title,
-            CreateStatusAnnouncement(title, detail, badge),
-            tone is StatusTone.Error or StatusTone.Warning
-                ? AccessibilityLiveRegionSeverity.Assertive
-                : AccessibilityLiveRegionSeverity.Polite,
-            announceChanges);
+            announcement,
+            severity,
+            announceChanges && advancedIsVisible);
         StatusDetail.Text = detail;
         SessionBadge.Text = badge;
+        _homeStatusLiveRegion.Update(
+            announcement,
+            announcement,
+            severity,
+            announceChanges && !advancedIsVisible);
 
         var foregroundResource = tone switch
         {
@@ -1115,6 +1124,9 @@ public partial class MainWindow : Window
         SessionBadgeBorder.SetResourceReference(
             Border.BackgroundProperty,
             surfaceResource);
+        HomeStatusIndicator.SetResourceReference(
+            Border.BackgroundProperty,
+            foregroundResource);
         StatusIconGlyph.Data = (Geometry)FindResource(
             tone == StatusTone.Error
                 ? "IconError"
@@ -1307,6 +1319,10 @@ public partial class MainWindow : Window
                 accountFocusTarget = AccountSearchBox;
             RestoreKeyboardFocus(accountFocusTarget);
         }
+        if (AccountsWorkspace.Visibility == Visibility.Visible)
+            RefreshAccountsWorkspace();
+        if (DestinationsWorkspace.Visibility == Visibility.Visible)
+            RefreshDestinationsWorkspace();
     }
 
     private static void RestoreKeyboardFocus(Control? control)
@@ -1437,15 +1453,23 @@ public partial class MainWindow : Window
     private async void EditAccountButton_Click(object sender, RoutedEventArgs e) =>
         await RunWindowOperationAsync(_ => EditAccountButtonClickAsync());
 
-    private async Task EditAccountButtonClickAsync()
+    private Task EditAccountButtonClickAsync() =>
+        EditAccountProfileAsync(_activeProfile);
+
+    private async Task EditAccountProfileAsync(AccountProfile? requestedProfile)
     {
         if (_operationBusy ||
             _accountReorderInProgress ||
             _pendingProfile is not null ||
-            _activeProfile is null)
+            requestedProfile is null)
             return;
 
-        var editedProfile = _activeProfile;
+        var editedProfile = _settings.Accounts.FirstOrDefault(account =>
+            account.Key.Equals(
+                requestedProfile.Key,
+                StringComparison.OrdinalIgnoreCase));
+        if (editedProfile is null)
+            return;
         var profileKey = editedProfile.Key;
         var dialog = new AccountAppearanceDialog(editedProfile) { Owner = this };
         if (dialog.ShowDialog() != true)
@@ -1473,7 +1497,10 @@ public partial class MainWindow : Window
                 onCommitted: () =>
                 {
                     if (mutationApplied)
+                    {
                         RenderAccountList();
+                        RefreshAccountsWorkspace();
+                    }
                 }))
         {
             return;
@@ -1588,8 +1615,10 @@ public partial class MainWindow : Window
                         _settings.UiSoundsEnabled = uiSoundsEnabled;
                         _settings.StartupSound = startupSound;
                         _settings.CustomStartupSoundFileName =
-                            selectedCustomFileName ??
-                            _settings.CustomStartupSoundFileName;
+                            UiSoundService.ResolveCustomStartupSoundFileName(
+                                startupSound,
+                                selectedCustomFileName,
+                                _settings.CustomStartupSoundFileName);
                     },
                     Localize("Main.SoundSaveFailureTitle"),
                     onCommitted: () =>
@@ -1757,6 +1786,17 @@ public partial class MainWindow : Window
             return;
         if (sender is not Button { Tag: string key })
             return;
+        await AccountButtonClickAsync(key, cancellationToken);
+    }
+
+    private async Task AccountButtonClickAsync(
+        string key,
+        CancellationToken cancellationToken)
+    {
+        if (_operationBusy ||
+            _accountReorderInProgress ||
+            _pendingProfile is not null)
+            return;
         var profile = _settings.Accounts.FirstOrDefault(account => account.Key == key);
         if (profile is null || profile == _activeProfile)
             return;
@@ -1789,8 +1829,10 @@ public partial class MainWindow : Window
                                 StringComparison.OrdinalIgnoreCase));
                         if (outgoing is not null)
                         {
-                            outgoing.Destination =
-                                outgoingDestination.Destination;
+                            NamedDestinationPolicy.SetAccountDestination(
+                                _settings,
+                                outgoing.Key,
+                                outgoingDestination.Destination);
                         }
                     }
 
@@ -1920,6 +1962,7 @@ public partial class MainWindow : Window
         {
             BrowserPanel.Visibility = Visibility.Collapsed;
             LauncherPanel.Visibility = Visibility.Visible;
+            ReturnToAccountsAfterBrowserIfRequested(_activeProfile?.Key);
             return;
         }
 
@@ -1940,6 +1983,7 @@ public partial class MainWindow : Window
             {
                 BrowserPanel.Visibility = Visibility.Collapsed;
                 LauncherPanel.Visibility = Visibility.Visible;
+                ReturnToAccountsAfterBrowserIfRequested(_activeProfile?.Key);
                 return;
             }
 
@@ -1974,6 +2018,7 @@ public partial class MainWindow : Window
                 cancellationToken);
         else
             SetSignedOutState();
+        ReturnToAccountsAfterBrowserIfRequested(nextProfile?.Key);
     }
 
     private async void LaunchButton_Click(object sender, RoutedEventArgs e)
@@ -2536,11 +2581,20 @@ public partial class MainWindow : Window
     private async void ResetButton_Click(object sender, RoutedEventArgs e) =>
         await RunWindowOperationAsync(ResetButtonClickAsync);
 
-    private async Task ResetButtonClickAsync(CancellationToken cancellationToken)
+    private Task ResetButtonClickAsync(CancellationToken cancellationToken) =>
+        RemoveAccountAsync(_activeProfile, cancellationToken);
+
+    private async Task RemoveAccountAsync(
+        AccountProfile? requestedProfile,
+        CancellationToken cancellationToken)
     {
         if (_operationBusy || _accountReorderInProgress)
             return;
-        var profile = _activeProfile;
+        var profile = requestedProfile is null
+            ? null
+            : _settings.Accounts.FirstOrDefault(account => account.Key.Equals(
+                requestedProfile.Key,
+                StringComparison.OrdinalIgnoreCase));
         if (profile is null || _pendingProfile is not null)
             return;
 
@@ -2570,12 +2624,9 @@ public partial class MainWindow : Window
                             .Distinct(StringComparer.OrdinalIgnoreCase)
                             .Take(SettingsService.MaximumPendingProfileDeletions)
                             .ToList();
-                        _settings.Accounts.RemoveAll(
-                            account => account.Key == profile.Key);
-                        BatchLaunchPreferences.PrunePresetsForCurrentAccounts(
-                            _settings);
-                        _settings.ActiveAccountKey =
-                            _settings.Accounts.FirstOrDefault()?.Key;
+                        AccountRemovalSettingsPolicy.RemoveAccounts(
+                            _settings,
+                            [profile.Key]);
                     },
                     Localize("Main.AccountRemovalSaveFailureTitle"),
                     Localize("Main.AccountSaveErrorBadge"),
@@ -2609,10 +2660,11 @@ public partial class MainWindow : Window
             }
             finally
             {
-                _activeProfile = _settings.Accounts.FirstOrDefault();
+                _activeProfile = FindActiveSavedProfile();
                 ShowDestinationForProfile(_activeProfile);
                 _currentUser = null;
                 RenderAccountList();
+                RefreshAccountsWorkspace();
             }
             cancellationToken.ThrowIfCancellationRequested();
             var cleanupAcknowledged = profileWasCleared &&
@@ -2830,8 +2882,13 @@ public partial class MainWindow : Window
         if (!await TryCommitSettingsMutationAsync(
                 () =>
                 {
-                    foreach (var account in _settings.Accounts)
-                        account.Destination = storedDestination;
+                    foreach (var account in _settings.Accounts.ToArray())
+                    {
+                        NamedDestinationPolicy.SetAccountDestination(
+                            _settings,
+                            account.Key,
+                            storedDestination);
+                    }
                 },
                 Localize("Main.SharedDestinationSaveFailureTitle"),
                 Localize("Main.DestinationSaveErrorBadge"),
@@ -2996,7 +3053,10 @@ public partial class MainWindow : Window
                     stale = true;
                     return;
                 }
-                profile.Destination = request.Destination;
+                NamedDestinationPolicy.SetAccountDestination(
+                    _settings,
+                    profile.Key,
+                    request.Destination);
                 applied = true;
             },
             Localize("Main.DestinationSaveFailureTitle"),
@@ -3017,12 +3077,15 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                _destinationPersistedValue = request.Destination;
-                _destinationDraftDirty = !_destinationDraftValid ||
-                    !string.Equals(
-                        _destinationPersistedValue,
-                        _destinationDraftValue,
-                        StringComparison.Ordinal);
+                var committedProfile = _settings.Accounts.FirstOrDefault(
+                    account => account.Key.Equals(
+                        request.AccountKey,
+                        StringComparison.OrdinalIgnoreCase));
+                ShowDestinationForProfile(committedProfile);
+                if (DestinationsWorkspace.Visibility == Visibility.Visible)
+                    RefreshDestinationsWorkspace();
+                if (AccountsWorkspace.Visibility == Visibility.Visible)
+                    RefreshAccountsWorkspace();
             });
         if (!committed || stale || !applied)
             return false;
@@ -3243,13 +3306,28 @@ public partial class MainWindow : Window
         ThemeToggleButton.IsEnabled = auxiliaryActionsEnabled;
         SoundSettingsButton.IsEnabled = auxiliaryActionsEnabled;
         LanguageSettingsButton.IsEnabled = auxiliaryActionsEnabled;
+        ReplayTutorialButton.IsEnabled = auxiliaryActionsEnabled;
+        SessionAutomationSettingsButton.IsEnabled = auxiliaryActionsEnabled;
         MetadataTransferButton.IsEnabled = auxiliaryActionsEnabled;
         IntegrationsButton.IsEnabled = auxiliaryActionsEnabled;
         AboutDiagnosticsButton.IsEnabled = auxiliaryActionsEnabled;
         ReleaseNotesButton.IsEnabled = auxiliaryActionsEnabled;
         InstallUpdateButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeSettingsButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeLaunchAccountsButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeRunTemplateButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeRecordMacroButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeSaveTemplateButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeDestinationsButton.IsEnabled = auxiliaryActionsEnabled;
+        HomeManageAccountsButton.IsEnabled = auxiliaryActionsEnabled;
+        NewDestinationButton.IsEnabled = auxiliaryActionsEnabled;
+        SaveDestinationButton.IsEnabled = auxiliaryActionsEnabled;
+        DeleteDestinationButton.IsEnabled = auxiliaryActionsEnabled &&
+            _editingDestinationId is not null;
+        UpdateManageAccountActions();
         UpdateAutoJoinActionPresentation();
         RefreshLaunchAvailability();
+        UpdateCurrentMacroActions();
     }
 
     private AccountProfile? FindActiveSavedProfile() =>
@@ -3262,8 +3340,30 @@ public partial class MainWindow : Window
         if (_shutdownComplete)
             return;
 
-        var shutdownBudget = new ShutdownTimeBudget(ShutdownTimeout);
         e.Cancel = true;
+        if (_closingDestinationPromptInProgress)
+            return;
+
+        _destinationCloseRequested = true;
+        if (_currentWorkspacePage == MainWorkspacePage.Destinations &&
+            HasDestinationEditorChanges())
+        {
+            _closingDestinationPromptInProgress = true;
+            try
+            {
+                if (!await TryResolveDestinationEditorChangesAsync())
+                {
+                    _destinationCloseRequested = false;
+                    return;
+                }
+            }
+            finally
+            {
+                _closingDestinationPromptInProgress = false;
+            }
+        }
+
+        var shutdownBudget = new ShutdownTimeBudget(ShutdownTimeout);
         if (!_operationLifetime.BeginShutdown())
             return;
         var shutdownWatchdog = ShutdownExitWatchdog.Start(ShutdownTimeout);
@@ -3344,7 +3444,27 @@ public partial class MainWindow : Window
             CancelScopedOperation(_browserSwitchCancellation);
         var batchCancellation =
             CancelScopedOperation(_batchCancellation);
+        CancelCurrentMacroPlayback();
         _destinationPersistence.Cancel();
+        if (!_macroPlaybackCompletion.IsCompleted)
+        {
+            if (shutdownBudget.TryGetRemaining(out var macroTimeout))
+            {
+                try
+                {
+                    await _macroPlaybackCompletion.WaitAsync(macroTimeout);
+                }
+                catch (TimeoutException exception)
+                {
+                    shutdownFailures.Add(exception);
+                }
+            }
+            else
+            {
+                shutdownFailures.Add(new TimeoutException(
+                    "Macro playback did not stop before the shutdown budget expired."));
+            }
+        }
         var operationsDrained =
             shutdownBudget.TryGetRemaining(out var drainTimeout) &&
             await _operationLifetime.DrainAsync(drainTimeout);

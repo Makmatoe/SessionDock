@@ -53,6 +53,16 @@ public sealed class UiSoundService : IDisposable
     public static bool IsValidStartupSound(string? value) =>
         value is not null && StartupSounds.Contains(value);
 
+    internal static string? ResolveCustomStartupSoundFileName(
+        string startupSound,
+        string? importedFileName,
+        string? existingFileName) =>
+        startupSound.Equals(
+            StartupCustom,
+            StringComparison.OrdinalIgnoreCase)
+            ? importedFileName ?? existingFileName
+            : null;
+
     public static bool IsValidImportedFileName(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) ||

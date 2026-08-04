@@ -782,6 +782,7 @@ public sealed class SettingsService
             }
             migrated |= pendingDeletionStateWasNormalized;
             migrated |= MigrateLegacyDestinations(settings);
+            migrated |= NamedDestinationPolicy.NormalizeInPlace(settings);
             return true;
         }
         catch (Exception ex) when (
@@ -1154,6 +1155,7 @@ public sealed class SettingsService
         out bool pendingDeletionStateWasNormalized)
     {
         settings.Accounts ??= [];
+        settings.NamedDestinations ??= [];
         settings.RecentExperiences ??= [];
         settings.BatchLaunchPresets ??= [];
         var originalAccountGroups = settings.Accounts
@@ -1164,6 +1166,19 @@ public sealed class SettingsService
             settings.BatchLaunchDelaySeconds;
         var originalMainWindowPlacement = settings.MainWindowPlacement;
         var originalLanguage = settings.Language;
+        var originalActiveAccountKey = settings.ActiveAccountKey;
+        var originalStartupSound = settings.StartupSound;
+        var originalCustomStartupSoundFileName =
+            settings.CustomStartupSoundFileName;
+        var originalRecentDestinationMetadata = settings.RecentExperiences
+            .Where(item => item is not null)
+            .Select(item => new
+            {
+                Item = item,
+                item.PlaceId,
+                item.IsPrivateServer
+            })
+            .ToArray();
         var originalPendingDeletionKeys =
             settings.PendingProfileDeletionKeys ?? [];
         settings.PendingProfileDeletionKeys = originalPendingDeletionKeys
@@ -1193,6 +1208,14 @@ public sealed class SettingsService
             .ToList();
         settings.Language = LocalizationPreference.Normalize(
             settings.Language);
+        var activeAccount = settings.ActiveAccountKey is null
+            ? null
+            : settings.Accounts.FirstOrDefault(account =>
+                account.Key.Equals(
+                    settings.ActiveAccountKey,
+                    StringComparison.OrdinalIgnoreCase));
+        settings.ActiveAccountKey =
+            activeAccount?.Key ?? settings.Accounts.FirstOrDefault()?.Key;
         pendingDeletionStateWasNormalized =
             !originalPendingDeletionKeys.SequenceEqual(
                 settings.PendingProfileDeletionKeys,
@@ -1203,6 +1226,10 @@ public sealed class SettingsService
                 originalLanguage,
                 settings.Language,
                 StringComparison.Ordinal) ||
+            !string.Equals(
+                originalActiveAccountKey,
+                settings.ActiveAccountKey,
+                StringComparison.Ordinal) ||
             !BatchLaunchPreferences.AreEquivalent(
                 originalBatchLaunchPresets,
                 settings.BatchLaunchPresets) ||
@@ -1212,15 +1239,6 @@ public sealed class SettingsService
             !originalAccountGroups.SequenceEqual(
                 settings.Accounts.Select(account => account.Group),
                 StringComparer.Ordinal);
-
-        if (settings.ActiveAccountKey is not null &&
-            !settings.Accounts.Any(account =>
-                account.Key.Equals(
-                    settings.ActiveAccountKey,
-                    StringComparison.OrdinalIgnoreCase)))
-        {
-            settings.ActiveAccountKey = settings.Accounts.FirstOrDefault()?.Key;
-        }
 
         if (!UiSoundService.IsValidStartupSound(settings.StartupSound))
             settings.StartupSound = UiSoundService.DefaultStartupSound;
@@ -1236,6 +1254,21 @@ public sealed class SettingsService
         {
             settings.StartupSound = UiSoundService.DefaultStartupSound;
         }
+        if (!settings.StartupSound.Equals(
+                UiSoundService.StartupCustom,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            settings.CustomStartupSoundFileName = null;
+        }
+        pendingDeletionStateWasNormalized |=
+            !string.Equals(
+                originalStartupSound,
+                settings.StartupSound,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                originalCustomStartupSoundFileName,
+                settings.CustomStartupSoundFileName,
+                StringComparison.Ordinal);
 
         var normalizedRecent = settings.RecentExperiences
             .Where(IsValidRecentExperience)
@@ -1253,6 +1286,10 @@ public sealed class SettingsService
             .Take(50)
             .Concat(normalizedRecent.Where(item => !item.IsPinned).Take(50))
             .ToList();
+        pendingDeletionStateWasNormalized |=
+            originalRecentDestinationMetadata.Any(original =>
+                original.Item.PlaceId != original.PlaceId ||
+                original.Item.IsPrivateServer != original.IsPrivateServer);
 
         return validAccounts.Count != originalAccountCount ||
             settings.Accounts.Count != validAccounts.Count;
@@ -1332,7 +1369,6 @@ public sealed class SettingsService
 
     private static bool IsValidRecentExperience(RecentExperience item) =>
         item is not null &&
-        item.PlaceId > 0 &&
         !string.IsNullOrWhiteSpace(item.Destination) &&
         item.Destination.Length <= 4096 &&
         (item.Name is null || item.Name.Length <= 200) &&
@@ -1340,7 +1376,8 @@ public sealed class SettingsService
         item.AccountUserId >= 0 &&
         (item.AccountUsername is null || item.AccountUsername.Length <= 50) &&
         item.LastLaunchedAt > DateTimeOffset.UnixEpoch &&
-        DestinationParser.TryParse(item.Destination, out _, out _);
+        DestinationParser.TryParse(item.Destination, out var target, out _) &&
+        (target!.PlaceId > 0 || item.PlaceId > 0);
 
     private static AccountProfile NormalizeAccountMetadata(AccountProfile account)
     {
@@ -1361,6 +1398,18 @@ public sealed class SettingsService
 
     private static RecentExperience NormalizeRecentMetadata(RecentExperience item)
     {
+        if (DestinationParser.TryParse(
+                item.Destination,
+                out var target,
+                out _))
+        {
+            // Share-code destinations do not contain their resolved place ID,
+            // so retain the positive place captured when Roblox resolved the
+            // link. Every other destination has a canonical place ID.
+            if (target!.PlaceId > 0)
+                item.PlaceId = target.PlaceId;
+            item.IsPrivateServer = target.IsPrivateServer;
+        }
         var customName = item.CustomName?.Trim();
         item.CustomName = string.IsNullOrWhiteSpace(customName)
             ? null
@@ -1409,6 +1458,7 @@ public sealed class SettingsService
 
     private static void WriteSettingsFile(string path, AppSettings settings)
     {
+        _ = NamedDestinationPolicy.NormalizeInPlace(settings);
         var contents = JsonSerializer.SerializeToUtf8Bytes(settings, JsonOptions);
         if (contents.Length > MaximumSettingsBytes)
             throw new InvalidDataException("The settings data is too large.");

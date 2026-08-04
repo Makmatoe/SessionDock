@@ -47,14 +47,24 @@ public partial class MainWindow
 
         _runningClients.Track(
             identity,
-            new RunningClientAttribution(
-                account.Key,
-                account.UserId,
-                account.Username,
-                account.Label,
-                account.ColorHex,
-                recent.PlaceId,
-                recent.CustomName ?? recent.Name,
-                recent.LastLaunchedAt));
+            CreateRunningClientAttribution(account, recent));
+    }
+
+    internal static RunningClientAttribution CreateRunningClientAttribution(
+        AccountProfile account,
+        RecentExperience recent)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        ArgumentNullException.ThrowIfNull(recent);
+        return new RunningClientAttribution(
+            account.Key,
+            account.UserId,
+            account.Username,
+            account.Label,
+            account.ColorHex,
+            recent.PlaceId,
+            recent.CustomName ?? recent.Name,
+            recent.Destination,
+            recent.LastLaunchedAt);
     }
 }

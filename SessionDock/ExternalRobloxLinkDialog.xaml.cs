@@ -87,5 +87,5 @@ public partial class ExternalRobloxLinkDialog : Window
 
     private sealed record ExternalLinkAccountOption(
         string Key,
-        string DisplayName);
+        string DisplayName) : IDropdownLabel;
 }

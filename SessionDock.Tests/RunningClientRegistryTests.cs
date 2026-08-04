@@ -77,6 +77,86 @@ public sealed class RunningClientRegistryTests
         Assert.False(registry.TryGet(identity, out _));
     }
 
+    [Fact]
+    public void Snapshot_ReturnsAttributedClientsInLaunchOrder()
+    {
+        var registry = new RunningClientRegistry();
+        var laterIdentity = CreateIdentity(202, 1);
+        var earlierIdentity = CreateIdentity(101, 0);
+        var sameTimeHigherPid = CreateIdentity(303, 2);
+        var launchTime = new DateTimeOffset(
+            2026,
+            7,
+            22,
+            12,
+            0,
+            0,
+            TimeSpan.Zero);
+
+        registry.Track(
+            laterIdentity,
+            CreateAttribution("later") with
+            {
+                LaunchedAt = launchTime.AddMinutes(1)
+            });
+        registry.Track(
+            sameTimeHigherPid,
+            CreateAttribution("same time, higher pid") with
+            {
+                LaunchedAt = launchTime
+            });
+        registry.Track(
+            earlierIdentity,
+            CreateAttribution("earlier") with
+            {
+                LaunchedAt = launchTime
+            });
+
+        var snapshot = registry.Snapshot();
+
+        Assert.Collection(
+            snapshot,
+            item => Assert.Equal(101, item.Identity.ProcessId),
+            item => Assert.Equal(303, item.Identity.ProcessId),
+            item => Assert.Equal(202, item.Identity.ProcessId));
+        Assert.Equal("earlier", snapshot[0].Attribution.AccountLabel);
+    }
+
+    [Fact]
+    public void CreateRunningClientAttribution_PreservesActualLaunchDestination()
+    {
+        var account = new Models.AccountProfile
+        {
+            Key = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            UserId = 123,
+            Username = "test_account",
+            Destination = "https://www.roblox.com/games/111/account-default"
+        };
+        var recent = new Models.RecentExperience
+        {
+            Destination = "https://www.roblox.com/games/222/template-slot",
+            PlaceId = 222,
+            Name = "Template destination",
+            AccountUserId = account.UserId,
+            AccountUsername = account.Username,
+            LastLaunchedAt = new DateTimeOffset(
+                2026,
+                7,
+                22,
+                12,
+                0,
+                0,
+                TimeSpan.Zero)
+        };
+
+        var attribution = MainWindow.CreateRunningClientAttribution(
+            account,
+            recent);
+
+        Assert.Equal(recent.Destination, attribution.LaunchDestination);
+        Assert.NotEqual(account.Destination, attribution.LaunchDestination);
+    }
+
     private static RobloxClientProcessIdentity CreateIdentity(
         int processId,
         int addedMinutes) =>
@@ -95,5 +175,6 @@ public sealed class RunningClientRegistryTests
             "#4D8DFF",
             920587237,
             "Test Experience",
+            "https://www.roblox.com/games/920587237",
             new DateTimeOffset(2026, 7, 22, 12, 0, 0, TimeSpan.Zero));
 }

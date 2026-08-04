@@ -12,6 +12,9 @@ internal static class AppSettingsSnapshot
         var snapshot = new AppSettings
         {
             Accounts = source.Accounts.Select(Clone).ToList(),
+            NamedDestinations = (source.NamedDestinations ?? [])
+                .Select(NamedDestinationPolicy.Clone)
+                .ToList(),
             RecentExperiences = source.RecentExperiences
                 .Select(Clone)
                 .ToList(),
@@ -43,6 +46,9 @@ internal static class AppSettingsSnapshot
         for (var index = 0; index < originalAccounts.Count; index++)
             Copy(source.Accounts[index], originalAccounts[index]);
         target.Accounts = [.. originalAccounts];
+        target.NamedDestinations = (source.NamedDestinations ?? [])
+            .Select(NamedDestinationPolicy.Clone)
+            .ToList();
 
         for (var index = 0; index < originalRecentExperiences.Count; index++)
         {

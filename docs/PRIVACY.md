@@ -33,6 +33,14 @@ SessionDock stores application settings and isolated browser profiles under
   maximized state, used only to restore a visible window on the next launch;
 - the current settings, the prior successful settings backup, and timestamped
   preserved copies of settings files that could not be read;
+- `Templates\catalog.json` and its last-known-good backup, containing versioned
+  account-slot references, launch delays, layout preferences, normalized window
+  rectangles, and macro metadata;
+- ExactWheel payloads under `Macros\`. A recording can contain mouse/keyboard
+  timing and typed key events, so it must be treated as private even though it
+  contains no browser cookie or Roblox launch ticket by design;
+- `onboarding-state.json`, containing only the independent completed-version
+  markers for the Get Started and Advanced tutorials;
 - small recovery markers that keep automatic browser-profile cleanup paused
   when settings are uncertain or record an account profile whose requested
   deletion has not completed yet; and
@@ -44,8 +52,11 @@ SessionDock stores application settings and isolated browser profiles under
 
 SessionDock does not intentionally store Roblox passwords, launch tickets, raw
 Roblox Player logs, server IP addresses, HandleScope bearer tokens, or raw
-handle values. Never send the `%LOCALAPPDATA%\SessionDock` directory in a public
-bug report because its WebView2 profiles may contain authenticated cookies.
+handle values. A user can nevertheless type a secret while recording a macro;
+SessionDock cannot make that input non-sensitive afterward. Never send the
+`%LOCALAPPDATA%\SessionDock` directory in a public bug report because its
+WebView2 profiles may contain authenticated cookies and its macro files may
+contain recorded keys.
 
 ## Privacy-safe support diagnostics
 
@@ -64,35 +75,63 @@ destinations, place/server/private-server details, cookies, tokens, URLs, and
 exception details. SessionDock does not send the summary automatically. Users
 should still review the complete preview before sharing it.
 
-## Safe metadata transfer
+## Portable selected-data transfer
 
-The **Safe metadata transfer** sidebar panel creates a separate, versioned JSON
-document from a fixed allowlist. Its exact export preview contains Roblox user
-IDs (needed to match existing accounts), account labels, optional groups,
-approved accent colors, account order, and pinned public place IDs with their
-display and custom names. The file is written only after the user selects
-**Export reviewed JSON** and chooses a destination; SessionDock does not send
-it. Roblox user IDs and user-written labels are still personal metadata, so the
-complete preview should be reviewed before the file is stored or shared.
+The **Export or import data** panel creates a versioned `.sessiondock` ZIP from
+only the items selected for review: templates, their required macro
+dependencies, separately selected macros, public destinations, and launch
+presets. Selecting a template automatically selects every macro it references;
+the dependency list remains visible before export. The archive contains a
+bounded manifest and content-addressed macro entries. Macro payloads are copied
+byte for byte, recorded in the manifest by SHA-256, and never rewritten during
+export or import.
 
-The transfer file never contains local account-slot keys, usernames, active
-account state, selected account destinations, Recent timestamps, private-server
-links or codes, server JobIds, session/profile folder names, WebView2 data,
-cookies, passwords, authentication/launch tickets, sound files or preferences,
-pending-deletion state, settings/backup files, logs, local paths, or integration
-configuration and secrets. A public Favorite is eligible only when its stored
-destination parses to the same plain public place ID, has no private-server
-material, and has no server JobId.
+Packages use Roblox numeric user IDs only to match template and preset slots to
+accounts that already exist on the importing device. They do not create an
+account or browser profile. Source monitor identifiers, local account-slot keys,
+and source paths are stripped or rebuilt locally. Only plain public place
+destinations are eligible.
 
-Import reads at most 256 KiB from a regular file, rejects unsupported versions,
-unknown or duplicate JSON fields, duplicate account/favorite entries, invalid
-types, out-of-range counts, unsupported colors, and unbounded/control text. It
-then shows a human-readable plan and skipped-item counts. The import button
-remains disabled until the user selects a confirmation checkbox. Import matches
-by Roblox user ID only to account slots already present on this computer; it
-does not create accounts or browser profiles. Unmatched accounts and their
-favorites are skipped. The settings change is saved as one mutation and is
-fully rolled back if persistence fails.
+A portable package never contains sign-ins, WebView/browser profiles, cookies,
+passwords, tokens, authentication or launch tickets, usernames, local account
+keys or paths, private-server links or codes, server JobIds, integration
+configuration or secrets, or logs. Names and numeric Roblox IDs that the user
+selects can still be personal data and should be reviewed before sharing.
+Macro files require special care: a recording can contain keyboard input,
+including text that was sensitive when typed. SessionDock lists those macros
+and requires an explicit acknowledgement before exporting or importing them;
+that warning does not make the payload non-sensitive.
+
+Before showing an import plan, SessionDock validates the archive version,
+manifest shape and dependencies, SHA-256 for every macro, duplicate entries,
+paths, entry/count/size limits, and supported values without extracting an
+unbounded ZIP. The plan reports naming conflicts, already-present macro hashes,
+missing account matches, skipped templates, and incompatible macro assignments.
+Nothing changes until the user reviews the plan and confirms the import; a
+persistence failure keeps no partial catalog change.
+
+Saved window rectangles are normalized to the monitor work area so they can be
+realized on a different resolution. Imported client-relative macro bytes remain
+exact; their recorded coordinates are adapted to the verified destination
+client only at playback. Whole-layout assignments fail closed: if monitor
+count, virtual aspect ratio, or normalized monitor arrangement is incompatible,
+the macro remains imported but that assignment is left unassigned for repair.
+SessionDock does not guess a desktop mapping.
+
+### Legacy JSON metadata compatibility
+
+The existing reviewed metadata JSON remains available for account appearance,
+matched account order, and pinned public favorites. Its preview contains Roblox
+user IDs, user-written labels, optional groups, approved accent colors, and
+eligible public place IDs/names. It excludes the same authentication, private
+destination, local-path, and integration data described above.
+
+Legacy import reads at most 256 KiB from a regular file and rejects unsupported
+versions, unknown or duplicate fields, duplicate entries, invalid types,
+out-of-range counts, unsupported colors, and unbounded/control text. It matches
+only by Roblox user ID to existing local account slots, shows the complete plan
+and skipped-item counts, and requires confirmation before one atomic settings
+mutation.
 
 When upgrading from the historic Roblox One package identity, SessionDock may
 copy recognized settings, browser profiles, sounds, and local integration
@@ -137,13 +176,13 @@ ID, place and experience, public/private classification, and selected account
 ID, username, and label. It excludes passwords, cookies, launch tickets, raw
 destinations, private-server codes, and server job IDs.
 
-The optional HandleScope panel and the included HandleScope 0.3.0 engine require
+The optional HandleScope panel and the included HandleScope component require
 no HandleScope network download. Opening the panel, choosing the included or
 standalone source, choosing a standalone version requirement or
 Automatic/`v2`/`v1` API, enabling, disabling, or
 retrying does not contact GitHub or any other internet service. The included
-engine is part of the verified SessionDock update package and changes only when
-the user installs a verified SessionDock update.
+engine is part of the complete SessionDock build and can change only with the
+complete SessionDock package.
 
 The standalone-only **Refresh reviewed versions** button is the exception: when
 you explicitly select it, SessionDock requests the latest compatibility-catalog
@@ -160,7 +199,7 @@ API preferences remain separate from the backwards-compatible
 bearer token, endpoint, process ID, Roblox account data, or executable path.
 Legacy 2.x Automatic, Keep installed, and exact-version data remains available
 as a compatibility requirement. A stale exact pin can be changed in the panel,
-but no choice can cause SessionDock 3.0 to download, install, start, replace,
+but no choice can cause SessionDock to download, install, start, replace,
 update, downgrade, or uninstall a standalone HandleScope copy.
 
 In **Included with SessionDock (recommended)** mode, SessionDock creates a
@@ -189,13 +228,13 @@ singleton handles: first for the newly launched PID and, if configured, in one
 separately planned all-process sweep. Each execution uses only its matching
 short-lived, single-use plan ID.
 
-The signed HandleScope compatibility catalog remains a public release artifact
-for older SessionDock clients and reviewed advanced-standalone identities; the
-3.0 included flow does not download or execute anything from it. Existing
-public compatibility caches and legacy verification metadata contain release
-hashes and public package facts, not HandleScope tokens, Roblox credentials, or
-account data. SessionDock preserves them during upgrade rather than treating
-them as current configuration.
+The signed HandleScope compatibility catalog is used only by clients for which
+it was explicitly published and by reviewed advanced-standalone identities;
+the included flow does not download or execute anything from it. Existing
+compatibility caches and legacy verification metadata contain public package
+facts, not HandleScope tokens, Roblox credentials, or account data. SessionDock
+preserves them during upgrade rather than treating them as current
+configuration.
 
 The optional **Open with SessionDock** feature is off by default. Enabling it
 writes only SessionDock-owned per-user URL-handler keys under
@@ -247,6 +286,13 @@ operation when one account is selected. Clearing history does not remove pinned
 Favorites unless the user removes those entries separately, and removing an
 account does not silently erase its shared Recent/Favorite records.
 
+Removing a template does not automatically delete its ExactWheel payload. This
+preserves the macro for other templates and later reuse. To remove an
+unreferenced recording, remove its macro in the Macro library and save the
+settings. After the catalog commit, SessionDock verifies and deletes the local
+payload only if no remaining macro definition shares that content-addressed
+file; a changed, unverifiable, locked, or still-shared file is retained safely.
+
 An interrupted account removal leaves a bounded local deletion marker alongside
 any profile data that could not yet be deleted, so SessionDock can retry that
 cleanup on a later launch. Preserved corrupt settings copies can contain the
@@ -262,7 +308,7 @@ other devices. Use Roblox account security controls when global session
 revocation is needed.
 
 Application updates replace application files and normally preserve this local
-data. Published release artifacts contain the application, release metadata,
-licenses/notices, checksums, and an SBOM; they never include a developer's or
-another user's local data. Repository validation rejects tracked machine-user
-paths and common credential formats before packaging.
+data. A release candidate must never contain a developer's or another user's
+local data. Repository validation rejects tracked machine-user paths and common
+credential formats before packaging. This page does not assert that an
+unpublished candidate or unresolved component license has been approved.

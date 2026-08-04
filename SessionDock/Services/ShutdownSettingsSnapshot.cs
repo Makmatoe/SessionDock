@@ -28,7 +28,12 @@ internal static class ShutdownSettingsSnapshot
                 capturedDestinationRequest.AccountKey,
                 StringComparison.OrdinalIgnoreCase));
         if (profile is not null)
-            profile.Destination = capturedDestinationRequest.Destination;
+        {
+            NamedDestinationPolicy.SetAccountDestination(
+                snapshot,
+                profile.Key,
+                capturedDestinationRequest.Destination);
+        }
         return snapshot;
     }
 }

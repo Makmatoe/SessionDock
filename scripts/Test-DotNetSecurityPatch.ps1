@@ -176,12 +176,18 @@ $frameworks = @($lock.dependencies.PSObject.Properties |
 if ($frameworks.Count -ne 1) {
     throw 'The application lockfile must contain exactly one target framework.'
 }
-$runtimeDependency = $frameworks[0].Value.'Microsoft.NET.ILLink.Tasks'
-if ($null -eq $runtimeDependency -or
-    $runtimeDependency.requested -cne "[$runtimeVersion, )" -or
-    $runtimeDependency.resolved -cne $runtimeVersion -or
-    $runtimeDependency.contentHash -notmatch '^[A-Za-z0-9+/]+={0,2}$') {
-    throw 'The locked self-contained runtime toolchain does not match RuntimeFrameworkVersion.'
+$publishTrimmed = Get-SingleXmlValue $project `
+    '/Project/PropertyGroup/PublishTrimmed' 'PublishTrimmed value'
+$publishReadyToRun = Get-SingleXmlValue $project `
+    '/Project/PropertyGroup/PublishReadyToRun' 'PublishReadyToRun value'
+if ($publishTrimmed -cne 'false' -or $publishReadyToRun -cne 'false') {
+    throw 'The transparent runtime must explicitly disable trimming and ReadyToRun.'
+}
+
+$linkerDependencies = @($frameworks[0].Value.PSObject.Properties |
+    Where-Object { $_.Name -ceq 'Microsoft.NET.ILLink.Tasks' })
+if ($linkerDependencies.Count -ne 0) {
+    throw 'The non-trimmed transparent runtime lockfile must not contain Microsoft.NET.ILLink.Tasks.'
 }
 
 $projectText = Get-Content -LiteralPath $projectPath -Raw

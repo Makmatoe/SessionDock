@@ -244,15 +244,27 @@ else {
 $releaseEnvironment = @($environments | Where-Object { $_.name -ceq 'release' })
 if ($releaseEnvironment.Count -eq 1) {
     $releaseEnvironmentEndpoint = "repos/$Repository/environments/release"
-    $legacyReleaseSecrets = @(Get-GhPagedItems `
+    $releaseSecrets = @(Get-GhPagedItems `
             -Endpoint "$releaseEnvironmentEndpoint/secrets" `
             -CollectionProperty 'secrets')
-    if (@($legacyReleaseSecrets | Where-Object {
+    $releaseSecretNames = @($releaseSecrets | ForEach-Object { $_.name })
+    $expectedReleaseSecretNames = @(
+        'AZURE_CLIENT_ID',
+        'AZURE_SUBSCRIPTION_ID',
+        'AZURE_TENANT_ID',
+        'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')
+    if (Compare-Object `
+            ($expectedReleaseSecretNames | Sort-Object) `
+            ($releaseSecretNames | Sort-Object) `
+            -CaseSensitive) {
+        Add-AnnouncementAuditFailure "Environment 'release' must contain exactly the descriptor-key and Azure OIDC secret names: $($expectedReleaseSecretNames -join ', ')."
+    }
+    if (@($releaseSecrets | Where-Object {
                 $_.name -ceq 'DISCORD_RELEASE_BOT_TOKEN'
             }).Count -ne 0) {
         Add-AnnouncementAuditFailure "Remove legacy DISCORD_RELEASE_BOT_TOKEN from the 'release' environment after the credential is re-entered on 'release-announcement'."
     }
-    $legacyReleaseVariables = @(Get-GhPagedItems `
+    $releaseVariables = @(Get-GhPagedItems `
             -Endpoint "$releaseEnvironmentEndpoint/variables" `
             -CollectionProperty 'variables' `
             -PageSize 30)
@@ -260,11 +272,23 @@ if ($releaseEnvironment.Count -eq 1) {
         'DISCORD_RELEASE_BOT_ID',
         'DISCORD_RELEASE_CHANNEL_ID',
         'DISCORD_RELEASE_ROLE_ID')
-    $foundLegacyVariables = @($legacyReleaseVariables | Where-Object {
+    $foundLegacyVariables = @($releaseVariables | Where-Object {
             $legacyDiscordVariableNames -ccontains $_.name
         } | ForEach-Object { $_.name })
     if ($foundLegacyVariables.Count -ne 0) {
         Add-AnnouncementAuditFailure "Remove legacy Discord variables from the 'release' environment after migration: $($foundLegacyVariables -join ', ')."
+    }
+    $releaseVariableNames = @($releaseVariables | ForEach-Object { $_.name })
+    $expectedReleaseVariableNames = @(
+        'ARTIFACT_SIGNING_ACCOUNT_NAME',
+        'ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME',
+        'ARTIFACT_SIGNING_ENDPOINT',
+        'ARTIFACT_SIGNING_PUBLISHER_SUBJECT')
+    if (Compare-Object `
+            ($expectedReleaseVariableNames | Sort-Object) `
+            ($releaseVariableNames | Sort-Object) `
+            -CaseSensitive) {
+        Add-AnnouncementAuditFailure "Environment 'release' must contain exactly the four Artifact Signing variable names: $($expectedReleaseVariableNames -join ', ')."
     }
 }
 
@@ -274,6 +298,15 @@ $repositorySecrets = @(Get-GhPagedItems `
 $repositorySecretNames = @($repositorySecrets | ForEach-Object { $_.name })
 if ($repositorySecretNames -ccontains 'DISCORD_RELEASE_BOT_TOKEN') {
     Add-AnnouncementAuditFailure 'Remove repository-scoped secret DISCORD_RELEASE_BOT_TOKEN after the environment-scoped credential is configured. Its presence permits fallback when the environment-scoped name is missing.'
+}
+foreach ($releaseSecretName in @(
+        'AZURE_CLIENT_ID',
+        'AZURE_SUBSCRIPTION_ID',
+        'AZURE_TENANT_ID',
+        'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')) {
+    if ($repositorySecretNames -ccontains $releaseSecretName) {
+        Add-AnnouncementAuditFailure "Remove repository-scoped secret $releaseSecretName after the environment-scoped value is configured. Its presence permits fallback when the release environment value is missing."
+    }
 }
 
 $repositoryVariables = @(Get-GhPagedItems `
@@ -289,6 +322,15 @@ foreach ($announcementVariableName in @(
         Add-AnnouncementAuditFailure "Remove repository-scoped variable $announcementVariableName after the environment-scoped value is configured. Its presence permits fallback when the environment-scoped name is missing."
     }
 }
+foreach ($releaseVariableName in @(
+        'ARTIFACT_SIGNING_ACCOUNT_NAME',
+        'ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME',
+        'ARTIFACT_SIGNING_ENDPOINT',
+        'ARTIFACT_SIGNING_PUBLISHER_SUBJECT')) {
+    if ($repositoryVariableNames -ccontains $releaseVariableName) {
+        Add-AnnouncementAuditFailure "Remove repository-scoped variable $releaseVariableName after the environment-scoped value is configured. Its presence permits fallback when the release environment value is missing."
+    }
+}
 
 if ($repositoryState.owner.type -ceq 'Organization') {
     $organizationSecrets = @(Get-GhPagedItems `
@@ -299,6 +341,15 @@ if ($repositoryState.owner.type -ceq 'Organization') {
         })
     if ($organizationSecretNames -ccontains 'DISCORD_RELEASE_BOT_TOKEN') {
         Add-AnnouncementAuditFailure 'Remove organization-scoped secret DISCORD_RELEASE_BOT_TOKEN access for this repository after the environment-scoped credential is configured. Its presence permits fallback when lower scopes are missing.'
+    }
+    foreach ($releaseSecretName in @(
+            'AZURE_CLIENT_ID',
+            'AZURE_SUBSCRIPTION_ID',
+            'AZURE_TENANT_ID',
+            'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64')) {
+        if ($organizationSecretNames -ccontains $releaseSecretName) {
+            Add-AnnouncementAuditFailure "Remove organization-scoped secret $releaseSecretName access for this repository after the environment-scoped value is configured. Its presence permits fallback when the release environment value is missing."
+        }
     }
 
     $organizationVariables = @(Get-GhPagedItems `
@@ -314,6 +365,15 @@ if ($repositoryState.owner.type -ceq 'Organization') {
             'DISCORD_RELEASE_ROLE_ID')) {
         if ($organizationVariableNames -ccontains $announcementVariableName) {
             Add-AnnouncementAuditFailure "Remove organization-scoped variable $announcementVariableName access for this repository after the environment-scoped value is configured. Its presence permits fallback when lower scopes are missing."
+        }
+    }
+    foreach ($releaseVariableName in @(
+            'ARTIFACT_SIGNING_ACCOUNT_NAME',
+            'ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME',
+            'ARTIFACT_SIGNING_ENDPOINT',
+            'ARTIFACT_SIGNING_PUBLISHER_SUBJECT')) {
+        if ($organizationVariableNames -ccontains $releaseVariableName) {
+            Add-AnnouncementAuditFailure "Remove organization-scoped variable $releaseVariableName access for this repository after the environment-scoped value is configured. Its presence permits fallback when the release environment value is missing."
         }
     }
 }

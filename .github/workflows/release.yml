@@ -28,6 +28,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Enforce ExactWheel release provenance
+        shell: pwsh
+        run: >-
+          ./scripts/Verify-ExactWheelReleaseProvenance.ps1
+          -ManifestPath ./SessionDock.ExactWheel/exactwheel-upstream.json
+
       - name: Anchor bundled HandleScope bytes to the immutable upstream commit
         shell: pwsh
         run: |
@@ -118,6 +124,7 @@ jobs:
           Copy-Item SessionDock/Resources/update-public-key.pem artifacts/release-input/update-public-key.pem
           Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap.json artifacts/release-input/handlescope-compatibility-bootstrap.json
           Copy-Item SessionDock.HandleScope/handlescope-upstream.json artifacts/release-input/handlescope-upstream.json
+          Copy-Item SessionDock.ExactWheel/exactwheel-upstream.json artifacts/release-input/exactwheel-upstream.json
           Copy-Item SessionDock/SessionDock.csproj artifacts/release-input/application.csproj
           Copy-Item SessionDock/packages.lock.json artifacts/release-input/packages.lock.json
           Copy-Item global.json artifacts/release-input/global.json
@@ -128,6 +135,8 @@ jobs:
           Copy-Item scripts/ReleaseJson.ps1 artifacts/release-input/scripts/ReleaseJson.ps1
           Copy-Item scripts/Sign-ReleaseDescriptorDigest.ps1 artifacts/release-input/scripts/Sign-ReleaseDescriptorDigest.ps1
           Copy-Item scripts/Verify-Assets.ps1 artifacts/release-input/scripts/Verify-Assets.ps1
+          Copy-Item scripts/Verify-AuthenticodeRelease.ps1 artifacts/release-input/scripts/Verify-AuthenticodeRelease.ps1
+          Copy-Item scripts/Verify-ExactWheelReleaseProvenance.ps1 artifacts/release-input/scripts/Verify-ExactWheelReleaseProvenance.ps1
           Copy-Item scripts/Verify-ReleaseLicense.ps1 artifacts/release-input/scripts/Verify-ReleaseLicense.ps1
           Copy-Item discord-release-bot/src/release-automation.js artifacts/release-input/release-automation.mjs
 
@@ -221,6 +230,8 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+    outputs:
+      publisher_subject: ${{ steps.authenticode-config.outputs.publisher_subject }}
     steps:
       - name: Download verified release input
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -243,6 +254,124 @@ jobs:
           }
           & ./release-input/scripts/Verify-ReleaseLicense.ps1 `
             -LicensePath ./release-input/app/LICENSE.md
+
+      - name: Validate protected Artifact Signing configuration
+        id: authenticode-config
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARTIFACT_SIGNING_ENDPOINT: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          ARTIFACT_SIGNING_ACCOUNT_NAME: ${{ vars.ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME: ${{ vars.ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          ARTIFACT_SIGNING_PUBLISHER_SUBJECT: ${{ vars.ARTIFACT_SIGNING_PUBLISHER_SUBJECT }}
+        run: |
+          $required = [ordered]@{
+            AZURE_CLIENT_ID = $env:AZURE_CLIENT_ID
+            AZURE_TENANT_ID = $env:AZURE_TENANT_ID
+            AZURE_SUBSCRIPTION_ID = $env:AZURE_SUBSCRIPTION_ID
+            ARTIFACT_SIGNING_ENDPOINT = $env:ARTIFACT_SIGNING_ENDPOINT
+            ARTIFACT_SIGNING_ACCOUNT_NAME = $env:ARTIFACT_SIGNING_ACCOUNT_NAME
+            ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME = $env:ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME
+            ARTIFACT_SIGNING_PUBLISHER_SUBJECT = $env:ARTIFACT_SIGNING_PUBLISHER_SUBJECT
+          }
+          foreach ($entry in $required.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace([string] $entry.Value)) {
+              throw "Protected release configuration is missing $($entry.Key)."
+            }
+          }
+          foreach ($guidName in @('AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID')) {
+            [Guid] $parsed = [Guid]::Empty
+            if (-not [Guid]::TryParseExact([string] $required[$guidName], 'D', [ref] $parsed) -or
+                $parsed -eq [Guid]::Empty) {
+              throw "Protected release configuration $guidName is not a canonical nonempty GUID."
+            }
+          }
+          [Uri] $endpoint = $null
+          if (-not [Uri]::TryCreate(
+                $env:ARTIFACT_SIGNING_ENDPOINT,
+                [UriKind]::Absolute,
+                [ref] $endpoint) -or
+              $endpoint.Scheme -cne 'https' -or
+              $endpoint.AbsolutePath -cne '/' -or
+              -not [string]::IsNullOrEmpty($endpoint.Query) -or
+              -not [string]::IsNullOrEmpty($endpoint.Fragment) -or
+              $endpoint.Host -cnotmatch '^[a-z0-9-]+\.codesigning\.azure\.net$') {
+            throw 'ARTIFACT_SIGNING_ENDPOINT is not an exact regional Azure Artifact Signing HTTPS endpoint.'
+          }
+          if ($env:ARTIFACT_SIGNING_ACCOUNT_NAME -cnotmatch '^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$' -or
+              $env:ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME -cnotmatch '^[A-Za-z][A-Za-z0-9-]{3,98}[A-Za-z0-9]$') {
+            throw 'Artifact Signing account or certificate-profile name is invalid.'
+          }
+          if ($env:ARTIFACT_SIGNING_PUBLISHER_SUBJECT.Length -gt 1024 -or
+              $env:ARTIFACT_SIGNING_PUBLISHER_SUBJECT -match '[\x00-\x1F\x7F]') {
+            throw 'ARTIFACT_SIGNING_PUBLISHER_SUBJECT is invalid.'
+          }
+          "publisher_subject=$env:ARTIFACT_SIGNING_PUBLISHER_SUBJECT" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Authenticate to Azure with GitHub OIDC
+        uses: azure/login@2dd0bbf4064d5a1812889dc200bb8eed2597f82a # v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify the exact unsigned application signing input
+        shell: pwsh
+        run: |
+          & ./release-input/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./release-input/app `
+            -ExpectedRelativePath @(
+              'SessionDock.exe'
+              'SessionDock.dll'
+              'SessionDock.HandleScope.dll'
+              'SessionDock.ExactWheel.dll'
+              'SessionDock.ReleaseTrust.dll'
+              'Velopack.dll'
+            ) `
+            -RequireUnsigned
+
+      - name: Authenticode-sign the exact application files
+        uses: azure/artifact-signing-action@c0ae2c1d0c1847ab81ac0ab8521bee597cfedd30 # v2
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          files: |
+            ${{ github.workspace }}\release-input\app\SessionDock.exe
+            ${{ github.workspace }}\release-input\app\SessionDock.dll
+            ${{ github.workspace }}\release-input\app\SessionDock.HandleScope.dll
+            ${{ github.workspace }}\release-input\app\SessionDock.ExactWheel.dll
+            ${{ github.workspace }}\release-input\app\SessionDock.ReleaseTrust.dll
+            ${{ github.workspace }}\release-input\app\Velopack.dll
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          enhanced-key-usage: 1.3.6.1.5.5.7.3.3
+          append-signature: false
+          batch-size: 0
+          cache-dependencies: false
+          description: SessionDock
+          description-url: https://github.com/Makmatoe/SessionDock
+
+      - name: Verify application Authenticode before packaging
+        shell: pwsh
+        env:
+          EXPECTED_PUBLISHER_SUBJECT: ${{ vars.ARTIFACT_SIGNING_PUBLISHER_SUBJECT }}
+        run: |
+          & ./release-input/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./release-input/app `
+            -ExpectedRelativePath @(
+              'SessionDock.exe'
+              'SessionDock.dll'
+              'SessionDock.HandleScope.dll'
+              'SessionDock.ExactWheel.dll'
+              'SessionDock.ReleaseTrust.dll'
+              'Velopack.dll'
+            ) `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
 
       - name: Build Velopack assets
         shell: pwsh
@@ -268,6 +397,41 @@ jobs:
           & ./release-input/scripts/Rename-SessionDockReleaseAssets.ps1 `
             -Directory ./release-output `
             -Channel win-x64-sessiondock
+
+      - name: Verify the unsigned Setup signing input
+        shell: pwsh
+        run: >-
+          ./release-input/scripts/Verify-AuthenticodeRelease.ps1
+          -Directory ./release-output
+          -ExpectedRelativePath SessionDock-win-x64-Setup.exe
+          -RequireUnsigned
+
+      - name: Authenticode-sign the final Setup
+        uses: azure/artifact-signing-action@c0ae2c1d0c1847ab81ac0ab8521bee597cfedd30 # v2
+        with:
+          endpoint: ${{ vars.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          files: ${{ github.workspace }}\release-output\SessionDock-win-x64-Setup.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          enhanced-key-usage: 1.3.6.1.5.5.7.3.3
+          append-signature: false
+          batch-size: 0
+          cache-dependencies: false
+          description: SessionDock Setup
+          description-url: https://github.com/Makmatoe/SessionDock
+
+      - name: Verify final Setup Authenticode before release metadata
+        shell: pwsh
+        env:
+          EXPECTED_PUBLISHER_SUBJECT: ${{ vars.ARTIFACT_SIGNING_PUBLISHER_SUBJECT }}
+        run: >-
+          ./release-input/scripts/Verify-AuthenticodeRelease.ps1
+          -Directory ./release-output
+          -ExpectedRelativePath SessionDock-win-x64-Setup.exe
+          -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
 
       - name: Prepare the canonical unsigned release descriptor
         shell: pwsh
@@ -476,6 +640,7 @@ jobs:
             -LockFile ./release-input/packages.lock.json `
             -License ./release-input/app/LICENSE.md `
             -BundledHandleScopeManifest ./release-input/handlescope-upstream.json `
+            -BundledExactWheelManifest ./release-input/exactwheel-upstream.json `
             -Output "./release-output/SessionDock-$env:RELEASE_VERSION-sbom.spdx.json"
           & ./release-input/scripts/New-ReleaseChecksums.ps1 -Directory ./release-output
 
@@ -534,6 +699,30 @@ jobs:
             $remoteHash = (Get-FileHash -LiteralPath $downloaded[$index].FullName -Algorithm SHA256).Hash
             if ($localHash -cne $remoteHash) { throw "Draft asset hash mismatch: $($assets[$index].Name)" }
           }
+
+      - name: Verify Authenticode after draft re-download
+        shell: pwsh
+        env:
+          EXPECTED_PUBLISHER_SUBJECT: ${{ vars.ARTIFACT_SIGNING_PUBLISHER_SUBJECT }}
+        run: |
+          & ./release-input/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./verified-assets `
+            -ExpectedRelativePath SessionDock-win-x64-Setup.exe `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
+          Expand-Archive `
+            -LiteralPath ./verified-assets/SessionDock-win-x64-Portable.zip `
+            -DestinationPath ./verified-portable
+          & ./release-input/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./verified-portable `
+            -ExpectedRelativePath @(
+              'SessionDock.exe'
+              'SessionDock.dll'
+              'SessionDock.HandleScope.dll'
+              'SessionDock.ExactWheel.dll'
+              'SessionDock.ReleaseTrust.dll'
+              'Velopack.dll'
+            ) `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
 
       - name: Attest the verified release assets
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
@@ -677,6 +866,30 @@ jobs:
 
           $releaseState = if ($release.isDraft) { 'draft' } else { 'public' }
           "state=$releaseState" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Verify Authenticode on the approved draft
+        shell: pwsh
+        env:
+          EXPECTED_PUBLISHER_SUBJECT: ${{ needs.sign-attest-and-stage.outputs.publisher_subject }}
+        run: |
+          & ./release-verification/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./approved-assets `
+            -ExpectedRelativePath SessionDock-win-x64-Setup.exe `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
+          Expand-Archive `
+            -LiteralPath ./approved-assets/SessionDock-win-x64-Portable.zip `
+            -DestinationPath ./approved-portable
+          & ./release-verification/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./approved-portable `
+            -ExpectedRelativePath @(
+              'SessionDock.exe'
+              'SessionDock.dll'
+              'SessionDock.HandleScope.dll'
+              'SessionDock.ExactWheel.dll'
+              'SessionDock.ReleaseTrust.dll'
+              'Velopack.dll'
+            ) `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
 
       - name: Create guarded publication intent
         if: steps.verify-release.outputs.state == 'draft'
@@ -904,6 +1117,57 @@ jobs:
               $publishedBody -cne $expectedBody) {
             throw 'The published release does not exactly match the reverified release.'
           }
+
+      - name: Re-download and verify public Authenticode assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-and-build.outputs.tag }}
+          EXPECTED_PUBLISHER_SUBJECT: ${{ needs.sign-attest-and-stage.outputs.publisher_subject }}
+        run: |
+          New-Item -ItemType Directory published-authenticode-assets | Out-Null
+          gh release download $env:RELEASE_TAG `
+            --repo $env:GITHUB_REPOSITORY `
+            --dir ./published-authenticode-assets `
+            --pattern 'SessionDock-win-x64-*'
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Unable to re-download the public Authenticode release assets.'
+          }
+          $expectedNames = @(
+            'SessionDock-win-x64-Portable.zip'
+            'SessionDock-win-x64-Setup.exe'
+          ) | Sort-Object
+          $published = @(Get-ChildItem ./published-authenticode-assets -File | Sort-Object Name)
+          if (Compare-Object $expectedNames @($published.Name) -CaseSensitive) {
+            throw 'Public Authenticode asset inventory is not exact.'
+          }
+          foreach ($asset in $published) {
+            $approvedHash = (Get-FileHash `
+              -LiteralPath (Join-Path ./approved-assets $asset.Name) `
+              -Algorithm SHA256).Hash
+            $publishedHash = (Get-FileHash -LiteralPath $asset.FullName -Algorithm SHA256).Hash
+            if ($publishedHash -cne $approvedHash) {
+              throw "Public Authenticode asset hash mismatch: $($asset.Name)"
+            }
+          }
+          & ./release-verification/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./published-authenticode-assets `
+            -ExpectedRelativePath SessionDock-win-x64-Setup.exe `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
+          Expand-Archive `
+            -LiteralPath ./published-authenticode-assets/SessionDock-win-x64-Portable.zip `
+            -DestinationPath ./published-portable
+          & ./release-verification/scripts/Verify-AuthenticodeRelease.ps1 `
+            -Directory ./published-portable `
+            -ExpectedRelativePath @(
+              'SessionDock.exe'
+              'SessionDock.dll'
+              'SessionDock.HandleScope.dll'
+              'SessionDock.ExactWheel.dll'
+              'SessionDock.ReleaseTrust.dll'
+              'Velopack.dll'
+            ) `
+            -ExpectedPublisherSubject $env:EXPECTED_PUBLISHER_SUBJECT
 
   announce-published-release:
     name: Automatically announce the published release

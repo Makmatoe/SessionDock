@@ -2,10 +2,22 @@
 
 ## Supported versions
 
-Only the latest production release published from the canonical
-[SessionDock repository](https://github.com/Makmatoe/SessionDock/releases) is
-supported. Development builds, portable test artifacts, and older releases may
-not receive security fixes.
+There is currently no supported production binary. Distribution is on hold as
+of 2026-08-04: the immutable v3.0.0 assets are unsigned and use the retired
+compressed single-file layout. A separately shared development build with that
+layout received `Trojan:Win32/Wacatac.B!ml`; the reported bytes remain blocked
+pending Microsoft's determination. Do not download, restore, allow, or run any
+existing release asset. Development builds and older releases are unsupported.
+
+Support resumes only when a later release from the canonical
+[SessionDock repository](https://github.com/Makmatoe/SessionDock/releases)
+passes every source-provenance, transparent-inventory, trusted Authenticode,
+Defender-response, staging, and public re-download gate documented below.
+
+The integrated HandleScope/ExactWheel/template source documented in this tree
+is not a production release unless it appears in the canonical release feed and
+passes every provenance gate. ExactWheel is currently release-blocked pending
+explicit TinyClicks ownership/licensing and immutable provenance.
 
 ## Reporting a vulnerability
 
@@ -48,9 +60,10 @@ SessionDock is designed around these boundaries:
 - The optional generic launch hook requires a Windows-trusted HTTPS certificate
   for a numeric loopback address and a valid bearer token. Plain HTTP generic
   hooks are rejected.
-- SessionDock 3.0 includes the reviewed HandleScope 0.3.0 engine inside
-  `SessionDock.exe`, but keeps it optional and disabled until the user enables
-  it. The source snapshot, upstream tag/commit, allowlisted files, and hashes are
+- The integrated source carries the reviewed HandleScope engine as the explicit
+  `SessionDock.HandleScope.dll` component in the same SessionDock package, but
+  keeps it optional and disabled until the user enables it. The source snapshot,
+  upstream tag/commit, allowlisted files, and hashes are
   pinned in `SessionDock.HandleScope/handlescope-upstream.json` and checked by repository,
   build, release-inventory, license, and SBOM gates.
 - Included mode creates one non-elevated, current-user/current-session child
@@ -65,8 +78,35 @@ SessionDock is designed around these boundaries:
   elevates, or separately updates HandleScope. Therefore script execution
   policy, UAC, a download-time antivirus verdict on a HandleScope ZIP, and a
   standalone autostart task are not part of the included trust boundary.
-  SessionDock package verification covers the embedded engine with the rest of
-  `SessionDock.exe`.
+  SessionDock package verification covers the component assembly with the rest
+  of the exact transparent self-contained inventory.
+  PowerShell's **running scripts is disabled** message is an execution-policy
+  block before script execution. A browser's **Virus scan failed** message says
+  scanning did not complete; it is not a positive detection or a safety
+  verdict. Neither should be bypassed by weakening device policy. A named
+  Defender result such as `Trojan:Win32/Wacatac.B!ml` is different: leave the
+  file quarantined and follow the
+  [Defender detection response](docs/DEFENDER_DETECTION_RESPONSE.md). A positive
+  detection blocks use and release until the exact bytes have been investigated
+  and Microsoft has returned a clean determination; a matching hash alone does
+  not make the file safe.
+- ExactWheel is compiled as a SessionDock component, not installed as a
+  separate TinyClicks toolbar/application. Client recording requires a verified
+  foreground target and bounded capture. Default playback refuses unrelated
+  held physical input and stops on physical intervention, target loss,
+  dangerous lateness, invalid timing, timer/injection failure, or cancellation.
+  Cleanup attempts to release only successfully injected held inputs and must
+  report partial cleanup as failure.
+- Client-relative macro scaling rejects any recorded pointer event outside the
+  source client rectangle instead of clamping it. Monitor-normalized playback
+  requires the same monitor count and rejects virtual-desktop gaps. These are
+  fail-closed geometry checks, not image recognition or proof that the Roblox UI
+  is unchanged.
+- Versioned template/catalog storage is bounded, strict UTF-8, atomic, and
+  reparse-safe. A valid backup may recover a corrupt primary. Syntactically
+  valid stale account/macro references remain visible for repair, and macro
+  payloads are never auto-deleted. Macro files can contain typed key events and
+  must be treated as private local data.
 - **Standalone HandleScope (advanced)** preserves the old separate-process
   compatibility boundary. SessionDock connects only after the user selects that
   source and the already running API passes strict discovery-file,
@@ -85,7 +125,8 @@ SessionDock is designed around these boundaries:
   `/v1/handles/close` or `/v2/handles/close` adapter and the single fixed
   `roblox-singleton-event-v1` policy.
 - Account/history settings under `%LOCALAPPDATA%\SessionDock` are private local
-  data, not portable release content.
+  data, not portable release content. This includes isolated profiles,
+  templates, macro payloads, catalog backups, and onboarding state.
 - Safe metadata transfer uses a small versioned allowlist and bounded strict
   JSON parser. Export shows the exact file first and excludes authentication,
   local account keys/paths, destinations, private-server material, JobIds, and
@@ -116,15 +157,32 @@ include a signed release descriptor, Velopack package metadata, an SPDX SBOM,
 complete dependency notices, checksums covering every other asset, and a GitHub
 artifact attestation. The release verifier rejects unexpected package files and
 requires exact byte equality for the application files carried by the NUPKG and
-portable ZIP. HandleScope is compiled into `SessionDock.exe`; an unexpected
-HandleScope executable, installer, script, or other publish sidecar is a release
-verification failure. The verifier also checks the pinned HandleScope source
-provenance, MIT license, notices, and SBOM entry. SessionDock does not currently
-have an Authenticode certificate,
-so Windows reports Unknown publisher for Setup. The signed update descriptor,
-package hash, checksums, and GitHub attestation reduce substitution risk but do
-not provide Windows publisher identity and do not make an unsigned executable
-equivalent to an Authenticode-signed one.
+portable ZIP. Integrated HandleScope and ExactWheel code must be the reviewed
+`SessionDock.HandleScope.dll` and `SessionDock.ExactWheel.dll` files in that
+same package; an unexpected component executable, installer, script, source
+directory, toolbar, or additional component payload is a release-verification
+failure. The verifier also rejects reparse points and unexpected executables or
+scripts, validates the pinned dependency/runtime manifest, and requires a valid
+Microsoft signature on every expected runtime PE outside the exact six-file
+SessionDock publisher-signing set. It must check both component
+manifests, immutable provenance, reviewed licensing/notices, SBOM entries, macro
+format, and every explicit release-block field. The current ExactWheel block
+must be cleared through reviewed evidence before publication; this policy does
+not claim that it is cleared.
+
+Public releases require Authenticode on the exact first-party application PE
+set and final Setup. The reviewer-gated workflow uses GitHub OIDC with an
+externally provisioned Azure Artifact Signing Public Trust profile; no signing
+private key, PFX, self-signed fallback, or certificate password belongs in this
+repository. It signs application files before Velopack and Setup after packaging
+with SHA-256 and an RFC 3161 SHA-256 timestamp. The release fails unless every
+configured file reports `Valid`, the exact configured publisher subject,
+code-signing EKU, a timestamping certificate, and trusted chains. The same
+checks run after draft, approval, and public re-downloads. Missing signing
+configuration, an unsigned asset, a publisher mismatch, any signature/chain
+failure, or any positive malware detection blocks publication; there is no
+bypass or unsigned public-release path. Checksums, the signed update descriptor,
+SBOM, and attestations remain independent complementary controls.
 
 Roblox executable verification requests whole-chain Windows revocation checking
 with online retrieval and root exclusion only. Revoked, offline, unknown,

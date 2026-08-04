@@ -480,14 +480,14 @@ public partial class HandleScopeIntegrationDialog : Window
 
     private sealed record RuntimeSourceChoice(
         string DisplayName,
-        HandleScopeRuntimeSource Source);
+        HandleScopeRuntimeSource Source) : IDropdownLabel;
 
     private sealed record ApiContractChoice(
         string DisplayName,
-        HandleScopeApiContract ApiContract);
+        HandleScopeApiContract ApiContract) : IDropdownLabel;
 
     private sealed record RuntimeVersionChoice(
         string DisplayName,
         HandleScopeVersionSelectionMode Mode,
-        Version? ExactVersion);
+        Version? ExactVersion) : IDropdownLabel;
 }

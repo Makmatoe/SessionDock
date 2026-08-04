@@ -22,12 +22,18 @@ public sealed class AppSettingsSnapshotTests
             source.Accounts[0],
             snapshot.Accounts[0]);
         AssertReferencePropertiesAreIndependent(
+            source.NamedDestinations[0],
+            snapshot.NamedDestinations[0]);
+        AssertReferencePropertiesAreIndependent(
             source.RecentExperiences[0],
             snapshot.RecentExperiences[0]);
         AssertReferencePropertiesAreIndependent(
             source.BatchLaunchPresets[0],
             snapshot.BatchLaunchPresets[0]);
         Assert.NotSame(source.Accounts[0], snapshot.Accounts[0]);
+        Assert.NotSame(
+            source.NamedDestinations[0],
+            snapshot.NamedDestinations[0]);
         Assert.NotSame(
             source.RecentExperiences[0],
             snapshot.RecentExperiences[0]);
@@ -74,6 +80,9 @@ public sealed class AppSettingsSnapshotTests
             state.Accounts[0],
             settings.Accounts[0]);
         AssertReferencePropertiesAreIndependent(
+            state.NamedDestinations[0],
+            settings.NamedDestinations[0]);
+        AssertReferencePropertiesAreIndependent(
             state.RecentExperiences[0],
             settings.RecentExperiences[0]);
         AssertReferencePropertiesAreIndependent(
@@ -95,6 +104,7 @@ public sealed class AppSettingsSnapshotTests
             "LockedUserId",
             "LockedUsername",
             "MainWindowPlacement",
+            "NamedDestinations",
             "PendingProfileDeletionKeys",
             "PlaceId",
             "RecentExperiences",
@@ -117,6 +127,11 @@ public sealed class AppSettingsSnapshotTests
             "SessionFolder",
             "UserId",
             "Username");
+        AssertPublicProperties<NamedDestination>(
+            "AccountKeys",
+            "Id",
+            "Name",
+            "Value");
         AssertPublicProperties<BatchLaunchPreset>(
             "AccountKeys",
             "DelaySeconds",
@@ -146,6 +161,9 @@ public sealed class AppSettingsSnapshotTests
             settings.Accounts[0],
             new AccountProfile());
         AssertEveryPropertyHasNonDefaultFixtureValue(
+            settings.NamedDestinations[0],
+            new NamedDestination());
+        AssertEveryPropertyHasNonDefaultFixtureValue(
             settings.RecentExperiences[0],
             new RecentExperience());
         AssertEveryPropertyHasNonDefaultFixtureValue(
@@ -173,6 +191,16 @@ public sealed class AppSettingsSnapshotTests
                     Group = "Friends",
                     ColorHex = "#7C5CFC",
                     Destination = "12345"
+                }
+            ],
+            NamedDestinations =
+            [
+                new NamedDestination
+                {
+                    Id = "fedcba9876543210fedcba9876543210",
+                    Name = "Main game",
+                    Value = "12345",
+                    AccountKeys = [accountKey]
                 }
             ],
             ActiveAccountKey = accountKey,
@@ -245,6 +273,14 @@ public sealed class AppSettingsSnapshotTests
         originalAccount.Destination = "99999";
         settings.Accounts = [new AccountProfile()];
         settings.ActiveAccountKey = null;
+
+        settings.NamedDestinations[0].Id =
+            "11111111111111111111111111111111";
+        settings.NamedDestinations[0].Name = "Mutated destination";
+        settings.NamedDestinations[0].Value = "99999";
+        settings.NamedDestinations[0].AccountKeys[0] =
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        settings.NamedDestinations = [new NamedDestination()];
 
         var originalRecent = settings.RecentExperiences[0];
         originalRecent.Destination = "99999";

@@ -28,11 +28,15 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PublishSingleFile>true</PublishSingleFile>
+    <!-- Keep the self-contained publish transparent: application/component and
+         runtime assemblies remain separate, inspectable files. -->
+    <PublishSingleFile>false</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeFrameworkVersion>10.0.10</RuntimeFrameworkVersion>
-    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>false</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <PublishReadyToRun>false</PublishReadyToRun>
   </PropertyGroup>
 
   <ItemGroup>
@@ -43,6 +47,7 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
     <PackageReference Include="Velopack" Version="1.2.0" />
     <ProjectReference Include="..\SessionDock.ReleaseTrust\SessionDock.ReleaseTrust.csproj" />
+    <ProjectReference Include="..\SessionDock.ExactWheel\SessionDock.ExactWheel.csproj" />
     <ProjectReference Include="..\SessionDock.HandleScope\SessionDock.HandleScope.csproj" />
     <None Update="handlescope.example.json"
           CopyToOutputDirectory="PreserveNewest"

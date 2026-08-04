@@ -3,6 +3,7 @@ namespace SessionDock.Models;
 public sealed class AppSettings
 {
     public List<AccountProfile> Accounts { get; set; } = [];
+    public List<NamedDestination> NamedDestinations { get; set; } = [];
     public string? ActiveAccountKey { get; set; }
     public List<RecentExperience> RecentExperiences { get; set; } = [];
     public List<BatchLaunchPreset> BatchLaunchPresets { get; set; } = [];
@@ -42,6 +43,14 @@ public sealed class AccountProfile
     public string? Group { get; set; }
     public string? ColorHex { get; set; }
     public string? Destination { get; set; }
+}
+
+public sealed class NamedDestination
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = string.Empty;
+    public string Value { get; set; } = string.Empty;
+    public List<string> AccountKeys { get; set; } = [];
 }
 
 public sealed class BatchLaunchPreset

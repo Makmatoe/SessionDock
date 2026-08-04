@@ -4,6 +4,7 @@
     <Project Path="SessionDock/tools/ReleaseSigner/ReleaseSigner.csproj" />
   </Folder>
   <Project Path="SessionDock.ReleaseTrust/SessionDock.ReleaseTrust.csproj" />
+  <Project Path="SessionDock.ExactWheel/SessionDock.ExactWheel.csproj" />
   <Project Path="SessionDock.HandleScope/SessionDock.HandleScope.csproj" />
   <Project Path="SessionDock.Tests/SessionDock.Tests.csproj" />
   <Project Path="SessionDock/SessionDock.csproj" />

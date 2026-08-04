@@ -14,6 +14,7 @@
     <SolidColorBrush x:Key="AccentHoverBrush" Color="#2F6FD8"/>
     <SolidColorBrush x:Key="AccentSurfaceBrush" Color="#17243A"/>
     <SolidColorBrush x:Key="FocusBrush" Color="#BBD2FF"/>
+    <SolidColorBrush x:Key="TutorialOverlayBrush" Color="#B8000000"/>
     <SolidColorBrush x:Key="OnAccentTextBrush" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="CaptionButtonHoverBrush" Color="#242A33"/>
     <SolidColorBrush x:Key="CaptionButtonPressedBrush" Color="#303640"/>
@@ -28,6 +29,11 @@
     <SolidColorBrush x:Key="FieldHoverBorderBrush" Color="#8FA3BD"/>
     <SolidColorBrush x:Key="FieldCaretBrush" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="SelectionBrush" Color="#356CC7"/>
+    <SolidColorBrush x:Key="ListSurfaceBrush" Color="#12151A"/>
+    <SolidColorBrush x:Key="ListBorderBrush" Color="#606B7A"/>
+    <SolidColorBrush x:Key="ListItemHoverBrush" Color="#20252D"/>
+    <SolidColorBrush x:Key="ListItemSelectedBrush" Color="#17243A"/>
+    <SolidColorBrush x:Key="ListItemSelectedBorderBrush" Color="#326FD1"/>
     <SolidColorBrush x:Key="ScrollTrackBrush" Color="#12151A"/>
     <SolidColorBrush x:Key="ScrollThumbBrush" Color="#596575"/>
     <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#748195"/>

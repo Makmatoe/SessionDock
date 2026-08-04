@@ -159,12 +159,27 @@ try {
         }
         New-Item -ItemType Directory -Path $output -Force | Out-Null
         Invoke-CheckedCommand dotnet publish $project '--configuration' $Configuration '--runtime' $Runtime `
-            '--self-contained' 'true' '--no-restore' '--output' $output @commonProperties
+            '--self-contained' 'true' '--no-restore' '--output' $output `
+            '-p:PublishSingleFile=false' `
+            '-p:IncludeNativeLibrariesForSelfExtract=false' `
+            '-p:EnableCompressionInSingleFile=false' `
+            '-p:PublishTrimmed=false' `
+            '-p:PublishReadyToRun=false' `
+            @commonProperties
         Write-CombinedDotNetThirdPartyNotices `
             -AssetsPath (Join-Path $root 'SessionDock/obj/project.assets.json') `
             -Destination (Join-Path $output 'licenses/DotNet-THIRD-PARTY-NOTICES.txt')
         if (-not (Test-Path -LiteralPath (Join-Path $output 'SessionDock.exe') -PathType Leaf)) {
             throw "Publish completed without the expected SessionDock.exe in $output."
+        }
+        foreach ($requiredComponent in @(
+                'SessionDock.dll',
+                'SessionDock.ExactWheel.dll',
+                'SessionDock.HandleScope.dll',
+                'SessionDock.ReleaseTrust.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $output $requiredComponent) -PathType Leaf)) {
+                throw "Transparent publish completed without required component: $requiredComponent"
+            }
         }
         & (Join-Path $PSScriptRoot 'Verify-Publish.ps1') -Directory $output
     }

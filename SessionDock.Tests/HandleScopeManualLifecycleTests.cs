@@ -231,7 +231,7 @@ public sealed class HandleScopeManualLifecycleTests : IDisposable
 
         Assert.Contains("included", documentation, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("standalone", documentation, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("same SessionDock.exe", documentation, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("same SessionDock package", documentation, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("0.3.0", documentation, StringComparison.Ordinal);
         Assert.Contains("loopback", documentation, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("inherited pipe", documentation, StringComparison.OrdinalIgnoreCase);

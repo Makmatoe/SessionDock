@@ -374,6 +374,8 @@ try {
         'THIRD_PARTY_NOTICES.md',
         'docs/RELEASING.md',
         'SessionDock/SessionDock.csproj',
+        'SessionDock.ExactWheel/SessionDock.ExactWheel.csproj',
+        'SessionDock.ExactWheel/exactwheel-upstream.json',
         'SessionDock.HandleScope/SessionDock.HandleScope.csproj',
         'SessionDock.HandleScope/handlescope-upstream.json',
         'SessionDock/Assets/SessionDock.Icon.png',
@@ -396,6 +398,8 @@ try {
         'scripts/Test-DotNetSecurityPatch.ps1',
         'scripts/Sync-BundledHandleScope.ps1',
         'scripts/Verify-Assets.ps1',
+        'scripts/Verify-AuthenticodeRelease.ps1',
+        'scripts/Verify-ExactWheelReleaseProvenance.ps1',
         'scripts/Verify-Publish.ps1',
         'scripts/Verify-ReleaseLicense.ps1'
     )
@@ -423,6 +427,65 @@ try {
     }
     & (Join-Path $PSScriptRoot 'Verify-ReleaseLicense.ps1') `
         -LicensePath (Join-Path $root 'LICENSE.md')
+
+    $exactWheelManifestPath = Join-Path `
+        $root `
+        'SessionDock.ExactWheel/exactwheel-upstream.json'
+    $exactWheelManifest = Get-Content -LiteralPath $exactWheelManifestPath -Raw |
+        ConvertFrom-Json
+    $exactWheelManifestProperties = @(
+        $exactWheelManifest.PSObject.Properties.Name | Sort-Object)
+    $expectedExactWheelManifestProperties = @(
+        'canonicalManifestSha256'
+        'component'
+        'componentVersion'
+        'integrationKind'
+        'license'
+        'macroFormatVersion'
+        'notes'
+        'releaseBlockedPendingLicense'
+        'schemaVersion'
+        'sourceBytes'
+        'sourceCommit'
+        'sourceFileCount'
+        'sourcePathHint'
+        'sourceState'
+        'sourceTag'
+    )
+    if (@(Compare-Object `
+            $expectedExactWheelManifestProperties `
+            $exactWheelManifestProperties `
+            -CaseSensitive).Count -ne 0 -or
+        $exactWheelManifest.schemaVersion -ne 1 -or
+        $exactWheelManifest.component -cne 'ExactWheel' -or
+        $exactWheelManifest.componentVersion -cne '1.1.0' -or
+        $exactWheelManifest.integrationKind -cne 'managed-compatible-port' -or
+        $exactWheelManifest.releaseBlockedPendingLicense -isnot [bool]) {
+        throw 'The ExactWheel provenance manifest must retain its explicit release-readiness contract.'
+    }
+    $exactWheelProvenanceVerifier = Join-Path `
+        $root `
+        'scripts/Verify-ExactWheelReleaseProvenance.ps1'
+    $exactWheelProvenanceContents = Get-Content -LiteralPath `
+        $exactWheelProvenanceVerifier `
+        -Raw
+    foreach ($requiredExactWheelGatePattern in @(
+            'releaseBlockedPendingLicense is true',
+            'license is missing',
+            'sourceState is not immutable-git',
+            'sourceCommit is missing',
+            'sourceTag is missing',
+            '\^\(\?:\[0-9a-f\]\{40\}\|\[0-9a-f\]\{64\}\)\$',
+            'Normal builds remain available, but a public release is blocked')) {
+        if ($exactWheelProvenanceContents -notmatch $requiredExactWheelGatePattern) {
+            throw "The ExactWheel release provenance gate is missing a fail-closed contract: $requiredExactWheelGatePattern"
+        }
+    }
+    if (-not $exactWheelManifest.releaseBlockedPendingLicense) {
+        [void] (& $exactWheelProvenanceVerifier `
+            -ManifestPath $exactWheelManifestPath `
+            -PassThru)
+    }
 
     . (Join-Path $PSScriptRoot 'ReleaseJson.ps1')
     $dateProbeText = '2026-07-21T17:06:45.1234567+00:00'
@@ -465,7 +528,31 @@ try {
     $handleScopeReferences = @($applicationProject.SelectNodes(
             "/Project/ItemGroup/ProjectReference[@Include='..\SessionDock.HandleScope\SessionDock.HandleScope.csproj']"))
     if ($handleScopeReferences.Count -ne 1) {
-        throw 'SessionDock must compile the reviewed HandleScope component into its single executable.'
+        throw 'SessionDock must compile the reviewed HandleScope component into its application package.'
+    }
+    $exactWheelReferences = @($applicationProject.SelectNodes(
+            "/Project/ItemGroup/ProjectReference[@Include='..\SessionDock.ExactWheel\SessionDock.ExactWheel.csproj']"))
+    if ($exactWheelReferences.Count -ne 1) {
+        throw 'SessionDock must compile the contained ExactWheel component into its application package.'
+    }
+    foreach ($transparentPublishProperty in @{
+            PublishSingleFile = 'false'
+            IncludeNativeLibrariesForSelfExtract = 'false'
+            EnableCompressionInSingleFile = 'false'
+            PublishTrimmed = 'false'
+            PublishReadyToRun = 'false'
+            SelfContained = 'true'
+            RuntimeFrameworkVersion = '10.0.10'
+        }.GetEnumerator()) {
+        $values = @($applicationProject.SelectNodes(
+                "/Project/PropertyGroup/$($transparentPublishProperty.Key)") |
+            ForEach-Object { $_.InnerText } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+            Sort-Object -Unique)
+        if ($values.Count -ne 1 -or
+            $values[0] -cne $transparentPublishProperty.Value) {
+            throw "Transparent self-contained publish property '$($transparentPublishProperty.Key)' must remain '$($transparentPublishProperty.Value)'."
+        }
     }
     [xml] $handleScopeProject = Get-Content -LiteralPath `
         (Join-Path $root 'SessionDock.HandleScope/SessionDock.HandleScope.csproj') -Raw
@@ -561,6 +648,27 @@ try {
             -Contents $criticalJob.Contents `
             -Name $criticalJob.Name
     }
+
+    $exactWheelReleaseGateStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $releaseValidateJob `
+        -Name 'Enforce ExactWheel release provenance'
+    $releaseBuildStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $releaseValidateJob `
+        -Name 'Build, test, and publish the application'
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $exactWheelReleaseGateStep `
+        -Name 'Enforce ExactWheel release provenance'
+    if ($exactWheelReleaseGateStep -notmatch
+            'Verify-ExactWheelReleaseProvenance\.ps1\s+-ManifestPath\s+\./SessionDock\.ExactWheel/exactwheel-upstream\.json' -or
+        $releaseValidateJob.IndexOf(
+            $exactWheelReleaseGateStep,
+            [StringComparison]::Ordinal) -ge
+        $releaseValidateJob.IndexOf(
+            $releaseBuildStep,
+            [StringComparison]::Ordinal) -or
+        $ciBuildJob -match 'Verify-ExactWheelReleaseProvenance\.ps1') {
+        throw 'ExactWheel release provenance must gate tags before build without blocking normal CI.'
+    }
     foreach ($sourceAnchorJob in @(
             @{ Name = 'build-and-test'; Contents = $ciBuildJob },
             @{ Name = 'validate-and-build'; Contents = $releaseValidateJob }
@@ -638,6 +746,8 @@ try {
         $releaseValidateJob -notmatch 'SOURCE_COMMIT:\s*\$\{\{\s*github\.sha\s*\}\}' -or
         $releaseValidateJob -notmatch 'Copy-Item SessionDock/Resources/handlescope-compatibility-bootstrap\.json artifacts/release-input/handlescope-compatibility-bootstrap\.json' -or
         $releaseValidateJob -notmatch 'Copy-Item SessionDock\.HandleScope/handlescope-upstream\.json artifacts/release-input/handlescope-upstream\.json' -or
+        $releaseValidateJob -notmatch 'Copy-Item SessionDock\.ExactWheel/exactwheel-upstream\.json artifacts/release-input/exactwheel-upstream\.json' -or
+        $releaseValidateJob -notmatch 'Copy-Item scripts/Verify-ExactWheelReleaseProvenance\.ps1 artifacts/release-input/scripts/Verify-ExactWheelReleaseProvenance\.ps1' -or
         $releaseValidateJob -notmatch 'Copy-Item discord-release-bot/src/release-automation\.js artifacts/release-input/release-automation\.mjs' -or
         $releaseValidateJob -notmatch "'generate'" -or
         $releaseValidateJob -notmatch '''--source-commit'', \$env:SOURCE_COMMIT' -or
@@ -764,11 +874,56 @@ try {
         $releaseStageJob -match '''--prior-manifest''') {
         throw 'The protected staging job must prepare, jointly sign, complete, and verify the version-bound HandleScope catalog.'
     }
-    $retiredAuthenticodeVerifier = 'Test-' + 'AuthenticodeSignature\.ps1'
-    if ($releaseStageJob -match 'Azure/(?:login|artifact-signing-action)@' -or
-        $releaseStageJob -match $retiredAuthenticodeVerifier -or
-        $releaseStageJob -match '--private-key') {
-        throw 'The unsigned release path must not claim Authenticode or pass the descriptor key to repository-built executables.'
+    $applicationSigningIndex = $releaseStageJob.IndexOf(
+        '- name: Authenticode-sign the exact application files',
+        [StringComparison]::Ordinal)
+    $applicationSignatureVerificationIndex = $releaseStageJob.IndexOf(
+        '- name: Verify application Authenticode before packaging',
+        [StringComparison]::Ordinal)
+    $velopackIndex = $releaseStageJob.IndexOf(
+        '- name: Build Velopack assets',
+        [StringComparison]::Ordinal)
+    $setupSigningIndex = $releaseStageJob.IndexOf(
+        '- name: Authenticode-sign the final Setup',
+        [StringComparison]::Ordinal)
+    $setupSignatureVerificationIndex = $releaseStageJob.IndexOf(
+        '- name: Verify final Setup Authenticode before release metadata',
+        [StringComparison]::Ordinal)
+    $descriptorPreparationIndex = $releaseStageJob.IndexOf(
+        '- name: Prepare the canonical unsigned release descriptor',
+        [StringComparison]::Ordinal)
+    if (@([regex]::Matches(
+            $releaseStageJob,
+            'azure/login@2dd0bbf4064d5a1812889dc200bb8eed2597f82a')).Count -ne 1 -or
+        @([regex]::Matches(
+            $releaseStageJob,
+            'azure/artifact-signing-action@c0ae2c1d0c1847ab81ac0ab8521bee597cfedd30')).Count -ne 2 -or
+        $releaseStageJob -notmatch '(?m)^      id-token:\s*write\s*$' -or
+        $releaseStageJob -notmatch 'timestamp-rfc3161:\s*http://timestamp\.acs\.microsoft\.com' -or
+        @([regex]::Matches($releaseStageJob, 'file-digest:\s*SHA256')).Count -ne 2 -or
+        @([regex]::Matches($releaseStageJob, 'timestamp-digest:\s*SHA256')).Count -ne 2 -or
+        $releaseStageJob -notmatch 'ARTIFACT_SIGNING_PUBLISHER_SUBJECT' -or
+        $releaseStageJob -notmatch '-RequireUnsigned' -or
+        $releaseStageJob -notmatch 'Verify-AuthenticodeRelease\.ps1' -or
+        $releaseStageJob -notmatch 'SessionDock\.HandleScope\.dll' -or
+        $releaseStageJob -notmatch 'SessionDock\.ExactWheel\.dll' -or
+        $releaseStageJob -notmatch 'SessionDock\.ReleaseTrust\.dll' -or
+        $releaseStageJob -notmatch 'Velopack\.dll' -or
+        $applicationSigningIndex -lt 0 -or
+        $applicationSigningIndex -ge $applicationSignatureVerificationIndex -or
+        $applicationSignatureVerificationIndex -ge $velopackIndex -or
+        $velopackIndex -ge $setupSigningIndex -or
+        $setupSigningIndex -ge $setupSignatureVerificationIndex -or
+        $setupSignatureVerificationIndex -ge $descriptorPreparationIndex -or
+        $releaseStageJob -match '(?i)self[- ]signed|\.pfx|certificate-password|Set-MpPreference|Add-MpPreference|exclusionpath|--private-key') {
+        throw 'The protected staging job must use pinned Azure OIDC Artifact Signing, sign and verify the exact application set before Velopack, then sign and verify Setup before release metadata.'
+    }
+    if ($releasePublishJob -notmatch 'Verify Authenticode on the approved draft' -or
+        $releasePublishJob -notmatch 'Re-download and verify public Authenticode assets' -or
+        $releasePublishJob -notmatch 'Verify-AuthenticodeRelease\.ps1' -or
+        $releasePublishJob -notmatch 'approved-portable' -or
+        $releasePublishJob -notmatch 'published-portable') {
+        throw 'Approved-draft and public re-downloads must fail closed on Authenticode verification.'
     }
     if ($releaseStageJob -match 'gh release edit|--draft=false') {
         throw 'The protected staging job must not publish the verified draft.'
@@ -814,6 +969,8 @@ try {
         'Preserve the guarded publication intent'
         'Publish the reverified draft'
         'Re-download and verify the approved draft'
+        'Re-download and verify public Authenticode assets'
+        'Verify Authenticode on the approved draft'
         'Verify an earlier guarded publication intent'
     ) | Sort-Object
     $actualReleasePublishStepNames = @($releasePublishSteps.Name | Sort-Object)
@@ -821,7 +978,7 @@ try {
             $expectedReleasePublishStepNames `
             $actualReleasePublishStepNames `
             -CaseSensitive) {
-        throw 'The final publication job must contain only its six reviewed verification and publication steps.'
+        throw 'The final publication job must contain only its eight reviewed verification and publication steps.'
     }
     $releaseReverifyStep = Get-RequiredWorkflowStepBlock `
         -JobContents $releasePublishJob `
@@ -1123,7 +1280,7 @@ try {
         $releaseGuideContents -notmatch '(?i)treat\s+every\s+failure\s+as\s+a\s+release\s+blocker' -or
         $releaseGuideContents -notmatch '(?i)GET-only\s+preflight' -or
         $releaseGuideContents -notmatch '(?i)Re-run failed jobs' -or
-        $releaseGuideContents -notmatch 'Unknown publisher' -or
+        $releaseGuideContents -notmatch 'Unknown\s+publisher' -or
         $releaseGuideContents -notmatch '(?i)draft[\s\S]{0,500}approval') {
         throw 'The release guide must document release approvals and the externally configured automatic Discord path.'
     }
@@ -1199,6 +1356,8 @@ try {
         (Join-Path $root 'SessionDock/tools/ReleaseSigner/Program.cs') -Raw
     $verifyAssetsContents = Get-Content -LiteralPath `
         (Join-Path $root 'scripts/Verify-Assets.ps1') -Raw
+    $authenticodeVerifierContents = Get-Content -LiteralPath `
+        (Join-Path $root 'scripts/Verify-AuthenticodeRelease.ps1') -Raw
     $sbomContents = Get-Content -LiteralPath `
         (Join-Path $root 'scripts/New-ReleaseSbom.ps1') -Raw
     foreach ($catalogCommand in @(
@@ -1231,19 +1390,44 @@ try {
         $verifyAssetsContents -notmatch '\$catalog\.sessionDockVersion -cne \[string\] \$descriptor\.version') {
         throw 'Release signing and asset verification must enforce the signed, version-bound HandleScope catalog contract.'
     }
+    if ($authenticodeVerifierContents -notmatch 'Get-AuthenticodeSignature' -or
+        $authenticodeVerifierContents -notmatch 'SignatureStatus\]::Valid' -or
+        $authenticodeVerifierContents -notmatch 'SignatureStatus\]::NotSigned' -or
+        $authenticodeVerifierContents -notmatch '\.Subject -cne \$ExpectedPublisherSubject' -or
+        $authenticodeVerifierContents -notmatch '1\.3\.6\.1\.5\.5\.7\.3\.3' -or
+        $authenticodeVerifierContents -notmatch '1\.3\.6\.1\.5\.5\.7\.3\.8' -or
+        $authenticodeVerifierContents -notmatch 'X509RevocationMode\]::Online' -or
+        $authenticodeVerifierContents -notmatch 'X509RevocationFlag\]::ExcludeRoot' -or
+        $authenticodeVerifierContents -notmatch 'X509VerificationFlags\]::NoFlag' -or
+        $authenticodeVerifierContents -notmatch 'TimeStamperCertificate' -or
+        $authenticodeVerifierContents -match '(?i)self[- ]signed|\.pfx|Set-MpPreference|Add-MpPreference|exclusionpath') {
+        throw 'Authenticode release verification must enforce unsigned inputs or valid exact-publisher code-signing and timestamp chains without a local fallback.'
+    }
     if ($sbomContents -notmatch 'Microsoft\.AspNetCore\.App\.Runtime\.win-x64' -or
         $sbomContents -notmatch 'SPDXRef-Package-HandleScope' -or
+        $sbomContents -notmatch 'SPDXRef-Package-ExactWheel' -or
+        $sbomContents -notmatch '\$exactWheelManifest\.license' -or
+        $sbomContents -notmatch 'Verify-ExactWheelReleaseProvenance\.ps1' -or
         $sbomContents -notmatch "relationshipType = 'CONTAINS'" -or
         $sbomContents -notmatch 'ef3b926848353115296faaa9f48f1a5be8c8bae2' -or
-        $releaseWorkflowContents -notmatch '-BundledHandleScopeManifest ./release-input/handlescope-upstream\.json') {
-        throw 'Release SBOM generation must identify the pinned bundled HandleScope source and ASP.NET Core runtime.'
+        $releaseWorkflowContents -notmatch '-BundledHandleScopeManifest ./release-input/handlescope-upstream\.json' -or
+        $releaseWorkflowContents -notmatch '-BundledExactWheelManifest ./release-input/exactwheel-upstream\.json') {
+        throw 'Release SBOM generation must identify the pinned contained HandleScope and ExactWheel sources plus the ASP.NET Core runtime.'
     }
     $secretReferences = @(Get-WorkflowSecretReferences -Contents $releaseWorkflowContents)
     $uniqueSecretReferences = @($secretReferences | Sort-Object -Unique)
-    $expectedReleaseSecrets = @($descriptorKeySecret, $discordBotSecret) | Sort-Object
-    if ($secretReferences.Count -ne 3 -or
+    $azureOidcSecrets = @(
+        'AZURE_CLIENT_ID',
+        'AZURE_SUBSCRIPTION_ID',
+        'AZURE_TENANT_ID')
+    $expectedReleaseSecrets = @(
+        $descriptorKeySecret
+        $discordBotSecret
+        $azureOidcSecrets
+    ) | Sort-Object
+    if ($secretReferences.Count -ne 9 -or
         @(Compare-Object $expectedReleaseSecrets $uniqueSecretReferences -CaseSensitive).Count -ne 0) {
-        throw 'The release workflow may receive only the protected descriptor key and Discord bot token.'
+        throw 'The release workflow may receive only the descriptor key, Azure OIDC identifiers, and Discord bot token.'
     }
     $descriptorSecretMatches = @([regex]::Matches(
         $releaseWorkflowContents,
@@ -1251,6 +1435,15 @@ try {
     $discordSecretMatches = @([regex]::Matches(
         $releaseWorkflowContents,
         '\$\{\{\s*secrets\.DISCORD_RELEASE_BOT_TOKEN\s*\}\}'))
+    $azureClientIdMatches = @([regex]::Matches(
+        $releaseWorkflowContents,
+        '\$\{\{\s*secrets\.AZURE_CLIENT_ID\s*\}\}'))
+    $azureTenantIdMatches = @([regex]::Matches(
+        $releaseWorkflowContents,
+        '\$\{\{\s*secrets\.AZURE_TENANT_ID\s*\}\}'))
+    $azureSubscriptionIdMatches = @([regex]::Matches(
+        $releaseWorkflowContents,
+        '\$\{\{\s*secrets\.AZURE_SUBSCRIPTION_ID\s*\}\}'))
     $discordBotIdMatches = @([regex]::Matches(
         $releaseWorkflowContents,
         '\$\{\{\s*vars\.DISCORD_RELEASE_BOT_ID\s*\}\}'))
@@ -1266,6 +1459,9 @@ try {
     $announcementSenderSecretReferences = @(Get-WorkflowSecretReferences -Contents $announcementSenderStep)
     if ($descriptorSecretMatches.Count -ne 1 -or
         $discordSecretMatches.Count -ne 2 -or
+        $azureClientIdMatches.Count -ne 2 -or
+        $azureTenantIdMatches.Count -ne 2 -or
+        $azureSubscriptionIdMatches.Count -ne 2 -or
         $discordBotIdMatches.Count -ne 2 -or
         $discordChannelMatches.Count -ne 2 -or
         $discordRoleMatches.Count -ne 2 -or
@@ -1425,7 +1621,7 @@ try {
         $discordPackage.scripts.PSObject.Properties.Name -notcontains 'community:invite' -or
         $discordPackage.scripts.test -cne 'node --test' -or
         $discordReadme -notmatch '(?i)not used by the release workflow' -or
-        $discordReadme -notmatch '(?i)must not be used to publish official' -or
+        $discordReadme -notmatch '(?i)must\s+not\s+be\s+used\s+to\s+publish\s+official' -or
         $discordReadme -notmatch '(?m)^npm ci\s*$' -or
         $discordReadme -notmatch '(?m)^npm test\s*$' -or
         $discordReadme -notmatch '(?m)^npm run check\s*$' -or
@@ -1588,18 +1784,24 @@ try {
     $publishVerifierContents = Get-Content -LiteralPath `
         (Join-Path $root 'scripts/Verify-Publish.ps1') -Raw
     if ($publishVerifierContents -notmatch '--isolated-runtime-smoke' -or
-        $publishVerifierContents -notmatch 'Production SessionDock\.exe contains') {
+        $publishVerifierContents -notmatch 'Production SessionDock\.dll contains') {
         throw 'Production publish verification must prove the privileged smoke switch is absent.'
     }
     $buildContents = Get-Content -LiteralPath `
         (Join-Path $root 'scripts/Build.ps1') -Raw
     if ($buildContents -notmatch 'Sync-BundledHandleScope\.ps1' -or
+        $buildContents -match 'Verify-ExactWheelReleaseProvenance\.ps1' -or
+        $buildContents -notmatch "-p:PublishSingleFile=false" -or
+        $buildContents -notmatch "-p:IncludeNativeLibrariesForSelfExtract=false" -or
+        $buildContents -notmatch "-p:EnableCompressionInSingleFile=false" -or
         $buildContents -notmatch 'Write-CombinedDotNetThirdPartyNotices' -or
         $buildContents -notmatch 'microsoft\.aspnetcore\.app\.runtime\.win-x64/10\.0\.10/THIRD-PARTY-NOTICES\.TXT' -or
+        $publishVerifierContents -notmatch 'SessionDock\.ExactWheel\.dll' -or
         $publishVerifierContents -notmatch 'SessionDock\.HandleScope\.dll' -or
         $publishVerifierContents -notmatch 'microsoft\.aspnetcore\.app\.runtime\.win-x64/10\.0\.10/THIRD-PARTY-NOTICES\.TXT' -or
-        $publishVerifierContents -notmatch 'component sidecar') {
-        throw 'Production builds must verify bundled HandleScope identity, reject sidecars, and combine pinned ASP.NET Core notices.'
+        $publishVerifierContents -notmatch 'Pinned Microsoft runtime file has no valid Microsoft signature' -or
+        $publishVerifierContents -notmatch 'unexpected executable or script payload') {
+        throw 'Normal builds must emit and verify a transparent component/runtime inventory without invoking the tag-only ExactWheel release gate, reject unexpected executable/script payloads, validate signed Microsoft runtime files, and combine pinned ASP.NET Core notices.'
     }
 
     $workflowDirectory = Join-Path $root '.github/workflows'
@@ -1651,12 +1853,12 @@ try {
             if ($workflow.Name -ceq 'release.yml') {
                 $uniqueWorkflowSecretReferences = @(
                     $workflowSecretReferences | Sort-Object -Unique)
-                if ($workflowSecretReferences.Count -ne 3 -or
+                if ($workflowSecretReferences.Count -ne 9 -or
                     @(Compare-Object `
                             $expectedReleaseSecrets `
                             $uniqueWorkflowSecretReferences `
                             -CaseSensitive).Count -ne 0) {
-                    throw 'The release workflow may receive only the protected descriptor key and Discord bot token.'
+                    throw 'The release workflow may receive only the descriptor key, Azure OIDC identifiers, and Discord bot token.'
                 }
                 if ($contents -notmatch '(?m)^\s+artifact-metadata:\s*write\s*$' -or
                     $contents -notmatch 'actions/attest@') {

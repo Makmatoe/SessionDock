@@ -3,8 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:SessionDock"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="SessionDock" Width="1080" Height="720"
-        MinWidth="800" MinHeight="520"
+        Title="SessionDock" Width="620" Height="500"
+        MinWidth="520" MinHeight="430"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" AllowsTransparency="False"
         Background="{DynamicResource BackgroundBrush}"
@@ -111,9 +111,33 @@
             <Setter Property="Stroke"
                     Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"/>
         </Style>
+
+        <Style x:Key="SettingsHubTile" TargetType="Border">
+            <Setter Property="Margin" Value="0,0,10,10"/>
+            <Setter Property="Padding" Value="16,14"/>
+            <Setter Property="MinHeight" Value="132"/>
+            <Setter Property="Background"
+                    Value="{DynamicResource WorkspaceSurfaceBrush}"/>
+            <Setter Property="BorderBrush"
+                    Value="{DynamicResource WorkspaceBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+        </Style>
+
+        <Style x:Key="SettingsHubActionButton" TargetType="Button"
+               BasedOn="{StaticResource QuietButton}">
+            <Setter Property="Margin" Value="0,9,7,0"/>
+            <Setter Property="Padding" Value="10,7"/>
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="FontSize" Value="11"/>
+        </Style>
     </Window.Resources>
 
-    <Grid Background="{DynamicResource BackgroundBrush}">
+    <Grid x:Name="ApplicationRoot"
+          Background="{DynamicResource BackgroundBrush}">
+      <Grid x:Name="AdvancedWorkspace"
+            Visibility="Collapsed"
+            Background="{DynamicResource BackgroundBrush}">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="64"/>
             <ColumnDefinition Width="*"/>
@@ -170,6 +194,25 @@
                             ToolTip="{DynamicResource Main.LanguageSettings}">
                         <Path Style="{StaticResource ButtonIcon}"
                               Data="{StaticResource IconLanguage}"/>
+                    </Button>
+                    <Button x:Name="ReplayTutorialButton"
+                            Style="{StaticResource RailIconButton}"
+                            Click="ReplayTutorialButton_Click"
+                            Margin="0,0,0,6"
+                            AutomationProperties.Name="{DynamicResource Tutorial.Replay}"
+                            ToolTip="{DynamicResource Tutorial.Replay}">
+                        <Path Style="{StaticResource ButtonIcon}"
+                              Data="{StaticResource IconActivity}"/>
+                    </Button>
+                    <Button x:Name="SessionAutomationSettingsButton"
+                            Style="{StaticResource RailIconButton}"
+                            Click="SessionAutomationSettingsButton_Click"
+                            Margin="0,0,0,6"
+                            AutomationProperties.Name="{DynamicResource AutomationSettings.Title}"
+                            AutomationProperties.HelpText="{DynamicResource AutomationSettings.Intro}"
+                            ToolTip="{DynamicResource AutomationSettings.Title}">
+                        <Path Style="{StaticResource ButtonIcon}"
+                              Data="{StaticResource IconTemplate}"/>
                     </Button>
                     <Button x:Name="MetadataTransferButton"
                             Style="{StaticResource RailIconButton}"
@@ -245,6 +288,19 @@
                 <StackPanel x:Name="HeaderUtilityPanel"
                             Grid.Column="1" Orientation="Horizontal"
                             VerticalAlignment="Center">
+                    <Button x:Name="HomeFromSettingsButton"
+                            Style="{StaticResource IconOnlyButton}"
+                            Width="34" Height="34" Padding="8"
+                            Margin="0,0,6,0"
+                            Background="{DynamicResource UtilitySurfaceBrush}"
+                            Foreground="{DynamicResource UtilityTextBrush}"
+                            Click="HomeFromSettingsButton_Click"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                            AutomationProperties.Name="{DynamicResource Home.BackToHome}"
+                            ToolTip="{DynamicResource Home.BackToHome}">
+                        <Path Style="{StaticResource ButtonIcon}"
+                              Data="{StaticResource IconBack}"/>
+                    </Button>
                     <Button x:Name="AboutDiagnosticsButton"
                             Style="{StaticResource IconOnlyButton}"
                             Width="34" Height="34" Padding="8"
@@ -997,5 +1053,885 @@
                            Margin="14,0,0,0"/>
             </Grid>
         </Grid>
+      </Grid>
+
+      <Grid x:Name="SettingsHubWorkspace"
+            Visibility="Collapsed"
+            Background="{DynamicResource BackgroundBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="64"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Margin="18,10,12,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="126"/>
+          </Grid.ColumnDefinitions>
+          <Button x:Name="SettingsBackButton"
+                  Style="{StaticResource IconOnlyButton}"
+                  Width="38" Height="38" Padding="9"
+                  Margin="0,0,11,0"
+                  Background="{DynamicResource UtilitySurfaceBrush}"
+                  Foreground="{DynamicResource UtilityTextBrush}"
+                  Click="SettingsBackButton_Click"
+                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                  AutomationProperties.Name="{DynamicResource Home.BackToHome}"
+                  ToolTip="{DynamicResource Home.BackToHome}">
+            <Path Style="{StaticResource ButtonIcon}"
+                  Data="{StaticResource IconBack}"/>
+          </Button>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock x:Name="SettingsHeadingText"
+                       Text="{DynamicResource SettingsHub.Title}"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="19" FontWeight="SemiBold"
+                       AutomationProperties.HeadingLevel="Level1"/>
+            <TextBlock Text="{DynamicResource SettingsHub.Subtitle}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="11" Margin="0,2,0,0"/>
+          </StackPanel>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1"
+                      Margin="24,6,14,18"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+          <StackPanel>
+            <TextBlock Text="{DynamicResource SettingsHub.Heading}"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="24" FontWeight="SemiBold"
+                       AutomationProperties.HeadingLevel="Level2"/>
+            <TextBlock Text="{DynamicResource SettingsHub.Description}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="12" Margin="0,5,10,16"
+                       TextWrapping="Wrap"/>
+
+            <UniformGrid Columns="2">
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.AppearanceTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.AppearanceDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <WrapPanel>
+                    <Button x:Name="SettingsThemeButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=ThemeToggleButton}"
+                            Click="SettingsThemeButton_Click"
+                            Content="{DynamicResource SettingsHub.ThemeAction}"
+                            AutomationProperties.HelpText="{DynamicResource Main.ThemeHelp}"/>
+                    <Button x:Name="SettingsSoundButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=SoundSettingsButton}"
+                            Click="SoundSettingsButton_Click"
+                            Content="{DynamicResource Main.SoundSettings}"/>
+                    <Button x:Name="SettingsLanguageButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=LanguageSettingsButton}"
+                            Click="LanguageSettingsButton_Click"
+                            Content="{DynamicResource Main.LanguageSettings}"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+
+              <Border x:Name="SettingsWindowLayoutTile"
+                      Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource AutomationSettings.SizeHeading}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource AutomationSettings.SizeHelp}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsWindowLayoutButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding IsEnabled, ElementName=SessionAutomationSettingsButton}"
+                          Click="WindowLayoutSettingsButton_Click"
+                          Content="{DynamicResource SettingsHub.AutomationAction}"
+                          AutomationProperties.Name="{DynamicResource AutomationSettings.SizeHeading}"
+                          AutomationProperties.HelpText="{DynamicResource AutomationSettings.SizeHelp}"/>
+                </StackPanel>
+              </Border>
+
+              <Border x:Name="SettingsMacroLibraryTile"
+                      Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource AutomationSettings.MacrosHeading}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource AutomationSettings.MacrosHelp}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsMacroLibraryButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding IsEnabled, ElementName=SessionAutomationSettingsButton}"
+                          Click="MacroLibrarySettingsButton_Click"
+                          Content="{DynamicResource SettingsHub.AutomationAction}"
+                          AutomationProperties.Name="{DynamicResource AutomationSettings.MacrosHeading}"
+                          AutomationProperties.HelpText="{DynamicResource AutomationSettings.MacrosHelp}"/>
+                </StackPanel>
+              </Border>
+
+              <Border x:Name="SettingsTemplatesButtonTile"
+                      Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource AutomationSettings.TemplatesHeading}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource AutomationSettings.TemplatesHelp}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsTemplatesButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding IsEnabled, ElementName=SessionAutomationSettingsButton}"
+                          Click="TemplateSettingsButton_Click"
+                          Content="{DynamicResource SettingsHub.AutomationAction}"
+                          AutomationProperties.Name="{DynamicResource AutomationSettings.TemplatesHeading}"
+                          AutomationProperties.HelpText="{DynamicResource AutomationSettings.TemplatesHelp}"/>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.CurrentBatchTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.CurrentBatchDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <WrapPanel>
+                    <Button x:Name="SettingsBatchAssignmentsButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="False"
+                            Click="CurrentBatchAssignmentsButton_Click"
+                            Content="{DynamicResource SettingsHub.BatchAssignmentsAction}"/>
+                    <Button x:Name="SettingsMacroControllerButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="False"
+                            Click="OpenMacroControllerButton_Click"
+                            Content="{DynamicResource SettingsHub.MacroControllerAction}"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.IntegrationsTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.IntegrationsDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsIntegrationsButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding IsEnabled, ElementName=IntegrationsButton}"
+                          Click="IntegrationsButton_Click"
+                          Content="{DynamicResource Main.ManageIntegrations}"/>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.DataPrivacyTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.DataPrivacyDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsMetadataTransferButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding IsEnabled, ElementName=MetadataTransferButton}"
+                          Click="MetadataTransferButton_Click"
+                          Content="{DynamicResource Main.MetadataTransfer}"/>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.HelpTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.HelpDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <WrapPanel>
+                    <Button x:Name="SettingsReplayTutorialButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=ReplayTutorialButton}"
+                            Click="GetStartedTutorialButton_Click"
+                            Content="{DynamicResource Tutorial.GetStartedAction}"
+                            AutomationProperties.HelpText="{DynamicResource Tutorial.GetStartedActionHelp}"/>
+                    <Button x:Name="SettingsAdvancedTutorialButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=ReplayTutorialButton}"
+                            Click="AdvancedTutorialButton_Click"
+                            Content="{DynamicResource Tutorial.AdvancedAction}"
+                            AutomationProperties.HelpText="{DynamicResource Tutorial.AdvancedActionHelp}"/>
+                    <Button x:Name="SettingsAboutButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=AboutDiagnosticsButton}"
+                            Click="AboutDiagnosticsButton_Click"
+                            Content="{DynamicResource SettingsHub.AboutAction}"/>
+                    <Button x:Name="SettingsReleaseNotesButton"
+                            Style="{StaticResource SettingsHubActionButton}"
+                            IsEnabled="{Binding IsEnabled, ElementName=ReleaseNotesButton}"
+                            Click="ReleaseNotesButton_Click"
+                            Content="{DynamicResource SettingsHub.ReleaseNotesAction}"/>
+                  </WrapPanel>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.UpdatesTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.UpdatesDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsUpdateButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          IsEnabled="{Binding IsEnabled, ElementName=InstallUpdateButton}"
+                          Click="InstallUpdateButton_Click"
+                          Content="{DynamicResource SettingsHub.UpdatesAction}"/>
+                </StackPanel>
+              </Border>
+
+              <Border Style="{StaticResource SettingsHubTile}">
+                <StackPanel>
+                  <TextBlock Text="{DynamicResource SettingsHub.AdvancedTitle}"
+                             Foreground="{DynamicResource TextBrush}"
+                             FontSize="15" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource SettingsHub.AdvancedDetail}"
+                             Foreground="{DynamicResource MutedBrush}"
+                             FontSize="11" Margin="0,4,0,0"
+                             TextWrapping="Wrap"/>
+                  <Button x:Name="SettingsAdvancedWorkspaceButton"
+                          Style="{StaticResource SettingsHubActionButton}"
+                          HorizontalAlignment="Left"
+                          Click="SettingsAdvancedWorkspaceButton_Click"
+                          Content="{DynamicResource SettingsHub.AdvancedAction}"/>
+                </StackPanel>
+              </Border>
+            </UniformGrid>
+          </StackPanel>
+        </ScrollViewer>
+      </Grid>
+
+      <Grid x:Name="DestinationsWorkspace"
+            Visibility="Collapsed"
+            Background="{DynamicResource BackgroundBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="64"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Margin="18,10,12,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="126"/>
+          </Grid.ColumnDefinitions>
+          <Button x:Name="DestinationsBackButton"
+                  Style="{StaticResource IconOnlyButton}"
+                  Width="38" Height="38" Padding="9"
+                  Margin="0,0,11,0"
+                  Background="{DynamicResource UtilitySurfaceBrush}"
+                  Foreground="{DynamicResource UtilityTextBrush}"
+                  Click="SetupBackButton_Click"
+                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                  AutomationProperties.Name="{DynamicResource Home.BackToHome}"
+                  ToolTip="{DynamicResource Home.BackToHome}">
+            <Path Style="{StaticResource ButtonIcon}"
+                  Data="{StaticResource IconBack}"/>
+          </Button>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Text="{DynamicResource Destinations.Title}"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="19" FontWeight="SemiBold"
+                       AutomationProperties.HeadingLevel="Level1"/>
+            <TextBlock Text="{DynamicResource Destinations.Subtitle}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="11" Margin="0,2,0,0"/>
+          </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="24,8,24,20">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="*"/>
+          </Grid.ColumnDefinitions>
+
+          <Border Padding="12"
+                  Background="{DynamicResource WorkspaceSurfaceBrush}"
+                  BorderBrush="{DynamicResource WorkspaceBorderBrush}"
+                  BorderThickness="1" CornerRadius="10">
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+              </Grid.RowDefinitions>
+              <TextBlock Text="{DynamicResource Destinations.SavedHeading}"
+                         Foreground="{DynamicResource TextBrush}"
+                         FontSize="13" FontWeight="SemiBold"
+                         AutomationProperties.HeadingLevel="Level2"/>
+              <ListBox x:Name="NamedDestinationsList"
+                       Grid.Row="1" Margin="0,9,0,9"
+                       DisplayMemberPath="Name"
+                       SelectionChanged="NamedDestinationsList_SelectionChanged"
+                       AutomationProperties.Name="{DynamicResource Destinations.SavedHeading}"/>
+              <TextBlock x:Name="DestinationsEmptyText"
+                         Grid.Row="1" Margin="8"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         Text="{DynamicResource Destinations.Empty}"
+                         Foreground="{DynamicResource MutedBrush}"
+                         FontSize="11" TextAlignment="Center"
+                         TextWrapping="Wrap"
+                         IsHitTestVisible="False"
+                         AutomationProperties.LiveSetting="Polite"/>
+              <Button x:Name="NewDestinationButton"
+                      Grid.Row="2"
+                      Click="NewDestinationButton_Click"
+                      Content="{DynamicResource Destinations.New}"
+                      Padding="12,8"
+                      AutomationProperties.HelpText="{DynamicResource Destinations.NewHelp}"/>
+            </Grid>
+          </Border>
+
+          <Border Grid.Column="1" Margin="14,0,0,0" Padding="16"
+                  Background="{DynamicResource WorkspaceSurfaceBrush}"
+                  BorderBrush="{DynamicResource WorkspaceBorderBrush}"
+                  BorderThickness="1" CornerRadius="10">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+              <StackPanel Margin="0,0,8,0">
+                <TextBlock x:Name="DestinationEditorHeadingText"
+                           Text="{DynamicResource Destinations.EditorNewHeading}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="16" FontWeight="SemiBold"
+                           AutomationProperties.HeadingLevel="Level2"/>
+                <TextBlock Text="{DynamicResource Destinations.EditorHelp}"
+                           Margin="0,4,0,14"
+                           Foreground="{DynamicResource MutedBrush}"
+                           FontSize="11" TextWrapping="Wrap"/>
+                <TextBlock Text="{DynamicResource Destinations.Name}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="12" FontWeight="SemiBold"/>
+                <Border Height="42" Margin="0,6,0,12"
+                        Style="{StaticResource TextFieldShell}">
+                  <TextBox x:Name="DestinationNameBox"
+                           MaxLength="80"
+                           Style="{StaticResource EmbeddedTextBox}"
+                           AutomationProperties.Name="{DynamicResource Destinations.Name}"/>
+                </Border>
+                <TextBlock Text="{DynamicResource Destinations.Value}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="12" FontWeight="SemiBold"/>
+                <Border Height="42" Margin="0,6,0,12"
+                        Style="{StaticResource TextFieldShell}">
+                  <TextBox x:Name="DestinationValueBox"
+                           MaxLength="4096"
+                           Style="{StaticResource EmbeddedTextBox}"
+                           AutomationProperties.Name="{DynamicResource Destinations.Value}"
+                           AutomationProperties.HelpText="{DynamicResource Main.DestinationHelp}"/>
+                </Border>
+                <TextBlock Text="{DynamicResource Destinations.AssignHeading}"
+                           Foreground="{DynamicResource TextBrush}"
+                           FontSize="12" FontWeight="SemiBold"/>
+                <TextBlock Text="{DynamicResource Destinations.AssignHelp}"
+                           Margin="0,4,0,7"
+                           Foreground="{DynamicResource MutedBrush}"
+                           FontSize="11" TextWrapping="Wrap"/>
+                <ListBox x:Name="DestinationAccountAssignmentsList"
+                         MaxHeight="190" Padding="0"
+                         BorderThickness="0" Background="Transparent"
+                         IsTabStop="False"
+                         AutomationProperties.Name="{DynamicResource Destinations.AssignHeading}">
+                  <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                      <Setter Property="Padding" Value="0"/>
+                      <Setter Property="Margin" Value="0,0,0,4"/>
+                      <Setter Property="Focusable" Value="False"/>
+                    </Style>
+                  </ListBox.ItemContainerStyle>
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <CheckBox Content="{Binding DisplayName}"
+                                IsChecked="{Binding IsAssigned, Mode=TwoWay}"
+                                ToolTip="{Binding DestinationSummary}"
+                                AutomationProperties.HelpText="{Binding DestinationSummary}"/>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="DestinationEditorValidationText"
+                           MinHeight="18" Margin="0,8,0,0"
+                           Foreground="{DynamicResource ErrorTextBrush}"
+                           FontSize="11" TextWrapping="Wrap"
+                           AutomationProperties.LiveSetting="Assertive"/>
+                <WrapPanel Margin="0,8,0,0" HorizontalAlignment="Right">
+                  <Button x:Name="DeleteDestinationButton"
+                          Margin="0,0,8,0" Padding="12,8"
+                          Click="DeleteDestinationButton_Click"
+                          Content="{DynamicResource Destinations.Delete}"
+                          Background="{DynamicResource ErrorSurfaceBrush}"
+                          Foreground="{DynamicResource ErrorMutedTextBrush}"/>
+                  <Button x:Name="SaveDestinationButton"
+                          Padding="16,8"
+                          Click="SaveDestinationButton_Click"
+                          Content="{DynamicResource Destinations.Save}"/>
+                </WrapPanel>
+              </StackPanel>
+            </ScrollViewer>
+          </Border>
+        </Grid>
+
+        <Grid x:Name="DestinationUnsavedOverlay"
+              Grid.RowSpan="2" Visibility="Collapsed"
+              Panel.ZIndex="20"
+              Background="{DynamicResource TutorialOverlayBrush}"
+              KeyboardNavigation.TabNavigation="Cycle">
+          <Border MaxWidth="440" Margin="24" Padding="20"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Center"
+                  Background="{DynamicResource PanelBrush}"
+                  BorderBrush="{DynamicResource FocusBrush}"
+                  BorderThickness="2" CornerRadius="14">
+            <StackPanel>
+              <TextBlock Text="{DynamicResource Destinations.UnsavedTitle}"
+                         Foreground="{DynamicResource TextBrush}"
+                         FontSize="19" FontWeight="SemiBold"
+                         TextWrapping="Wrap"
+                         AutomationProperties.HeadingLevel="Level2"/>
+              <TextBlock Text="{DynamicResource Destinations.UnsavedBody}"
+                         Margin="0,7,0,0"
+                         Foreground="{DynamicResource MutedBrush}"
+                         FontSize="12" TextWrapping="Wrap"/>
+              <WrapPanel Margin="0,18,0,0"
+                         HorizontalAlignment="Right">
+                <Button x:Name="DestinationUnsavedCancelButton"
+                        Margin="0,0,8,0" Padding="12,8"
+                        Click="DestinationUnsavedCancelButton_Click"
+                        Content="{DynamicResource Common.Cancel}"/>
+                <Button x:Name="DestinationUnsavedDiscardButton"
+                        Margin="0,0,8,0" Padding="12,8"
+                        Click="DestinationUnsavedDiscardButton_Click"
+                        Content="{DynamicResource Destinations.Discard}"
+                        Background="{DynamicResource ErrorSurfaceBrush}"
+                        Foreground="{DynamicResource ErrorMutedTextBrush}"/>
+                <Button x:Name="DestinationUnsavedSaveButton"
+                        Padding="16,8" IsDefault="True"
+                        Click="DestinationUnsavedSaveButton_Click"
+                        Content="{DynamicResource Common.Save}"/>
+              </WrapPanel>
+            </StackPanel>
+          </Border>
+        </Grid>
+      </Grid>
+
+      <Grid x:Name="AccountsWorkspace"
+            Visibility="Collapsed"
+            Background="{DynamicResource BackgroundBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="64"/>
+          <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Grid Margin="18,10,12,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="126"/>
+          </Grid.ColumnDefinitions>
+          <Button x:Name="AccountsBackButton"
+                  Style="{StaticResource IconOnlyButton}"
+                  Width="38" Height="38" Padding="9"
+                  Margin="0,0,11,0"
+                  Background="{DynamicResource UtilitySurfaceBrush}"
+                  Foreground="{DynamicResource UtilityTextBrush}"
+                  Click="SetupBackButton_Click"
+                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                  AutomationProperties.Name="{DynamicResource Home.BackToHome}"
+                  ToolTip="{DynamicResource Home.BackToHome}">
+            <Path Style="{StaticResource ButtonIcon}"
+                  Data="{StaticResource IconBack}"/>
+          </Button>
+          <StackPanel Grid.Column="1" VerticalAlignment="Center">
+            <TextBlock Text="{DynamicResource Accounts.Title}"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="19" FontWeight="SemiBold"
+                       AutomationProperties.HeadingLevel="Level1"/>
+            <TextBlock Text="{DynamicResource Accounts.Subtitle}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="11" Margin="0,2,0,0"/>
+          </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="1" Margin="24,8,24,20" Padding="16"
+                Background="{DynamicResource WorkspaceSurfaceBrush}"
+                BorderBrush="{DynamicResource WorkspaceBorderBrush}"
+                BorderThickness="1" CornerRadius="10">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <StackPanel>
+              <TextBlock Text="{DynamicResource Accounts.Heading}"
+                         Foreground="{DynamicResource TextBrush}"
+                         FontSize="17" FontWeight="SemiBold"
+                         AutomationProperties.HeadingLevel="Level2"/>
+              <TextBlock Text="{DynamicResource Accounts.Help}"
+                         Margin="0,4,0,12"
+                         Foreground="{DynamicResource MutedBrush}"
+                         FontSize="11" TextWrapping="Wrap"/>
+            </StackPanel>
+            <ListBox x:Name="ManageAccountsList"
+                     Grid.Row="1"
+                     SelectionChanged="ManageAccountsList_SelectionChanged"
+                     AutomationProperties.Name="{DynamicResource Accounts.Heading}">
+              <ListBox.ItemTemplate>
+                <DataTemplate>
+                  <Grid Margin="4,5">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="2*"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="{Binding DisplayName}"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 FontSize="13" FontWeight="SemiBold"/>
+                      <TextBlock Text="{Binding Identity}"
+                                 Margin="0,2,0,0"
+                                 Foreground="{DynamicResource MutedBrush}"
+                                 FontSize="11"/>
+                    </StackPanel>
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding DestinationSummary}"
+                               Margin="18,0,0,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource MutedBrush}"
+                               FontSize="11" TextWrapping="Wrap"/>
+                  </Grid>
+                </DataTemplate>
+              </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="AccountsEmptyText"
+                       Grid.Row="1" Margin="12"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Text="{DynamicResource Accounts.Empty}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="12" TextAlignment="Center"
+                       TextWrapping="Wrap"
+                       IsHitTestVisible="False"
+                       AutomationProperties.LiveSetting="Polite"/>
+            <WrapPanel Grid.Row="2" Margin="0,12,0,0"
+                       HorizontalAlignment="Right">
+              <Button x:Name="ManageAccountsAddButton"
+                      Margin="0,0,8,0" Padding="12,8"
+                      Click="ManageAccountsAddButton_Click"
+                      Content="{DynamicResource Accounts.Add}"/>
+              <Button x:Name="ManageAccountsEditButton"
+                      Margin="0,0,8,0" Padding="12,8"
+                      Click="ManageAccountsEditButton_Click"
+                      Content="{DynamicResource Accounts.Edit}"/>
+              <Button x:Name="ManageAccountsRemoveButton"
+                      Margin="0,0,8,0" Padding="12,8"
+                      Click="ManageAccountsRemoveButton_Click"
+                      Content="{DynamicResource Accounts.Remove}"
+                      Background="{DynamicResource ErrorSurfaceBrush}"
+                      Foreground="{DynamicResource ErrorMutedTextBrush}"/>
+              <Button x:Name="ManageAccountsSignInButton"
+                      Padding="15,8"
+                      Click="ManageAccountsSignInButton_Click"
+                      Content="{DynamicResource Accounts.SignIn}"/>
+            </WrapPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <Grid x:Name="HomeWorkspace"
+            Background="{DynamicResource BackgroundBrush}">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="64"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Margin="18,10,12,8">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="126"/>
+          </Grid.ColumnDefinitions>
+          <Border Width="40" Height="40" CornerRadius="10"
+                  ClipToBounds="True"
+                  VerticalAlignment="Center">
+            <Image Width="52" Height="52" Margin="-6"
+                   Source="/SessionDock;component/Assets/SessionDock.Icon.png"
+                   Stretch="Uniform"/>
+          </Border>
+          <StackPanel Grid.Column="1" Margin="11,0,12,0"
+                      VerticalAlignment="Center">
+            <TextBlock Text="SessionDock"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="19" FontWeight="SemiBold"/>
+            <TextBlock Text="{DynamicResource Home.Subtitle}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="11" Margin="0,2,0,0"/>
+          </StackPanel>
+          <Button x:Name="HomeSettingsButton"
+                  Grid.Column="2"
+                  Style="{StaticResource IconOnlyButton}"
+                  Width="38" Height="38" Padding="9"
+                  Margin="0,0,8,0"
+                  Background="{DynamicResource UtilitySurfaceBrush}"
+                  Foreground="{DynamicResource UtilityTextBrush}"
+                  Click="HomeSettingsButton_Click"
+                  shell:WindowChrome.IsHitTestVisibleInChrome="True"
+                  AutomationProperties.Name="{DynamicResource Home.Settings}"
+                  AutomationProperties.HelpText="{DynamicResource Home.SettingsHelp}"
+                  ToolTip="{DynamicResource Home.Settings}">
+            <Path Style="{StaticResource ButtonIcon}"
+                  Data="{StaticResource IconSettings}"/>
+          </Button>
+        </Grid>
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+        <Grid Margin="24,12,24,18">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+          <StackPanel>
+            <TextBlock Text="{DynamicResource Home.Heading}"
+                       Foreground="{DynamicResource TextBrush}"
+                       FontSize="25" FontWeight="SemiBold"
+                       AutomationProperties.HeadingLevel="Level1"/>
+            <TextBlock Text="{DynamicResource Home.Description}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="12" Margin="0,5,0,0"
+                       TextWrapping="Wrap"/>
+          </StackPanel>
+
+          <UniformGrid Grid.Row="1" Rows="2" Columns="2"
+                       Margin="0,18,0,0">
+            <Button x:Name="HomeLaunchAccountsButton"
+                    Margin="0,0,7,7" Padding="18,16"
+                    Click="HomeLaunchAccountsButton_Click"
+                    AutomationProperties.Name="{DynamicResource Home.LaunchAccounts}"
+                    AutomationProperties.HelpText="{DynamicResource Home.LaunchAccountsHelp}">
+              <StackPanel>
+                <Path Style="{StaticResource ButtonIcon}"
+                      Data="{StaticResource IconBatch}"
+                      Width="22" Height="22"
+                      HorizontalAlignment="Left"/>
+                <TextBlock Text="{DynamicResource Home.LaunchAccounts}"
+                           Margin="0,10,0,0" FontSize="15"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="{DynamicResource Home.LaunchAccountsShort}"
+                           Margin="0,3,0,0" FontSize="11"
+                           Opacity="0.78" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="HomeRunTemplateButton"
+                    Margin="7,0,0,7" Padding="18,16"
+                    Click="HomeRunTemplateButton_Click"
+                    AutomationProperties.Name="{DynamicResource Home.RunTemplate}"
+                    AutomationProperties.HelpText="{DynamicResource Home.RunTemplateHelp}">
+              <StackPanel>
+                <Path Style="{StaticResource ButtonIcon}"
+                      Data="{StaticResource IconLaunch}"
+                      Width="22" Height="22"
+                      HorizontalAlignment="Left"/>
+                <TextBlock Text="{DynamicResource Home.RunTemplate}"
+                           Margin="0,10,0,0" FontSize="15"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="{DynamicResource Home.RunTemplateShort}"
+                           Margin="0,3,0,0" FontSize="11"
+                           Opacity="0.78" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="HomeRecordMacroButton"
+                    Margin="0,7,7,0" Padding="18,16"
+                    Click="HomeRecordMacroButton_Click"
+                    AutomationProperties.Name="{DynamicResource Home.RecordMacro}"
+                    AutomationProperties.HelpText="{DynamicResource Home.RecordMacroHelp}">
+              <StackPanel>
+                <Path Style="{StaticResource ButtonIcon}"
+                      Data="{StaticResource IconRecord}"
+                      Width="22" Height="22"
+                      HorizontalAlignment="Left"/>
+                <TextBlock Text="{DynamicResource Home.RecordMacro}"
+                           Margin="0,10,0,0" FontSize="15"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="{DynamicResource Home.RecordMacroShort}"
+                           Margin="0,3,0,0" FontSize="11"
+                           Opacity="0.78" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Button>
+            <Button x:Name="HomeSaveTemplateButton"
+                    Margin="7,7,0,0" Padding="18,16"
+                    Click="HomeSaveTemplateButton_Click"
+                    AutomationProperties.Name="{DynamicResource Home.SaveTemplate}"
+                    AutomationProperties.HelpText="{DynamicResource Home.SaveTemplateHelp}">
+              <StackPanel>
+                <Path Style="{StaticResource ButtonIcon}"
+                      Data="{StaticResource IconSave}"
+                      Width="22" Height="22"
+                      HorizontalAlignment="Left"/>
+                <TextBlock Text="{DynamicResource Home.SaveTemplate}"
+                           Margin="0,10,0,0" FontSize="15"
+                           FontWeight="SemiBold"/>
+                <TextBlock Text="{DynamicResource Home.SaveTemplateShort}"
+                           Margin="0,3,0,0" FontSize="11"
+                           Opacity="0.78" TextWrapping="Wrap"/>
+              </StackPanel>
+            </Button>
+          </UniformGrid>
+
+          <UniformGrid Grid.Row="2" Columns="2" Margin="0,12,0,0">
+            <Button x:Name="HomeDestinationsButton"
+                    Margin="0,0,7,0" Padding="16,10"
+                    Click="HomeDestinationsButton_Click"
+                    AutomationProperties.Name="{DynamicResource Home.Destinations}"
+                    AutomationProperties.HelpText="{DynamicResource Home.DestinationsHelp}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Path Style="{StaticResource ButtonIcon}"
+                      Data="{StaticResource IconServerJoin}"
+                      Width="18" Height="18"
+                      VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                  <TextBlock Text="{DynamicResource Home.Destinations}"
+                             FontSize="13" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource Home.DestinationsShort}"
+                             Margin="0,2,0,0" FontSize="11"
+                             Opacity="0.78" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Grid>
+            </Button>
+            <Button x:Name="HomeManageAccountsButton"
+                    Margin="7,0,0,0" Padding="16,10"
+                    Click="HomeManageAccountsButton_Click"
+                    AutomationProperties.Name="{DynamicResource Home.ManageAccounts}"
+                    AutomationProperties.HelpText="{DynamicResource Home.ManageAccountsHelp}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Path Style="{StaticResource ButtonIcon}"
+                      Data="{StaticResource IconAccount}"
+                      Width="18" Height="18"
+                      VerticalAlignment="Center"/>
+                <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                  <TextBlock Text="{DynamicResource Home.ManageAccounts}"
+                             FontSize="13" FontWeight="SemiBold"/>
+                  <TextBlock Text="{DynamicResource Home.ManageAccountsShort}"
+                             Margin="0,2,0,0" FontSize="11"
+                             Opacity="0.78" TextWrapping="Wrap"/>
+                </StackPanel>
+              </Grid>
+            </Button>
+          </UniformGrid>
+        </Grid>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Margin="24,0,24,18" Padding="12,9"
+                Background="{DynamicResource WorkspaceSurfaceBrush}"
+                BorderBrush="{DynamicResource WorkspaceBorderBrush}"
+                BorderThickness="1" CornerRadius="10">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto"/>
+              <ColumnDefinition Width="*"/>
+              <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Border x:Name="HomeStatusIndicator"
+                    Width="8" Height="8" CornerRadius="4"
+                    Background="{DynamicResource SuccessTextBrush}"
+                    VerticalAlignment="Center"/>
+            <TextBlock x:Name="HomeStatusText"
+                       Grid.Column="1" Margin="9,0,0,0"
+                       Text="{DynamicResource Home.Ready}"
+                       Foreground="{DynamicResource MutedBrush}"
+                       FontSize="11" TextWrapping="Wrap"
+                       AutomationProperties.LiveSetting="Polite"/>
+            <StackPanel Grid.Column="2" Margin="12,0,0,0"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+              <Button x:Name="HomeBatchAssignmentsButton"
+                      Visibility="Collapsed" IsEnabled="False"
+                      Click="CurrentBatchAssignmentsButton_Click"
+                      Content="{DynamicResource Macro.AssignAction}"
+                      Padding="10,6" FontSize="11"
+                      Margin="0,0,6,0"
+                      Background="{DynamicResource ControlSurfaceBrush}"
+                      Foreground="{DynamicResource ControlTextBrush}"
+                      AutomationProperties.HelpText="{DynamicResource Macro.AssignDescription}"/>
+              <Button x:Name="HomeMacroControllerButton"
+                      Visibility="Collapsed" IsEnabled="False"
+                      Click="OpenMacroControllerButton_Click"
+                      Content="{DynamicResource Macro.ControllerOpen}"
+                      Padding="10,6" FontSize="11"
+                      Margin="0,0,6,0"
+                      Background="{DynamicResource ControlSurfaceBrush}"
+                      Foreground="{DynamicResource ControlTextBrush}"
+                      AutomationProperties.HelpText="{DynamicResource Macro.ControllerOpenHelp}"/>
+              <Button x:Name="HomeCancelBatchButton"
+                      Visibility="Collapsed" IsEnabled="False"
+                      Click="CancelBatchButton_Click"
+                      Content="{DynamicResource Macro.Stop}"
+                      Padding="11,6" FontSize="11"
+                      Background="{DynamicResource ErrorSurfaceBrush}"
+                      Foreground="{DynamicResource ErrorMutedTextBrush}"
+                      AutomationProperties.Name="{DynamicResource Macro.Stop}"
+                      AutomationProperties.HelpText="{DynamicResource Home.StopAutomationHelp}"/>
+            </StackPanel>
+          </Grid>
+        </Border>
+      </Grid>
+
+      <!-- Home and the compact settings hub share one caption-control owner.
+           Advanced keeps its existing integrated header and caption controls. -->
+      <local:WindowCaptionControls x:Name="HomeCaptionControls"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Top"
+                                   Margin="0,10,12,0"
+                                   Panel.ZIndex="4"/>
+
+      <local:GuidedTourOverlay x:Name="HomeGuidedTour"
+                               Panel.ZIndex="10"/>
     </Grid>
 </Window>

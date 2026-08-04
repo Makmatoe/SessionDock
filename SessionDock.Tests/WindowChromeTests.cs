@@ -69,7 +69,12 @@ public sealed class WindowChromeTests
         Assert.Equal("False", (string?)chrome.Attribute("UseAeroCaptionButtons"));
 
         var rootGrid = root.Element(presentation + "Grid");
-        var workspace = rootGrid?
+        var advancedWorkspace = rootGrid?
+            .Elements(presentation + "Grid")
+            .Single(element =>
+                (string?)element.Attribute(xaml + "Name") ==
+                "AdvancedWorkspace");
+        var workspace = advancedWorkspace?
             .Elements(presentation + "Grid")
             .Single(element => (string?)element.Attribute("Grid.Column") == "1");
         var headerRow = workspace?
@@ -80,7 +85,9 @@ public sealed class WindowChromeTests
 
         var captionControls = root.Descendants()
             .Single(element =>
-                element.Name.LocalName == "WindowCaptionControls");
+                element.Name.LocalName == "WindowCaptionControls" &&
+                (string?)element.Attribute(xaml + "Name") ==
+                "CaptionControls");
         Assert.Equal(
             "CaptionControls",
             (string?)captionControls.Attribute(xaml + "Name"));
@@ -156,8 +163,26 @@ public sealed class WindowChromeTests
         Assert.Contains("SystemCommands.CloseWindow", source);
         Assert.Contains("HitMaximizeButton = 9", source);
         Assert.Contains("message != NonClientHitTestMessage", source);
+        Assert.Contains("!MaximizeButton.IsVisible", source);
+        Assert.Contains(
+            "PresentationSource.FromVisual(MaximizeButton) is null",
+            source);
+        Assert.Contains("catch (InvalidOperationException)", source);
         Assert.DoesNotContain("Application.Current.Shutdown", source);
         Assert.DoesNotContain("Environment.Exit", source);
+
+        var appSource = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "SessionDock",
+            "App.xaml.cs"));
+        Assert.Contains(
+            "VerifyWorkspaceCaptionControlsForRuntimeSmoke",
+            appSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "HomeCaptionControls.CloseForRuntimeSmoke()",
+            appSource,
+            StringComparison.Ordinal);
     }
 
     [Fact]

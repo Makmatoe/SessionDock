@@ -12,17 +12,37 @@ if (-not (Test-Path -LiteralPath $directoryPath -PathType Container)) {
     throw "Publish directory not found: $directoryPath"
 }
 
-$expectedFiles = @(
-    'LICENSE.md',
-    'SessionDock.exe',
-    'THIRD_PARTY_NOTICES.md',
-    'licenses/DotNet-LICENSE.txt',
-    'licenses/DotNet-THIRD-PARTY-NOTICES.txt',
-    'licenses/Microsoft.Web.WebView2-LICENSE.txt',
-    'licenses/Microsoft.Web.WebView2-NOTICE.txt',
-    'licenses/Microsoft.WindowsDesktop-LICENSE.txt',
-    'licenses/Velopack-LICENSE.txt'
-)
+function Get-RelativePublishPath([string] $Path) {
+    return $Path.Substring($directoryPath.Length + 1).Replace('\', '/')
+}
+
+function Get-ProjectFileVersion([string] $RelativeProjectPath) {
+    $projectPath = Join-Path $root $RelativeProjectPath
+    [xml] $project = Get-Content -LiteralPath $projectPath -Raw
+    $versions = @($project.SelectNodes('/Project/PropertyGroup/Version') |
+        ForEach-Object { [string] $_.'#text' } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Sort-Object -Unique)
+    if ($versions.Count -ne 1) {
+        throw "Expected one project version in $RelativeProjectPath."
+    }
+    return $versions[0]
+}
+
+function Assert-PublishedFileVersion(
+    [string] $RelativePath,
+    [string] $ExpectedVersion) {
+    $path = Join-Path $directoryPath $RelativePath
+    $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($path).FileVersion
+    $parsedFileVersion = $null
+    $parsedExpectedVersion = $null
+    if (-not [Version]::TryParse($fileVersion, [ref] $parsedFileVersion) -or
+        -not [Version]::TryParse($ExpectedVersion, [ref] $parsedExpectedVersion) -or
+        $parsedFileVersion.ToString(3) -cne $parsedExpectedVersion.ToString(3)) {
+        throw "Published '$RelativePath' version '$fileVersion' does not match '$ExpectedVersion'."
+    }
+}
+
 $items = @(Get-ChildItem -LiteralPath $directoryPath -Recurse -Force)
 if ($items | Where-Object {
         -not [string]::IsNullOrWhiteSpace([string] $_.LinkType)
@@ -30,53 +50,249 @@ if ($items | Where-Object {
     throw 'Publish output must not contain symbolic links, junctions, or other reparse points.'
 }
 
-$actualFiles = @($items | Where-Object { -not $_.PSIsContainer } | ForEach-Object {
-    $_.FullName.Substring($directoryPath.Length + 1).Replace('\', '/')
-} | Sort-Object)
-$handleScopeSidecars = @($actualFiles | Where-Object {
-        $_ -match '(?i)(^|/)(?:SessionDock\.HandleScope|HandleScope(?:\.Api)?)(?:\.|/|$)'
+$actualFiles = @($items | Where-Object { -not $_.PSIsContainer } |
+    ForEach-Object { Get-RelativePublishPath $_.FullName } |
+    Sort-Object)
+$prohibitedExtensions = @(
+    '.bat', '.cmd', '.com', '.hta', '.js', '.jse', '.lnk', '.msi', '.msp',
+    '.ps1', '.psd1', '.psm1', '.reg', '.scr', '.vbe', '.vbs', '.wsf', '.wsh')
+$prohibitedPayloads = @($actualFiles | Where-Object {
+        $prohibitedExtensions -ccontains [IO.Path]::GetExtension($_).ToLowerInvariant()
     })
-if ($handleScopeSidecars.Count -ne 0) {
-    throw 'HandleScope must be embedded in SessionDock.exe; a component sidecar was published.'
-}
-$differences = @(Compare-Object -ReferenceObject $expectedFiles -DifferenceObject $actualFiles -CaseSensitive)
-if ($differences.Count -ne 0 -or $actualFiles.Count -ne $expectedFiles.Count) {
-    throw "Publish output contains missing or unexpected files:`n$($differences | Out-String)"
+if ($prohibitedPayloads.Count -ne 0) {
+    throw "Publish output contains an unexpected executable or script payload:`n$($prohibitedPayloads -join "`n")"
 }
 
-$expectedDirectories = @('licenses')
-$actualDirectories = @($items | Where-Object { $_.PSIsContainer } | ForEach-Object {
-    $_.FullName.Substring($directoryPath.Length + 1).Replace('\', '/')
-} | Sort-Object)
-$directoryDifferences = @(Compare-Object `
-    -ReferenceObject $expectedDirectories `
-    -DifferenceObject $actualDirectories `
+$componentImpostors = @($actualFiles | Where-Object {
+        $_ -match '(?i)(^|/)(?:SessionDock\.)?(?:HandleScope|ExactWheel|TinyClicks)(?:[./_-]|$)' -and
+        $_ -cnotin @('SessionDock.HandleScope.dll', 'SessionDock.ExactWheel.dll')
+    })
+if ($componentImpostors.Count -ne 0) {
+    throw "Publish output contains an unexpected component executable, script, or directory:`n$($componentImpostors -join "`n")"
+}
+
+$version = Get-ProjectVersion
+$exactWheelVersion = Get-ProjectFileVersion `
+    'SessionDock.ExactWheel/SessionDock.ExactWheel.csproj'
+$handleScopeVersion = Get-ProjectFileVersion `
+    'SessionDock.HandleScope/SessionDock.HandleScope.csproj'
+$releaseTrustVersion = '1.0.0'
+
+$depsRelativePath = 'SessionDock.deps.json'
+$runtimeConfigRelativePath = 'SessionDock.runtimeconfig.json'
+$depsPath = Join-Path $directoryPath $depsRelativePath
+$runtimeConfigPath = Join-Path $directoryPath $runtimeConfigRelativePath
+foreach ($requiredMetadata in @($depsPath, $runtimeConfigPath)) {
+    if (-not (Test-Path -LiteralPath $requiredMetadata -PathType Leaf)) {
+        throw "Transparent publish metadata is missing: $requiredMetadata"
+    }
+}
+
+$dependencies = Get-Content -LiteralPath $depsPath -Raw | ConvertFrom-Json
+$expectedRuntimeTarget = '.NETCoreApp,Version=v10.0/win-x64'
+if ($dependencies.runtimeTarget.name -cne $expectedRuntimeTarget) {
+    throw "Publish dependency target '$($dependencies.runtimeTarget.name)' is not '$expectedRuntimeTarget'."
+}
+$targetMatches = @($dependencies.targets.PSObject.Properties |
+    Where-Object { $_.Name -ceq $expectedRuntimeTarget })
+if ($targetMatches.Count -ne 1) {
+    throw 'Publish dependency manifest must contain exactly one win-x64 runtime target.'
+}
+$target = $targetMatches[0].Value
+
+$expectedLibraries = @(
+    "SessionDock/$version",
+    "SessionDock.ExactWheel/$exactWheelVersion",
+    "SessionDock.HandleScope/$handleScopeVersion",
+    "SessionDock.ReleaseTrust/$releaseTrustVersion",
+    'Microsoft.Web.WebView2/1.0.4078.44',
+    'Microsoft.Web.WebView2.Core/1.0.4078.44',
+    'Microsoft.Web.WebView2.WinForms/1.0.4078.44',
+    'Microsoft.Web.WebView2.Wpf/1.0.4078.44',
+    'Velopack/1.2.0',
+    'runtimepack.Microsoft.AspNetCore.App.Runtime.win-x64/10.0.10',
+    'runtimepack.Microsoft.NETCore.App.Runtime.win-x64/10.0.10',
+    'runtimepack.Microsoft.WindowsDesktop.App.Runtime.win-x64/10.0.10'
+) | Sort-Object
+$actualLibraries = @($dependencies.libraries.PSObject.Properties.Name | Sort-Object)
+$libraryDifferences = @(Compare-Object `
+    -ReferenceObject $expectedLibraries `
+    -DifferenceObject $actualLibraries `
     -CaseSensitive)
-if ($directoryDifferences.Count -ne 0 -or
+if ($libraryDifferences.Count -ne 0 -or
+    $actualLibraries.Count -ne $expectedLibraries.Count) {
+    throw "Publish dependency manifest contains missing or unexpected libraries:`n$($libraryDifferences | Out-String)"
+}
+
+$runtimeConfig = Get-Content -LiteralPath $runtimeConfigPath -Raw | ConvertFrom-Json
+if ($runtimeConfig.runtimeOptions.tfm -cne 'net10.0') {
+    throw 'Publish runtime configuration does not target the pinned net10.0 runtime.'
+}
+$expectedFrameworks = @(
+    'Microsoft.AspNetCore.App/10.0.10',
+    'Microsoft.NETCore.App/10.0.10',
+    'Microsoft.WindowsDesktop.App/10.0.10')
+$actualFrameworks = @($runtimeConfig.runtimeOptions.includedFrameworks |
+    ForEach-Object { "$($_.name)/$($_.version)" } |
+    Sort-Object)
+if (@(Compare-Object $expectedFrameworks $actualFrameworks -CaseSensitive).Count -ne 0 -or
+    $actualFrameworks.Count -ne $expectedFrameworks.Count) {
+    throw 'Publish runtime configuration does not contain the exact pinned self-contained frameworks.'
+}
+
+$expectedBinarySet = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::Ordinal)
+[void] $expectedBinarySet.Add('SessionDock.exe')
+foreach ($library in $target.PSObject.Properties) {
+    foreach ($assetKind in @('runtime', 'native')) {
+        $assetProperties = @($library.Value.PSObject.Properties |
+            Where-Object { $_.Name -ceq $assetKind })
+        if ($assetProperties.Count -eq 0) {
+            continue
+        }
+        if ($assetProperties.Count -ne 1) {
+            throw "Dependency '$($library.Name)' contains duplicate '$assetKind' assets."
+        }
+        $assets = $assetProperties[0].Value
+        foreach ($asset in $assets.PSObject.Properties.Name) {
+            $normalizedAsset = $asset.Replace('\', '/')
+            $publishedName = [IO.Path]::GetFileName($normalizedAsset)
+            [void] $expectedBinarySet.Add($publishedName)
+            if ($normalizedAsset -ceq 'runtimes/win-x64/native/WebView2Loader.dll') {
+                [void] $expectedBinarySet.Add($normalizedAsset)
+            }
+        }
+    }
+}
+
+# WindowsDesktop's pinned runtime pack copies these localized resources even
+# though the generated deps manifest does not enumerate them.
+$satelliteCultures = @(
+    'cs', 'de', 'es', 'fr', 'it', 'ja', 'ko', 'pl', 'pt-BR', 'ru', 'tr',
+    'zh-Hans', 'zh-Hant')
+$satelliteAssemblies = @(
+    'PresentationCore.resources.dll',
+    'PresentationFramework.resources.dll',
+    'PresentationUI.resources.dll',
+    'ReachFramework.resources.dll',
+    'System.Windows.Controls.Ribbon.resources.dll',
+    'System.Windows.Input.Manipulations.resources.dll',
+    'System.Xaml.resources.dll',
+    'UIAutomationClient.resources.dll',
+    'UIAutomationClientSideProviders.resources.dll',
+    'UIAutomationProvider.resources.dll',
+    'UIAutomationTypes.resources.dll',
+    'WindowsBase.resources.dll')
+foreach ($culture in $satelliteCultures) {
+    foreach ($assembly in $satelliteAssemblies) {
+        [void] $expectedBinarySet.Add("$culture/$assembly")
+    }
+}
+
+$requiredBinaryFiles = @(
+    'SessionDock.exe',
+    'SessionDock.dll',
+    'SessionDock.ExactWheel.dll',
+    'SessionDock.HandleScope.dll',
+    'SessionDock.ReleaseTrust.dll',
+    'Velopack.dll',
+    'Microsoft.Web.WebView2.Core.dll',
+    'WebView2Loader.dll',
+    'runtimes/win-x64/native/WebView2Loader.dll',
+    'coreclr.dll',
+    'clrjit.dll',
+    'hostfxr.dll',
+    'hostpolicy.dll',
+    'PresentationFramework.dll',
+    'WindowsBase.dll',
+    'createdump.exe')
+foreach ($requiredBinary in $requiredBinaryFiles) {
+    if (-not $expectedBinarySet.Contains($requiredBinary)) {
+        throw "Pinned dependency manifest does not declare required binary: $requiredBinary"
+    }
+}
+
+$expectedNonBinaryFiles = @(
+    'LICENSE.md',
+    $depsRelativePath,
+    $runtimeConfigRelativePath,
+    'THIRD_PARTY_NOTICES.md',
+    'licenses/DotNet-LICENSE.txt',
+    'licenses/DotNet-THIRD-PARTY-NOTICES.txt',
+    'licenses/Microsoft.Web.WebView2-LICENSE.txt',
+    'licenses/Microsoft.Web.WebView2-NOTICE.txt',
+    'licenses/Microsoft.WindowsDesktop-LICENSE.txt',
+    'licenses/Velopack-LICENSE.txt')
+$expectedFiles = @(
+    @($expectedBinarySet) + $expectedNonBinaryFiles | Sort-Object)
+$fileDifferences = @(Compare-Object `
+    -ReferenceObject $expectedFiles `
+    -DifferenceObject $actualFiles `
+    -CaseSensitive)
+if ($fileDifferences.Count -ne 0 -or
+    $actualFiles.Count -ne $expectedFiles.Count) {
+    throw "Transparent publish contains missing or unexpected files:`n$($fileDifferences | Out-String)"
+}
+
+$expectedDirectorySet = [Collections.Generic.HashSet[string]]::new(
+    [StringComparer]::Ordinal)
+foreach ($relativePath in $expectedFiles) {
+    $separatorIndex = $relativePath.LastIndexOf('/')
+    while ($separatorIndex -gt 0) {
+        $relativeDirectory = $relativePath.Substring(0, $separatorIndex)
+        [void] $expectedDirectorySet.Add($relativeDirectory)
+        $separatorIndex = $relativeDirectory.LastIndexOf('/')
+    }
+}
+$actualDirectories = @($items | Where-Object { $_.PSIsContainer } |
+    ForEach-Object { Get-RelativePublishPath $_.FullName } |
+    Sort-Object)
+$expectedDirectories = @($expectedDirectorySet | Sort-Object)
+if (@(Compare-Object $expectedDirectories $actualDirectories -CaseSensitive).Count -ne 0 -or
     $actualDirectories.Count -ne $expectedDirectories.Count) {
-    throw 'Publish output contains missing or unexpected directories.'
+    throw 'Transparent publish contains missing or unexpected directories.'
+}
+
+foreach ($binaryPath in @($expectedBinarySet)) {
+    $path = Join-Path $directoryPath $binaryPath
+    $stream = [IO.File]::OpenRead($path)
+    try {
+        if ($stream.Length -lt 2 -or
+            $stream.ReadByte() -ne [byte][char]'M' -or
+            $stream.ReadByte() -ne [byte][char]'Z') {
+            throw "Published binary is not a structurally recognizable Windows PE file: $binaryPath"
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
 }
 
 $applicationPath = Join-Path $directoryPath 'SessionDock.exe'
+$applicationAssemblyPath = Join-Path $directoryPath 'SessionDock.dll'
 $application = Get-Item -LiteralPath $applicationPath
-if ($application.Length -lt 1024 * 1024 -or $application.Length -gt 1024L * 1024 * 1024) {
-    throw 'Published SessionDock.exe has an invalid size.'
+$applicationAssembly = Get-Item -LiteralPath $applicationAssemblyPath
+if ($application.Length -lt 64KB -or $application.Length -gt 4MB) {
+    throw 'Published SessionDock.exe is not the expected transparent .NET app host size.'
 }
-$version = Get-ProjectVersion
-$fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($applicationPath).FileVersion
-$parsedFileVersion = $null
-if (-not [Version]::TryParse($fileVersion, [ref] $parsedFileVersion) -or
-    $parsedFileVersion.ToString(3) -cne $version) {
-    throw "Published SessionDock.exe version '$fileVersion' does not match project version '$version'."
+if ($applicationAssembly.Length -lt 256KB -or $applicationAssembly.Length -gt 128MB) {
+    throw 'Published SessionDock.dll has an invalid size.'
 }
+Assert-PublishedFileVersion 'SessionDock.exe' $version
+Assert-PublishedFileVersion 'SessionDock.dll' $version
+Assert-PublishedFileVersion 'SessionDock.ExactWheel.dll' $exactWheelVersion
+Assert-PublishedFileVersion 'SessionDock.HandleScope.dll' $handleScopeVersion
+Assert-PublishedFileVersion 'SessionDock.ReleaseTrust.dll' $releaseTrustVersion
+Assert-PublishedFileVersion 'Velopack.dll' '1.2.0'
+Assert-PublishedFileVersion 'WebView2Loader.dll' '1.0.4078.44'
 
-if ($null -eq ('SessionDockPublishIconProbe' -as [type])) {
+if ($null -eq ('SessionDockPublishProbe' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
 
-public static class SessionDockPublishIconProbe
+public static class SessionDockPublishProbe
 {
     public static bool ContainsBytes(string path, byte[] pattern)
     {
@@ -137,24 +353,27 @@ public static class SessionDockPublishIconProbe
 }
 
 $removedSmokeArgument = '--isolated-runtime-smoke'
-$containsUtf8SmokeArgument = [SessionDockPublishIconProbe]::ContainsBytes(
-    $applicationPath,
+$containsUtf8SmokeArgument = [SessionDockPublishProbe]::ContainsBytes(
+    $applicationAssemblyPath,
     [Text.Encoding]::UTF8.GetBytes($removedSmokeArgument))
-$containsUnicodeSmokeArgument = [SessionDockPublishIconProbe]::ContainsBytes(
-    $applicationPath,
+$containsUnicodeSmokeArgument = [SessionDockPublishProbe]::ContainsBytes(
+    $applicationAssemblyPath,
     [Text.Encoding]::Unicode.GetBytes($removedSmokeArgument))
 if ($containsUtf8SmokeArgument -or $containsUnicodeSmokeArgument) {
-    throw 'Production SessionDock.exe contains the test-only runtime smoke switch.'
+    throw 'Production SessionDock.dll contains the test-only runtime smoke switch.'
+}
+foreach ($componentAssemblyName in @(
+        'SessionDock.ExactWheel',
+        'SessionDock.HandleScope',
+        'SessionDock.ReleaseTrust')) {
+    if (-not [SessionDockPublishProbe]::ContainsBytes(
+            $applicationAssemblyPath,
+            [Text.Encoding]::UTF8.GetBytes($componentAssemblyName))) {
+        throw "Published SessionDock.dll does not reference required component '$componentAssemblyName'."
+    }
 }
 
-$bundledHandleScopeAssemblyName = 'SessionDock.HandleScope.dll'
-if (-not [SessionDockPublishIconProbe]::ContainsBytes(
-        $applicationPath,
-        [Text.Encoding]::UTF8.GetBytes($bundledHandleScopeAssemblyName))) {
-    throw 'Published SessionDock.exe does not contain the embedded HandleScope component identity.'
-}
-
-$iconGroupCount = [SessionDockPublishIconProbe]::ExtractIconEx(
+$iconGroupCount = [SessionDockPublishProbe]::ExtractIconEx(
     $applicationPath,
     -1,
     $null,
@@ -162,6 +381,26 @@ $iconGroupCount = [SessionDockPublishIconProbe]::ExtractIconEx(
     0)
 if ($iconGroupCount -lt 1) {
     throw 'Windows cannot extract the reviewed icon from published SessionDock.exe.'
+}
+
+$unsignedSigningTargets = @(
+    'SessionDock.exe',
+    'SessionDock.dll',
+    'SessionDock.ExactWheel.dll',
+    'SessionDock.HandleScope.dll',
+    'SessionDock.ReleaseTrust.dll',
+    'Velopack.dll')
+$signedRuntimeFiles = @(@($expectedBinarySet) | Where-Object {
+        $_ -cnotin $unsignedSigningTargets
+    } | Sort-Object)
+foreach ($signedRuntimeRelativePath in $signedRuntimeFiles) {
+    $signature = Get-AuthenticodeSignature -LiteralPath (
+        Join-Path $directoryPath $signedRuntimeRelativePath)
+    if ($signature.Status.ToString() -cne 'Valid' -or
+        $null -eq $signature.SignerCertificate -or
+        $signature.SignerCertificate.Subject -notmatch '(?i)(?:^|,\s*)O=Microsoft Corporation(?:,|$)') {
+        throw "Pinned Microsoft runtime file has no valid Microsoft signature: $signedRuntimeRelativePath"
+    }
 }
 
 $assetsPath = Join-Path $root 'SessionDock/obj/project.assets.json'
@@ -276,4 +515,8 @@ foreach ($entry in $sources.GetEnumerator()) {
     }
 }
 
-Write-Host "Verified exact production publish inventory, embedded HandleScope identity without sidecars, version, smoke-harness exclusion, and complete pinned notices for SessionDock $version."
+Write-Host (
+    "Verified transparent self-contained publish inventory, explicit reviewed " +
+    "SessionDock component assemblies, pinned .NET 10.0.10 runtime, Microsoft " +
+    "runtime signatures, version, icon, smoke-harness exclusion, and complete " +
+    "notices for SessionDock $version.")

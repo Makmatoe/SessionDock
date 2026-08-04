@@ -12,19 +12,37 @@ language, scale, theme, assistive technology, result, and issue link.
 - Check the main window and every dialog in normal, empty, loading, success,
   failure, cancellation, and retry states. Include account edit/removal,
   Batch and Retry failed, Running clients, release notes, About/diagnostics,
-  metadata export/import, integrations, HandleScope, Windows link handling,
-  updates, sounds, and Auto-Join.
+  portable-package and legacy-metadata export/import, integrations, HandleScope, Windows link handling,
+  updates, sounds, Auto-Join, both guided tutorials, all four Home action cards,
+  the Destinations and Manage accounts shortcuts/pages, Launch Accounts
+  cascade, Macros > Record macro, Templates > Save current session, Run
+  Template, and template recovery.
+- In the template editor, verify per-client named/custom destinations, Saved
+  positions/Clickable cascade, all four macro modes, per-client assignments,
+  and the absence of a separate repeat checkbox. Help text explains that every
+  assigned macro repeats in full cycles after Play until Stop, and that physical
+  input or verified focus loss pauses injection until safe conditions recover.
 - In HandleScope, verify **Included with SessionDock (recommended)**,
   **Standalone HandleScope (advanced)**, standalone Automatic/Keep installed/
   exact reviewed/unavailable saved version choices, the standalone-only Refresh
-  reviewed versions action and its success/failure states, Automatic/`v2`/`v1` API, the included
-  0.3.0 version, parent-owned lifecycle explanation, and Off/Starting/Ready/
+  reviewed versions action and its success/failure states, Automatic/`v2`/`v1`
+  API, the included version shown by the tested build, parent-owned lifecycle
+  explanation, and Off/Starting/Ready/
   HandleScope needs attention/Standalone runtime unavailable/Settings need
   repair statuses. No
   translation may suggest that normal use downloads or installs HandleScope.
 - Exercise every confirmation and file picker. Verify titles, filters, status
   text, singular/plural counts, and safe error guidance use the selected
   language.
+- In **Export or import data**, exercise both tabs, empty and populated category
+  lists, Select eligible/Clear, automatic template macro dependencies, public-
+  only exclusions, manifest review, cancel/save/read/invalid states, conflicts,
+  missing account matches, import results, and the legacy action. Verify the
+  keyboard-input warning and its separate acknowledgement on export and import;
+  no translation may describe a keyboard-bearing macro as non-sensitive.
+  Trigger the incompatible whole-layout warning and verify it clearly says the
+  assignment remains unassigned instead of implying that the macro was scaled
+  during import.
 - Enable **Open with SessionDock** in each language and inspect its Windows
   shell/Open With description. Disable it before switching languages so the
   newly written per-user registration uses the current localized description.
@@ -50,3 +68,10 @@ release-feed content remain unchanged. Their
 surrounding labels and explanations are localized. Internal trace messages and
 exception text that never reaches the interface are developer diagnostics and
 are not translated.
+
+Before release, parse all five resource dictionaries, reject duplicate keys,
+and compare the complete key set with `en-US`. `Portable.*` and
+`Tutorial.AdvancedTransferTitle`/`Tutorial.AdvancedTransferBody` require exact
+key parity and matching format placeholders such as `{0}` and `{1}`. Product
+tokens including `.sessiondock`, SHA-256, Roblox, SessionDock, and JobId remain
+invariant; their surrounding sentences require genuine locale translations.

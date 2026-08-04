@@ -3,15 +3,26 @@
 This directory contains two separate Discord paths. Choose the path that matches
 your job; they are deliberately not interchangeable.
 
+> **Scope:** these are maintainer/community announcement tools. SessionDock
+> users do not install or run them, and they have no role in HandleScope,
+> ExactWheel, macros, templates, or the laptop execution-policy issue. A Discord
+> message cannot turn an untested or provenance-blocked source tree into a
+> release.
+
 | Path | Audience | What it does | Official release authority |
 | --- | --- | --- | --- |
 | Protected release announcement | SessionDock maintainers | Posts the canonical release notes automatically after the guarded GitHub release becomes public | Yes |
 | Optional `/release` community bot | Discord server administrators | Publishes an administrator-written community update through a Discord form | No |
 
-The optional community bot is **not used by the release workflow** and **must not be used to publish official
-SessionDock releases**. Submitting its form
+The optional community bot is **not used by the release workflow** and **must
+not be used to publish official SessionDock releases**. Submitting its form
 creates only a Discord message: it does not build, sign, attest, upload, or
 publish a GitHub release.
+
+Before configuring an announcement for the integrated workflow, confirm the
+complete build/manual-test gate and every component provenance/licensing block
+is cleared. This README does not claim that the current source has been
+published.
 
 ## Official release announcements
 
