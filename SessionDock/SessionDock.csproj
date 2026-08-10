@@ -44,7 +44,7 @@
     <Compile Remove="Services\RuntimeSmokeTestOptions.cs" />
     <Compile Include="Services\RuntimeSmokeTestOptions.cs"
              Condition="'$(EnableRuntimeSmokeHarness)' == 'true'" />
-    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4078.44" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4129.50" />
     <PackageReference Include="Velopack" Version="1.2.0" />
     <ProjectReference Include="..\SessionDock.ReleaseTrust\SessionDock.ReleaseTrust.csproj" />
     <ProjectReference Include="..\SessionDock.ExactWheel\SessionDock.ExactWheel.csproj" />
