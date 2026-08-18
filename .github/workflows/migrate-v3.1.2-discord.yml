@@ -1,0 +1,265 @@
+name: Migrate v3.1.2 Discord announcement
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type MIGRATE V3.1.2 exactly
+        required: true
+        type: string
+      expected_workflow_commit:
+        description: Exact protected-main commit containing this workflow
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: sessiondock-release-publication
+  cancel-in-progress: false
+
+jobs:
+  migrate-existing-announcement:
+    name: Migrate the existing v3.1.2 announcement
+    if: >-
+      inputs.confirmation == 'MIGRATE V3.1.2' &&
+      inputs.expected_workflow_commit == github.sha &&
+      github.repository == 'Makmatoe/SessionDock' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-announcement
+    steps:
+      - name: Validate the one-time invocation
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'MIGRATE V3.1.2'
+          test "$EXPECTED_WORKFLOW_COMMIT" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Check out the protected workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install the pinned Node.js runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+
+      - name: Verify the immutable GitHub release and source artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          tag_reference="$(gh api /repos/Makmatoe/SessionDock/git/ref/tags/v3.1.2)"
+          jq -e '.object.type == "tag"' <<<"$tag_reference" >/dev/null
+          tag_object_sha="$(jq -r '.object.sha' <<<"$tag_reference")"
+          [[ "$tag_object_sha" =~ ^[0-9a-f]{40}$ ]]
+          tag_object="$(gh api "/repos/Makmatoe/SessionDock/git/tags/$tag_object_sha")"
+          jq -e '
+            .tag == "v3.1.2" and
+            .object.type == "commit" and
+            .object.sha == "0e257dd53b1c729bbf109185a10d470a1dd6483d"
+          ' <<<"$tag_object" >/dev/null
+
+          artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9338871798)"
+          jq -e '
+            .id == 9338871798 and
+            .name == "discord-release-announcement-0e257dd53b1c729bbf109185a10d470a1dd6483d-4" and
+            .expired == false and
+            .workflow_run.id == 30960123719 and
+            .workflow_run.head_sha == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            .digest == "sha256:8c94a1e8f72e93083fa6d5815ec76e10dc798bef58df570c0de6a0e6b961865b"
+          ' <<<"$artifact_metadata" >/dev/null
+
+          diagnostic_artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9341080352)"
+          jq -e '
+            .id == 9341080352 and
+            .name == "discord-v3.1.2-sanitized-diagnostic-775b8503d1c81bc1fad7cf754db46d988ea4f82d" and
+            .expired == false and
+            .workflow_run.id == 32181879764 and
+            .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == "775b8503d1c81bc1fad7cf754db46d988ea4f82d" and
+            .digest == "sha256:6ae321e1ca62ecb726af955bb3ee9de44b8fa8a2a0ceb6e2b6d0c7eef6ae9811"
+          ' <<<"$diagnostic_artifact_metadata" >/dev/null
+
+          diagnostic_run_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/runs/32181879764)"
+          jq -e '
+            .id == 32181879764 and
+            .workflow_id == 337298978 and
+            .run_attempt == 1 and
+            .event == "workflow_dispatch" and
+            .head_branch == "main" and
+            .head_sha == "775b8503d1c81bc1fad7cf754db46d988ea4f82d" and
+            .path == ".github/workflows/reconcile-v3.1.2-discord.yml" and
+            .status == "completed" and
+            .conclusion == "success" and
+            .actor.login == "Makmatoe" and
+            .triggering_actor.login == "Makmatoe" and
+            .repository.full_name == "Makmatoe/SessionDock"
+          ' <<<"$diagnostic_run_metadata" >/dev/null
+
+          release_metadata="$(gh api /repos/Makmatoe/SessionDock/releases/372542551)"
+          jq -e '
+            .id == 372542551 and
+            .tag_name == "v3.1.2" and
+            .name == "SessionDock 3.1.2" and
+            .draft == false and
+            .prerelease == false and
+            .immutable == true and
+            ([.assets[] | select(
+              .id == 519788140 and
+              .name == "SessionDock-win-x64-Portable.zip" and
+              .digest == "sha256:a4d4fd9d4f7b5353b06ebf04aa39fef888ee5afbbd39aadd64651d81780a3bbf"
+            )] | length) == 1
+          ' <<<"$release_metadata" >/dev/null
+
+      - name: Download the exact v3.1.2 announcement artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: discord-release-announcement-0e257dd53b1c729bbf109185a10d470a1dd6483d-4
+          path: migration/source-announcement
+          github-token: ${{ github.token }}
+          repository: Makmatoe/SessionDock
+          run-id: 30960123719
+
+      - name: Validate the exact schema-2 source announcement
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find migration/source-announcement -type f -printf '%P\n' | LC_ALL=C sort)
+          test "${#files[@]}" -eq 4
+          test "${files[0]}" = 'announcement.json'
+          test "${files[1]}" = 'announcement.sha256'
+          test "${files[2]}" = 'notes.md'
+          test "${files[3]}" = 'summary.md'
+          printf '%s  %s\n' \
+            'ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4' \
+            'migration/source-announcement/announcement.json' | sha256sum --check --strict
+          jq -e '
+            .schemaVersion == 2 and
+            .announcement.id == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d"
+          ' migration/source-announcement/announcement.json >/dev/null
+          node ./discord-release-bot/src/release-automation.js verify \
+            --artifact-dir migration/source-announcement \
+            --expected-tag v3.1.2 \
+            --expected-ref refs/tags/v3.1.2 \
+            --expected-commit 0e257dd53b1c729bbf109185a10d470a1dd6483d
+
+      - name: Download the exact prior diagnostic evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: discord-v3.1.2-sanitized-diagnostic-775b8503d1c81bc1fad7cf754db46d988ea4f82d
+          path: migration/prior-diagnostic
+          github-token: ${{ github.token }}
+          repository: Makmatoe/SessionDock
+          run-id: 32181879764
+
+      - name: Validate the exact prior diagnostic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find migration/prior-diagnostic -type f -printf '%P\n' | LC_ALL=C sort)
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'report.json'
+          printf '%s  %s\n' \
+            'a816a3936ef13171d46ca1f56c312b51b2842eb086553508828324f1128faa2e' \
+            'migration/prior-diagnostic/report.json' | sha256sum --check --strict
+          jq -e '
+            (keys == [
+              "announcementId",
+              "artifactSha256",
+              "kind",
+              "mismatchCodes",
+              "release",
+              "schemaVersion",
+              "status",
+              "verified"
+            ]) and
+            (.release | keys == ["sourceCommit", "tag"]) and
+            .kind == "sessiondock.discord-release-diagnostic" and
+            .schemaVersion == 1 and
+            .announcementId == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .artifactSha256 == "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4" and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            .mismatchCodes == ["message.flags"] and
+            .status == "mismatch" and
+            .verified == false
+          ' migration/prior-diagnostic/report.json >/dev/null
+
+      - name: Migrate and verify the exact existing announcement
+        shell: bash
+        env:
+          DISCORD_RELEASE_BOT_ID: ${{ vars.DISCORD_RELEASE_BOT_ID }}
+          DISCORD_RELEASE_BOT_TOKEN: ${{ secrets.DISCORD_RELEASE_BOT_TOKEN }}
+          DISCORD_RELEASE_CHANNEL_ID: ${{ vars.DISCORD_RELEASE_CHANNEL_ID }}
+          DISCORD_RELEASE_ROLE_ID: ${{ vars.DISCORD_RELEASE_ROLE_ID }}
+        run: |
+          set -euo pipefail
+          node ./discord-release-bot/src/release-automation.js migrate-existing \
+            --artifact-dir migration/source-announcement \
+            --expected-tag v3.1.2 \
+            --expected-ref refs/tags/v3.1.2 \
+            --expected-commit 0e257dd53b1c729bbf109185a10d470a1dd6483d \
+            --expected-target-announcement 969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93 \
+            --expected-target-artifact-sha256 ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5 \
+            --receipt migration/receipt/receipt.json
+
+      - name: Validate the sanitized migration receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f migration/receipt/receipt.json
+          jq -e '
+            (keys == [
+              "kind",
+              "patchAttempted",
+              "release",
+              "schemaVersion",
+              "source",
+              "status",
+              "target",
+              "verified"
+            ]) and
+            (.release | keys == ["sourceCommit", "tag"]) and
+            (.source | keys == ["announcementId", "artifactSha256", "schemaVersion"]) and
+            (.target | keys == ["announcementId", "artifactSha256", "schemaVersion"]) and
+            .kind == "sessiondock.discord-release-migration-receipt" and
+            .schemaVersion == 1 and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            .source.announcementId == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .source.artifactSha256 == "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4" and
+            .source.schemaVersion == 2 and
+            .target.announcementId == "969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93" and
+            .target.artifactSha256 == "ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5" and
+            .target.schemaVersion == 3 and
+            (.status == "migrated" or .status == "already-migrated") and
+            (.patchAttempted == (.status == "migrated")) and
+            .verified == true
+          ' migration/receipt/receipt.json >/dev/null
+
+      - name: Upload the sanitized migration receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: discord-v3.1.2-sanitized-migration-${{ github.sha }}
+          path: migration/receipt/receipt.json
+          if-no-files-found: error
+          retention-days: 7

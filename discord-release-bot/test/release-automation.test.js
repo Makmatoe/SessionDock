@@ -7,6 +7,7 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -19,6 +20,7 @@ import {
   diagnoseExistingAnnouncement,
   deliverAnnouncement,
   generateAnnouncement,
+  migrateExistingAnnouncement,
   preflightAnnouncement,
   readAnnouncementBundle,
   ReleaseAutomationError,
@@ -35,6 +37,13 @@ const OTHER_MESSAGE_ID = "623456789012345678";
 const BOT_ROLE_A_ID = "723456789012345678";
 const BOT_ROLE_B_ID = "823456789012345678";
 const TOKEN = "test-token-that-is-never-sent-to-discord";
+const APPROVED_VERSION = "3.1.2";
+const APPROVED_TAG = `v${APPROVED_VERSION}`;
+const APPROVED_COMMIT = "0e257dd53b1c729bbf109185a10d470a1dd6483d";
+const APPROVED_SOURCE_ANNOUNCEMENT = "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83";
+const APPROVED_SOURCE_ARTIFACT = "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4";
+const APPROVED_TARGET_ANNOUNCEMENT = "969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93";
+const APPROVED_TARGET_ARTIFACT = "ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5";
 const BOT_CHANNEL_PERMISSIONS = String(1024 + 2048 + 16384 + 32768 + 65536);
 const TEST_PERMISSION_ADMINISTRATOR = 1n << 3n;
 const TEST_PERMISSION_VIEW_CHANNEL = 1n << 10n;
@@ -167,6 +176,48 @@ function createFixture(
   return { artifactDirectory, bundle, root };
 }
 
+function createApprovedMigrationFixture(t) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-approved-discord-migration-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
+  mkdirSync(notesDirectory, { recursive: true });
+  const canonicalNotes = readFileSync(
+    fileURLToPath(new URL(`../../SessionDock/ReleaseNotes/${APPROVED_VERSION}.en-US.md`, import.meta.url)),
+  );
+  writeFileSync(path.join(notesDirectory, `${APPROVED_VERSION}.en-US.md`), canonicalNotes);
+  const notesPath = `SessionDock/ReleaseNotes/${APPROVED_VERSION}.en-US.md`;
+  generateAnnouncement({
+    root,
+    version: APPROVED_VERSION,
+    sourceCommit: APPROVED_COMMIT,
+    notesPath,
+    outputPath: "artifacts/source-announcement",
+    schemaVersion: 2,
+  });
+  generateAnnouncement({
+    root,
+    version: APPROVED_VERSION,
+    sourceCommit: APPROVED_COMMIT,
+    notesPath,
+    outputPath: "artifacts/target-announcement",
+    schemaVersion: 3,
+  });
+  const readBundle = (directory) =>
+    readAnnouncementBundle({
+      artifactDirectory: path.join(root, "artifacts", directory),
+      expectedTag: APPROVED_TAG,
+      expectedRef: `refs/tags/${APPROVED_TAG}`,
+      expectedCommit: APPROVED_COMMIT,
+    });
+  const sourceBundle = readBundle("source-announcement");
+  const targetBundle = readBundle("target-announcement");
+  assert.equal(sourceBundle.artifact.announcement.id, APPROVED_SOURCE_ANNOUNCEMENT);
+  assert.equal(sourceBundle.artifactDigest, APPROVED_SOURCE_ARTIFACT);
+  assert.equal(targetBundle.artifact.announcement.id, APPROVED_TARGET_ANNOUNCEMENT);
+  assert.equal(targetBundle.artifactDigest, APPROVED_TARGET_ARTIFACT);
+  return { root, sourceBundle, targetBundle };
+}
+
 function deliveryEnv(overrides = {}) {
   return {
     DISCORD_RELEASE_BOT_ID: BOT_ID,
@@ -230,6 +281,90 @@ function discordMessage(bundle, overrides = {}) {
     tts: false,
     type: 0,
     ...overrides,
+  };
+}
+
+function migratedDiscordMessage(sourceBundle, targetBundle, flags, overrides = {}) {
+  return discordMessage(targetBundle, {
+    edited_timestamp: "2026-08-18T12:34:56.862000+00:00",
+    flags,
+    nonce: sourceBundle.artifact.announcement.nonce,
+    ...overrides,
+  });
+}
+
+function approvedMigrationArguments(bundle, overrides = {}) {
+  return {
+    bundle,
+    expectedTargetAnnouncementId: APPROVED_TARGET_ANNOUNCEMENT,
+    expectedTargetArtifactSha256: APPROVED_TARGET_ARTIFACT,
+    env: deliveryEnv(),
+    sleepImpl: async () => {},
+    ...overrides,
+  };
+}
+
+function createMigrationFetchHarness({
+  sourceBundle,
+  targetBundle,
+  sourceFlags = 4,
+  historyMessages,
+  rereadSource,
+  finalMessage,
+  patchMode = "accepted",
+}) {
+  const source = discordMessage(sourceBundle, { flags: sourceFlags });
+  const finalFlags = sourceFlags & ~4;
+  const target = finalMessage ?? migratedDiscordMessage(sourceBundle, targetBundle, finalFlags);
+  const history = historyMessages ?? [source];
+  const requests = [];
+  const patchBodies = [];
+  let patched = false;
+  let historyReads = 0;
+  const fetchImpl = async (url, init = {}) => {
+    const requestUrl = String(url);
+    const method = init.method ?? "GET";
+    requests.push({ method, url: requestUrl });
+    const response = preflightResponse(requestUrl);
+    if (response) return response;
+    if (requestUrl.includes(`/channels/${CHANNEL_ID}/messages?limit=100`)) {
+      historyReads += 1;
+      return jsonResponse(history);
+    }
+    if (requestUrl.endsWith(`/channels/${CHANNEL_ID}/messages/${MESSAGE_ID}`) && method === "GET") {
+      return jsonResponse(patched ? target : rereadSource ?? source);
+    }
+    if (requestUrl.endsWith(`/channels/${CHANNEL_ID}/messages/${MESSAGE_ID}`) && method === "PATCH") {
+      patchBodies.push(JSON.parse(init.body));
+      patched = true;
+      if (patchMode === "network-ambiguous") {
+        throw new Error("The PATCH response was lost after acceptance.");
+      }
+      if (patchMode === "server-ambiguous") {
+        return jsonResponse({ message: "upstream error" }, 503);
+      }
+      if (patchMode === "timeout-ambiguous") {
+        return jsonResponse({ message: "request timeout" }, 408);
+      }
+      if (patchMode === "rate-limit-ambiguous") {
+        return jsonResponse({ retry_after: 30 }, 429);
+      }
+      if (patchMode === "accepted-unusable-body") {
+        return new Response("not-json", { status: 200, headers: { "content-type": "text/plain" } });
+      }
+      return jsonResponse(target);
+    }
+    throw new Error(`Unexpected migration request: ${method} ${requestUrl}`);
+  };
+  return {
+    fetchImpl,
+    get historyReads() {
+      return historyReads;
+    },
+    patchBodies,
+    requests,
+    source,
+    target,
   };
 }
 
@@ -445,6 +580,126 @@ function runDiagnosticCliChild(fixture, reportPath, automationScript = AUTOMATIO
     },
   );
   return { attackerValue, fetchLog, result };
+}
+
+function installMigrationChildFetchMock(root) {
+  const preload = path.join(root, "mock-discord-migration-fetch.mjs");
+  writeFileSync(
+    preload,
+    `import { appendFileSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+const source = JSON.parse(readFileSync(path.join(process.cwd(), "artifacts", "source-announcement", "announcement.json"), "utf8"));
+const target = JSON.parse(readFileSync(path.join(process.cwd(), "artifacts", "target-announcement", "announcement.json"), "utf8"));
+const botId = "${BOT_ID}";
+const guildId = "${GUILD_ID}";
+const channelId = "${CHANNEL_ID}";
+const roleId = "${ROLE_ID}";
+const messageId = "${MESSAGE_ID}";
+function message(artifact, flags, editedTimestamp) {
+  return {
+    attachments: [],
+    author: { bot: true, id: botId },
+    channel_id: channelId,
+    components: artifact.announcement.message.components ?? [],
+    content: "<@&" + roleId + ">",
+    edited_timestamp: editedTimestamp,
+    embeds: artifact.announcement.message.embeds,
+    flags,
+    id: messageId,
+    mention_everyone: false,
+    mention_roles: [roleId],
+    mentions: [],
+    nonce: source.announcement.nonce,
+    pinned: false,
+    tts: false,
+    type: 0,
+  };
+}
+const oldMessage = message(source, 4, null);
+const newMessage = message(target, 0, "2026-08-18T12:34:56.862000+00:00");
+let patched = false;
+function json(value, status = 200) {
+  return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
+}
+globalThis.fetch = async (url, init = {}) => {
+  const method = init.method ?? "GET";
+  const requestUrl = String(url);
+  appendFileSync(process.env.FETCH_LOG, method + " " + requestUrl + "\\n");
+  if (requestUrl.endsWith("/users/@me")) return json({ bot: true, id: botId });
+  if (requestUrl.endsWith("/channels/" + channelId)) {
+    return json({ guild_id: guildId, id: channelId, last_message_id: null, permission_overwrites: [], type: 0 });
+  }
+  if (requestUrl.endsWith("/guilds/" + guildId + "/roles")) {
+    return json([
+      { id: guildId, managed: false, mentionable: false, name: "@everyone", permissions: "${BOT_CHANNEL_PERMISSIONS}" },
+      { id: roleId, managed: false, mentionable: true, name: "SessionDock", permissions: "0" },
+    ]);
+  }
+  if (requestUrl.endsWith("/guilds/" + guildId + "/members/" + botId)) {
+    return json({ roles: [], user: { bot: true, id: botId } });
+  }
+  if (requestUrl.includes("/messages?limit=100")) return json([oldMessage]);
+  if (requestUrl.endsWith("/messages/" + messageId) && method === "GET") {
+    return json(patched ? newMessage : oldMessage);
+  }
+  if (requestUrl.endsWith("/messages/" + messageId) && method === "PATCH") {
+    patched = true;
+    return json(newMessage);
+  }
+  throw new Error("Unexpected mocked migration request");
+};
+`,
+  );
+  return preload;
+}
+
+function runMigrationCliChild(
+  fixture,
+  receiptPath,
+  {
+    expectedTargetAnnouncement = APPROVED_TARGET_ANNOUNCEMENT,
+    expectedTargetArtifactSha256 = APPROVED_TARGET_ARTIFACT,
+    automationScript = AUTOMATION_SCRIPT,
+  } = {},
+) {
+  const preload = installMigrationChildFetchMock(fixture.root);
+  const fetchLog = path.join(fixture.root, "migration-fetch.log");
+  const result = spawnSync(
+    process.execPath,
+    [
+      automationScript,
+      "migrate-existing",
+      "--artifact-dir",
+      "artifacts/source-announcement",
+      "--expected-tag",
+      APPROVED_TAG,
+      "--expected-ref",
+      `refs/tags/${APPROVED_TAG}`,
+      "--expected-commit",
+      APPROVED_COMMIT,
+      "--expected-target-announcement",
+      expectedTargetAnnouncement,
+      "--expected-target-artifact-sha256",
+      expectedTargetArtifactSha256,
+      "--receipt",
+      receiptPath,
+    ],
+    {
+      cwd: fixture.root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DISCORD_RELEASE_BOT_ID: BOT_ID,
+        DISCORD_RELEASE_BOT_TOKEN: TOKEN,
+        DISCORD_RELEASE_CHANNEL_ID: CHANNEL_ID,
+        DISCORD_RELEASE_ROLE_ID: ROLE_ID,
+        FETCH_LOG: fetchLog,
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+      },
+    },
+  );
+  return { fetchLog, result };
 }
 
 test("the staged standalone module executes workflow-shaped generate and verify commands", (t) => {
@@ -1944,6 +2199,21 @@ test("normal absent and empty Discord presentation defaults remain valid", async
   assert.equal(result.status, "posted");
 });
 
+test("normal verification accepts the harmless suppress-notifications message flag", async (t) => {
+  const { bundle } = createFixture(t);
+  const expectedMessage = discordMessage(bundle, { flags: 4096 });
+  const fetchImpl = async (url, init) => {
+    const preflight = preflightResponse(String(url));
+    if (preflight) return preflight;
+    if (String(url).endsWith("/messages?limit=100")) return jsonResponse([]);
+    if (String(url).endsWith("/messages") && init.method === "POST") return jsonResponse(expectedMessage);
+    if (String(url).endsWith(`/messages/${MESSAGE_ID}`)) return jsonResponse(expectedMessage);
+    throw new Error("Unexpected request");
+  };
+  const result = await deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} });
+  assert.equal(result.status, "posted");
+});
+
 test("attachment alt text, title, and spoiler presentation metadata fail closed on rerun", async (t) => {
   const cases = [
     (attachment) => { attachment.description = "different alt text"; },
@@ -2148,4 +2418,331 @@ test("an ambiguous delivery keeps its classification when receipt finalization a
   assert.equal(receipt.status, "reserved");
   assert.equal(receipt.verified, false);
   assert.equal(readFileSync(finalizing, "utf8"), "owned\n");
+});
+
+test("approved schema-2 migration emits one minimal PATCH and preserves understood flags", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  for (const { sourceFlags, finalFlags } of [
+    { sourceFlags: 4, finalFlags: 0 },
+    { sourceFlags: 4096, finalFlags: 4096 },
+    { sourceFlags: 4100, finalFlags: 4096 },
+  ]) {
+    await t.test(`${sourceFlags} -> ${finalFlags}`, async () => {
+      const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, sourceFlags });
+      const result = await migrateExistingAnnouncement(
+        approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl }),
+      );
+      assert.deepEqual(result, {
+        kind: "sessiondock.discord-release-migration-receipt",
+        patchAttempted: true,
+        release: { sourceCommit: APPROVED_COMMIT, tag: APPROVED_TAG },
+        schemaVersion: 1,
+        source: {
+          announcementId: APPROVED_SOURCE_ANNOUNCEMENT,
+          artifactSha256: APPROVED_SOURCE_ARTIFACT,
+          schemaVersion: 2,
+        },
+        status: "migrated",
+        target: {
+          announcementId: APPROVED_TARGET_ANNOUNCEMENT,
+          artifactSha256: APPROVED_TARGET_ARTIFACT,
+          schemaVersion: 3,
+        },
+        verified: true,
+      });
+      assert.equal(harness.historyReads, 1);
+      assert.equal(harness.patchBodies.length, 1);
+      const patchBody = harness.patchBodies[0];
+      assert.deepEqual(Object.keys(patchBody).sort(), ["components", "embeds", "flags"]);
+      assert.equal(patchBody.flags, finalFlags);
+      assert.equal(patchBody.content, undefined);
+      assert.equal(patchBody.allowed_mentions, undefined);
+      assert.equal(patchBody.nonce, undefined);
+      assert.equal(patchBody.attachments, undefined);
+      assert.equal(patchBody.enforce_nonce, undefined);
+      assert.deepEqual(
+        patchBody.components[0].components.map(({ label, style, type, url }) => ({ label, style, type, url })),
+        [
+          {
+            label: "Download portable ZIP",
+            style: 5,
+            type: 2,
+            url: `https://github.com/Makmatoe/SessionDock/releases/download/${APPROVED_TAG}/SessionDock-win-x64-Portable.zip`,
+          },
+          {
+            label: "View latest release",
+            style: 5,
+            type: 2,
+            url: "https://github.com/Makmatoe/SessionDock/releases/latest",
+          },
+        ],
+      );
+      assert.deepEqual(
+        harness.requests.filter(({ method }) => method !== "GET").map(({ method }) => method),
+        ["PATCH"],
+      );
+    });
+  }
+});
+
+test("migration rejects zero, unknown, components-v2, and non-integer source flags before writing", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  for (const sourceFlags of [0, 1, 32768, 8192, "4"]) {
+    await t.test(`flags ${String(sourceFlags)}`, async () => {
+      const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, sourceFlags });
+      await assert.rejects(
+        migrateExistingAnnouncement(approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl })),
+        (error) =>
+          error instanceof ReleaseAutomationError &&
+          ["MIGRATION_SOURCE_MISMATCH", "DISCORD_VERIFICATION"].includes(error.code),
+      );
+      assert.equal(harness.patchBodies.length, 0);
+      assert.equal(harness.requests.some(({ method }) => method !== "GET"), false);
+    });
+  }
+});
+
+test("an exact migrated target rerun is read-only and accepts an omitted nonce", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  const target = migratedDiscordMessage(sourceBundle, targetBundle, 4096, {
+    edited_timestamp: "2026-08-18T12:34:56Z",
+  });
+  delete target.nonce;
+  const harness = createMigrationFetchHarness({
+    sourceBundle,
+    targetBundle,
+    sourceFlags: 4096,
+    historyMessages: [target],
+    rereadSource: target,
+  });
+  const result = await migrateExistingAnnouncement(
+    approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl }),
+  );
+  assert.equal(result.status, "already-migrated");
+  assert.equal(result.patchAttempted, false);
+  assert.equal(result.verified, true);
+  assert.equal(harness.historyReads, 1);
+  assert.equal(harness.patchBodies.length, 0);
+  assert.equal(harness.requests.some(({ method }) => method !== "GET"), false);
+});
+
+test("an ambiguous migration PATCH reconciles by exact-ID GET without retrying", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  for (const patchMode of [
+    "network-ambiguous",
+    "server-ambiguous",
+    "timeout-ambiguous",
+    "rate-limit-ambiguous",
+    "accepted-unusable-body",
+  ]) {
+    await t.test(patchMode, async () => {
+      const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, patchMode });
+      const result = await migrateExistingAnnouncement(
+        approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl }),
+      );
+      assert.equal(result.status, "migrated");
+      assert.equal(harness.patchBodies.length, 1);
+      assert.deepEqual(
+        harness.requests.filter(({ method }) => method === "PATCH").map(({ method }) => method),
+        ["PATCH"],
+      );
+    });
+  }
+});
+
+test("post-PATCH exact-target verification rejects changed identity, state, flags, or nonce", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  const mutations = [
+    (message) => { message.id = OTHER_MESSAGE_ID; },
+    (message) => { message.author = { bot: true, id: "623456789012345678" }; },
+    (message) => { message.content = "changed"; },
+    (message) => { message.edited_timestamp = null; },
+    (message) => { message.edited_timestamp = "not-a-timestamp"; },
+    (message) => { message.flags = 4096; },
+    (message) => { message.nonce = "changed-nonce"; },
+  ];
+  for (const mutate of mutations) {
+    const changed = migratedDiscordMessage(sourceBundle, targetBundle, 0);
+    mutate(changed);
+    const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, finalMessage: changed });
+    await assert.rejects(
+      migrateExistingAnnouncement(approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl })),
+      (error) => error instanceof ReleaseAutomationError && error.code === "MIGRATION_AMBIGUOUS" && error.ambiguous,
+    );
+    assert.equal(harness.patchBodies.length, 1);
+    assert.equal(harness.requests.filter(({ method }) => method === "PATCH").length, 1);
+    assert.equal(harness.requests.some(({ method }) => ["POST", "PUT", "DELETE"].includes(method)), false);
+  }
+});
+
+test("a migration PATCH whose exact-ID readback is not the target fails ambiguously without a second write", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  const old = discordMessage(sourceBundle, { flags: 4 });
+  const harness = createMigrationFetchHarness({
+    sourceBundle,
+    targetBundle,
+    patchMode: "network-ambiguous",
+    finalMessage: old,
+  });
+  await assert.rejects(
+    migrateExistingAnnouncement(approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl })),
+    (error) => error instanceof ReleaseAutomationError && error.code === "MIGRATION_AMBIGUOUS" && error.ambiguous,
+  );
+  assert.equal(harness.patchBodies.length, 1);
+  assert.equal(harness.requests.filter(({ method }) => method === "PATCH").length, 1);
+  assert.equal(harness.requests.some(({ method }) => ["POST", "PUT", "DELETE"].includes(method)), false);
+});
+
+test("migration reread rejects changed source identity or presentation before PATCH", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  const mutations = [
+    (message) => { message.id = OTHER_MESSAGE_ID; },
+    (message) => { message.author = { bot: true, id: "623456789012345678" }; },
+    (message) => { message.content = "changed"; },
+    (message) => { message.edited_timestamp = "2026-08-18T12:34:56Z"; },
+    (message) => { message.nonce = "changed-nonce"; },
+  ];
+  for (const mutate of mutations) {
+    const changed = discordMessage(sourceBundle, { flags: 4 });
+    mutate(changed);
+    const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, rereadSource: changed });
+    await assert.rejects(
+      migrateExistingAnnouncement(approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl })),
+      (error) => error instanceof ReleaseAutomationError,
+    );
+    assert.equal(harness.patchBodies.length, 0);
+    assert.equal(harness.requests.some(({ method }) => method !== "GET"), false);
+  }
+});
+
+test("migration history fails closed for missing, duplicate, mixed, conflicting, and newer announcements", async (t) => {
+  const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
+  const source = discordMessage(sourceBundle, { flags: 4 });
+  const target = migratedDiscordMessage(sourceBundle, targetBundle, 0);
+  const duplicate = structuredClone(source);
+  duplicate.id = OTHER_MESSAGE_ID;
+  const conflicting = structuredClone(source);
+  conflicting.embeds[0].footer.text = `sdrel:v1:Makmatoe/SessionDock:${APPROVED_TAG}:${"a".repeat(64)}`;
+  const newer = structuredClone(source);
+  newer.embeds[0].footer.text = `sdrel:v1:Makmatoe/SessionDock:v3.1.3:${"b".repeat(64)}`;
+  newer.embeds[0].url = "https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.3";
+  for (const historyMessages of [[], [source, duplicate], [source, target], [conflicting], [newer]]) {
+    const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, historyMessages });
+    await assert.rejects(
+      migrateExistingAnnouncement(approvedMigrationArguments(sourceBundle, { fetchImpl: harness.fetchImpl })),
+      (error) =>
+        error instanceof ReleaseAutomationError &&
+        ["MIGRATION_NOT_FOUND", "DISCORD_CONFLICT"].includes(error.code),
+    );
+    assert.equal(harness.patchBodies.length, 0);
+    assert.equal(harness.requests.some(({ method }) => method !== "GET"), false);
+  }
+});
+
+test("migration target pins and attachment-free source eligibility fail before network access", async (t) => {
+  const { sourceBundle } = createApprovedMigrationFixture(t);
+  let networkCalls = 0;
+  for (const pinOverride of [
+    { expectedTargetAnnouncementId: "0".repeat(64) },
+    { expectedTargetArtifactSha256: "0".repeat(64) },
+  ]) {
+    await assert.rejects(
+      migrateExistingAnnouncement(
+        approvedMigrationArguments(sourceBundle, {
+          ...pinOverride,
+          fetchImpl: async () => {
+            networkCalls += 1;
+            throw new Error("network must not run");
+          },
+        }),
+      ),
+      (error) => error instanceof ReleaseAutomationError && error.code === "MIGRATION_TARGET_MISMATCH",
+    );
+  }
+  assert.equal(networkCalls, 0);
+
+  const attachmentBundle = {
+    ...sourceBundle,
+    artifact: {
+      ...sourceBundle.artifact,
+      announcement: {
+        ...sourceBundle.artifact.announcement,
+        attachments: [{ id: "0" }],
+      },
+    },
+    images: [{ id: "0" }],
+  };
+  await assert.rejects(
+    migrateExistingAnnouncement(
+      approvedMigrationArguments(attachmentBundle, {
+        fetchImpl: async () => {
+          networkCalls += 1;
+          throw new Error("network must not run");
+        },
+      }),
+    ),
+    (error) => error instanceof ReleaseAutomationError && error.code === "MIGRATION_NOT_APPROVED",
+  );
+  assert.equal(networkCalls, 0);
+});
+
+test("the migration CLI writes a mode-0600 content-free receipt and performs one PATCH", (t) => {
+  const fixture = createApprovedMigrationFixture(t);
+  const stagedScript = stageStandaloneAutomation(fixture.root);
+  const receiptRelative = "receipts/migration.json";
+  const { fetchLog, result } = runMigrationCliChild(fixture, receiptRelative, { automationScript: stagedScript });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /migration migrated and verified/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(`${TOKEN}|${MESSAGE_ID}`, "u"));
+  const receiptPath = path.join(fixture.root, ...receiptRelative.split("/"));
+  const receiptText = readFileSync(receiptPath, "utf8");
+  const receipt = JSON.parse(receiptText);
+  assert.deepEqual(Object.keys(receipt).sort(), [
+    "kind",
+    "patchAttempted",
+    "release",
+    "schemaVersion",
+    "source",
+    "status",
+    "target",
+    "verified",
+  ]);
+  assert.equal(receipt.kind, "sessiondock.discord-release-migration-receipt");
+  assert.equal(receipt.status, "migrated");
+  assert.equal(receipt.patchAttempted, true);
+  assert.equal(receipt.verified, true);
+  assert.deepEqual(receipt.release, { sourceCommit: APPROVED_COMMIT, tag: APPROVED_TAG });
+  assert.deepEqual(receipt.source, {
+    announcementId: APPROVED_SOURCE_ANNOUNCEMENT,
+    artifactSha256: APPROVED_SOURCE_ARTIFACT,
+    schemaVersion: 2,
+  });
+  assert.deepEqual(receipt.target, {
+    announcementId: APPROVED_TARGET_ANNOUNCEMENT,
+    artifactSha256: APPROVED_TARGET_ARTIFACT,
+    schemaVersion: 3,
+  });
+  assert.doesNotMatch(receiptText, new RegExp(`${TOKEN}|${MESSAGE_ID}|<@&|content|channel|botId|flags`, "u"));
+  if (process.platform !== "win32") {
+    assert.equal(statSync(receiptPath).mode & 0o777, 0o600);
+  }
+  const requests = readFileSync(fetchLog, "utf8");
+  assert.equal(requests.split(/\r?\n/u).filter((line) => line.startsWith("PATCH ")).length, 1);
+  assert.doesNotMatch(requests, /^(?:POST|PUT|DELETE) /mu);
+});
+
+test("the migration CLI rejects a mismatched target pin before receipt reservation or network access", (t) => {
+  const fixture = createApprovedMigrationFixture(t);
+  for (const [name, options] of [
+    ["announcement", { expectedTargetAnnouncement: "0".repeat(64) }],
+    ["artifact", { expectedTargetArtifactSha256: "0".repeat(64) }],
+  ]) {
+    const receiptRelative = `receipts/migration-${name}.json`;
+    const { fetchLog, result } = runMigrationCliChild(fixture, receiptRelative, options);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /MIGRATION_TARGET_MISMATCH/);
+    assert.doesNotMatch(result.stderr, new RegExp(`${TOKEN}|${MESSAGE_ID}`, "u"));
+    assert.throws(() => readFileSync(fetchLog));
+    assert.throws(() => readFileSync(path.join(fixture.root, ...receiptRelative.split("/"))));
+  }
 });

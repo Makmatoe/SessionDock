@@ -40,6 +40,14 @@ const READ_ONLY_NONBLOCKING_NOFOLLOW_FLAGS =
   (fsConstants.O_NOFOLLOW ?? 0);
 const ATTACHMENT_FLAG_IS_SPOILER = 1 << 3;
 const ATTACHMENT_FLAG_IS_ANIMATED = 1 << 5;
+const MESSAGE_FLAG_SUPPRESS_EMBEDS = 1 << 2;
+const MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS = 1 << 12;
+const NORMAL_MESSAGE_FLAGS = [0, MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS];
+const MIGRATION_SOURCE_MESSAGE_FLAGS = [
+  MESSAGE_FLAG_SUPPRESS_EMBEDS,
+  MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS,
+  MESSAGE_FLAG_SUPPRESS_EMBEDS | MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS,
+];
 const PERMISSION_ADMINISTRATOR = 1n << 3n;
 const PERMISSION_MANAGE_GUILD = 1n << 5n;
 const PERMISSION_VIEW_CHANNEL = 1n << 10n;
@@ -58,6 +66,21 @@ const LEGACY_MARKER_PATTERN = /^sdrel:v1:Makmatoe\/SessionDock:(v(0|[1-9]\d*)\.(
 const COMPACT_MARKER_PATTERN = /^sdrel:v2:(v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)):([0-9a-f]{32})$/;
 const COMPACT_FOOTER_PATTERN = /^Official SessionDock release • (v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)) • ID ([0-9a-f]{32})$/;
 const DIAGNOSTIC_KIND = "sessiondock.discord-release-diagnostic";
+const MIGRATION_RECEIPT_KIND = "sessiondock.discord-release-migration-receipt";
+const APPROVED_MIGRATION = Object.freeze({
+  source: Object.freeze({
+    announcementId: "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83",
+    artifactSha256: "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4",
+    schemaVersion: LEGACY_SCHEMA_VERSION,
+  }),
+  sourceCommit: "0e257dd53b1c729bbf109185a10d470a1dd6483d",
+  tag: "v3.1.2",
+  target: Object.freeze({
+    announcementId: "969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93",
+    artifactSha256: "ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5",
+    schemaVersion: SCHEMA_VERSION,
+  }),
+});
 const OPTIONAL_MESSAGE_FIELDS = [
   "activity",
   "application",
@@ -1559,7 +1582,28 @@ function validateMessageComponents(actual, expected) {
   }
 }
 
-function collectDiscordMessageMismatches({ message, expectedMessageId, bundle, botId, channelId, roleId }) {
+function normalizedMessageFlags(value) {
+  return value === undefined ? 0 : value;
+}
+
+function validEditedTimestamp(value) {
+  return (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/u.test(value) &&
+    Number.isFinite(Date.parse(value))
+  );
+}
+
+function collectDiscordMessageMismatches({
+  message,
+  expectedMessageId,
+  bundle,
+  botId,
+  channelId,
+  roleId,
+  allowedFlags = NORMAL_MESSAGE_FLAGS,
+  requireEditedTimestamp = false,
+}) {
   const mismatches = [];
   const add = (condition, code) => {
     if (condition) mismatches.push(code);
@@ -1576,7 +1620,10 @@ function collectDiscordMessageMismatches({ message, expectedMessageId, bundle, b
   add(message.content !== `<@&${roleId}>`, "message.content");
   add(message.type !== 0, "message.type");
   add(message.tts !== false, "message.tts");
-  add(message.edited_timestamp !== null, "message.edited");
+  add(
+    requireEditedTimestamp ? !validEditedTimestamp(message.edited_timestamp) : message.edited_timestamp !== null,
+    "message.edited",
+  );
   add(message.pinned !== false, "message.pinned");
   add(message.mention_everyone !== false, "message.mention-everyone");
   add(!Array.isArray(message.mentions) || message.mentions.length !== 0, "message.mentions");
@@ -1586,7 +1633,8 @@ function collectDiscordMessageMismatches({ message, expectedMessageId, bundle, b
       message.mention_roles[0] !== roleId,
     "message.mention-roles",
   );
-  add(message.flags !== undefined && message.flags !== 0, "message.flags");
+  const flags = normalizedMessageFlags(message.flags);
+  add(!Number.isSafeInteger(flags) || !allowedFlags.includes(flags), "message.flags");
   add(!isAbsentOrEmptyArray(message.sticker_items), "message.sticker-items");
   add(!isAbsentOrEmptyArray(message.stickers), "message.stickers");
   for (const key of OPTIONAL_MESSAGE_FIELDS) {
@@ -1612,9 +1660,11 @@ async function verifyDiscordPresentation({
   verifyAttachments,
   deadline,
   nowImpl,
+  expectedNonce = bundle.artifact.announcement.nonce,
+  requireNonce = false,
 }) {
   const expected = bundle.artifact.announcement;
-  if (message?.nonce !== undefined && String(message.nonce) !== expected.nonce) {
+  if ((requireNonce && message?.nonce === undefined) || (message?.nonce !== undefined && String(message.nonce) !== expectedNonce)) {
     fail("DISCORD_VERIFICATION", "Discord message nonce verification failed.", { ambiguous: true });
   }
   if (!Array.isArray(message?.attachments) || message.attachments.length !== expected.attachments.length) {
@@ -1667,6 +1717,10 @@ async function verifyDiscordMessage({
   verifyAttachments,
   deadline,
   nowImpl,
+  allowedFlags = NORMAL_MESSAGE_FLAGS,
+  expectedNonce = bundle.artifact.announcement.nonce,
+  requireNonce = false,
+  requireEditedTimestamp = false,
 }) {
   const identityMismatches = collectDiscordMessageMismatches({
     message,
@@ -1675,11 +1729,22 @@ async function verifyDiscordMessage({
     botId,
     channelId,
     roleId,
+    allowedFlags,
+    requireEditedTimestamp,
   });
   if (identityMismatches.length > 0) {
     fail("DISCORD_VERIFICATION", "Discord message identity or presentation verification failed.", { ambiguous: true });
   }
-  await verifyDiscordPresentation({ message, bundle, fetchImpl, verifyAttachments, deadline, nowImpl });
+  await verifyDiscordPresentation({
+    message,
+    bundle,
+    fetchImpl,
+    verifyAttachments,
+    deadline,
+    nowImpl,
+    expectedNonce,
+    requireNonce,
+  });
   return message;
 }
 
@@ -1883,6 +1948,7 @@ async function inspectDeliveryTarget({
   deadline,
   rejectExisting,
   verifyExisting = true,
+  inspectHistory = true,
 }) {
   const config = loadDeliveryConfig(env);
   const user = await discordRequest({
@@ -1937,17 +2003,19 @@ async function inspectDeliveryTarget({
   });
   assertBotChannelPermissions({ bundle, channel, roles, member, botId: config.botId });
 
-  const existing = await (verifyExisting ? scanHistory : locateAnnouncement)({
-    fetchImpl,
-    sleepImpl,
-    nowImpl,
-    deadline,
-    token: config.token,
-    channel,
-    botId: config.botId,
-    roleId: config.roleId,
-    bundle,
-  });
+  const existing = inspectHistory
+    ? await (verifyExisting ? scanHistory : locateAnnouncement)({
+        fetchImpl,
+        sleepImpl,
+        nowImpl,
+        deadline,
+        token: config.token,
+        channel,
+        botId: config.botId,
+        roleId: config.roleId,
+        bundle,
+      })
+    : null;
   if (rejectExisting && existing) {
     fail("DISCORD_EARLY_DISCLOSURE", "The release announcement already exists before GitHub publication.");
   }
@@ -2036,6 +2104,391 @@ export async function diagnoseExistingAnnouncement({
     status: uniqueMismatchCodes.length === 0 ? "verified" : "mismatch",
     verified: uniqueMismatchCodes.length === 0,
   };
+}
+
+function buildApprovedMigration(bundle) {
+  if (
+    !bundle?.artifact ||
+    bundle.artifact.schemaVersion !== LEGACY_SCHEMA_VERSION ||
+    bundle.artifact.release.tag !== APPROVED_MIGRATION.tag ||
+    bundle.artifact.release.sourceCommit !== APPROVED_MIGRATION.sourceCommit ||
+    bundle.artifact.announcement.id !== APPROVED_MIGRATION.source.announcementId ||
+    bundle.artifactDigest !== APPROVED_MIGRATION.source.artifactSha256
+  ) {
+    fail("MIGRATION_NOT_APPROVED", "The verified bundle is not the one approved for Discord migration.");
+  }
+  if (
+    bundle.artifact.announcement.attachments.length !== 0 ||
+    bundle.images.length !== 0 ||
+    bundle.artifact.sources.reviewedImages !== null
+  ) {
+    fail("MIGRATION_NOT_APPROVED", "The approved migration does not support attachment-bearing announcements.");
+  }
+
+  const targetArtifact = buildArtifact({
+    version: bundle.artifact.release.version,
+    sourceCommit: bundle.artifact.release.sourceCommit,
+    notes: bundle.notes,
+    reviewedImages: null,
+    schemaVersion: SCHEMA_VERSION,
+  });
+  const targetArtifactSha256 = sha256(Buffer.from(prettyJson(targetArtifact), "utf8"));
+  if (
+    targetArtifact.announcement.id !== APPROVED_MIGRATION.target.announcementId ||
+    targetArtifactSha256 !== APPROVED_MIGRATION.target.artifactSha256 ||
+    targetArtifact.release.tag !== bundle.artifact.release.tag ||
+    targetArtifact.release.sourceCommit !== bundle.artifact.release.sourceCommit ||
+    targetArtifact.sources.releaseNotes.artifactPath !== bundle.artifact.sources.releaseNotes.artifactPath ||
+    targetArtifact.sources.releaseNotes.bytes !== bundle.artifact.sources.releaseNotes.bytes ||
+    targetArtifact.sources.releaseNotes.canonicalPath !== bundle.artifact.sources.releaseNotes.canonicalPath ||
+    targetArtifact.sources.releaseNotes.sha256 !== bundle.artifact.sources.releaseNotes.sha256 ||
+    bundle.notes.bytes !== bundle.artifact.sources.releaseNotes.bytes ||
+    bundle.notes.digest !== bundle.artifact.sources.releaseNotes.sha256
+  ) {
+    fail("MIGRATION_NOT_APPROVED", "The deterministic migration target does not match the approved release inputs.");
+  }
+
+  return {
+    sourceBundle: bundle,
+    targetBundle: {
+      ...bundle,
+      artifact: targetArtifact,
+      artifactDigest: targetArtifactSha256,
+      images: [],
+    },
+  };
+}
+
+function migrationReceipt({ migration, status, patchAttempted }) {
+  return {
+    kind: MIGRATION_RECEIPT_KIND,
+    patchAttempted,
+    release: {
+      sourceCommit: migration.sourceBundle.artifact.release.sourceCommit,
+      tag: migration.sourceBundle.artifact.release.tag,
+    },
+    schemaVersion: 1,
+    source: {
+      announcementId: migration.sourceBundle.artifact.announcement.id,
+      artifactSha256: migration.sourceBundle.artifactDigest,
+      schemaVersion: migration.sourceBundle.artifact.schemaVersion,
+    },
+    status,
+    target: {
+      announcementId: migration.targetBundle.artifact.announcement.id,
+      artifactSha256: migration.targetBundle.artifactDigest,
+      schemaVersion: migration.targetBundle.artifact.schemaVersion,
+    },
+    verified: true,
+  };
+}
+
+function assertExpectedMigrationTarget({ migration, expectedTargetAnnouncementId, expectedTargetArtifactSha256 }) {
+  if (
+    expectedTargetAnnouncementId !== migration.targetBundle.artifact.announcement.id ||
+    expectedTargetArtifactSha256 !== migration.targetBundle.artifactDigest
+  ) {
+    fail("MIGRATION_TARGET_MISMATCH", "The deterministic migration target does not match the caller's exact pins.");
+  }
+}
+
+async function locateMigrationAnnouncement({
+  fetchImpl,
+  sleepImpl,
+  nowImpl,
+  deadline,
+  token,
+  channel,
+  botId,
+  migration,
+}) {
+  let before;
+  const candidates = [];
+  const sourceMarker = migration.sourceBundle.artifact.announcement.marker;
+  const targetMarker = migration.targetBundle.artifact.announcement.marker;
+  const expectedTag = migration.sourceBundle.artifact.release.tag;
+  const expectedVersion = migration.sourceBundle.artifact.release.version;
+
+  for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+    const query = before ? `?limit=100&before=${before}` : "?limit=100";
+    const messages = await discordRequest({
+      fetchImpl,
+      sleepImpl,
+      nowImpl,
+      deadline,
+      token,
+      url: `${DISCORD_API}/channels/${channel.id}/messages${query}`,
+    });
+    if (!Array.isArray(messages) || messages.length > 100) {
+      fail("DISCORD_RESPONSE", "Discord returned an invalid channel history response.");
+    }
+    if (page === 0 && messages.length === 0 && channel.last_message_id !== null) {
+      fail("DISCORD_HISTORY", "Discord channel history could not be proven readable.");
+    }
+    for (const message of messages) {
+      if (message?.author?.id !== botId) {
+        continue;
+      }
+      const marker = markerFromMessage(message);
+      const linkedTag = releaseTagFromMessage(message);
+      if (!marker && !linkedTag) {
+        continue;
+      }
+      const parsedMarker = parseReleaseMarker(marker);
+      if (parsedMarker && linkedTag && parsedMarker.tag !== linkedTag) {
+        fail("DISCORD_CONFLICT", "A Discord release marker and immutable release link disagree.");
+      }
+      const tag = parsedMarker?.tag ?? linkedTag;
+      const version = tag.slice(1);
+      if (compareVersions(version, expectedVersion) > 0) {
+        fail("DISCORD_CONFLICT", "A newer SessionDock release is already present in the configured channel.");
+      }
+      if (tag !== expectedTag) {
+        continue;
+      }
+      if (marker === sourceMarker) {
+        candidates.push({ message, state: "source" });
+      } else if (marker === targetMarker) {
+        candidates.push({ message, state: "target" });
+      } else {
+        fail("DISCORD_CONFLICT", "The migration release tag is already represented by different immutable inputs.");
+      }
+    }
+    if (messages.length < 100) {
+      if (candidates.length !== 1) {
+        fail(
+          candidates.length === 0 ? "MIGRATION_NOT_FOUND" : "DISCORD_CONFLICT",
+          candidates.length === 0
+            ? "The approved Discord announcement was not found."
+            : "Discord contains more than one source or target migration announcement.",
+        );
+      }
+      return candidates[0];
+    }
+    const lastId = messages.at(-1)?.id;
+    if (!SNOWFLAKE_PATTERN.test(lastId ?? "") || lastId === before) {
+      fail("DISCORD_HISTORY", "Discord channel history pagination is invalid.");
+    }
+    before = lastId;
+  }
+  fail("DISCORD_HISTORY", "Discord channel history exceeded the safe reconciliation window.");
+}
+
+async function patchDiscordMessageOnce({ fetchImpl, token, deadline, nowImpl, url, body }) {
+  const keys = Object.keys(body).sort();
+  if (keys.length !== 3 || keys[0] !== "components" || keys[1] !== "embeds" || keys[2] !== "flags") {
+    fail("INVALID_MIGRATION", "The Discord migration PATCH payload has an unexpected shape.");
+  }
+  const remainingMilliseconds = deadline - nowImpl();
+  if (!Number.isFinite(remainingMilliseconds) || remainingMilliseconds <= 0) {
+    fail("MIGRATION_AMBIGUOUS", "The Discord migration deadline expired before its single PATCH.", {
+      ambiguous: true,
+    });
+  }
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      body: JSON.stringify(body),
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bot ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+      },
+      method: "PATCH",
+      redirect: "error",
+      signal: AbortSignal.timeout(Math.max(1, Math.min(20_000, Math.floor(remainingMilliseconds)))),
+    });
+  } catch {
+    return { ambiguous: true };
+  }
+  if (response?.ok === true) {
+    return { ambiguous: false };
+  }
+  if (response?.status === 408 || response?.status === 429 || response?.status >= 500) {
+    return { ambiguous: true };
+  }
+  const status = Number.isSafeInteger(response?.status) ? response.status : 0;
+  fail(`DISCORD_HTTP_${status}`, "Discord rejected the single migration PATCH.");
+}
+
+async function verifyMigratedTarget({
+  message,
+  messageId,
+  migration,
+  finalFlags,
+  config,
+  channel,
+  fetchImpl,
+  deadline,
+  nowImpl,
+}) {
+  await verifyDiscordMessage({
+    message,
+    expectedMessageId: messageId,
+    bundle: migration.targetBundle,
+    botId: config.botId,
+    channelId: channel.id,
+    roleId: config.roleId,
+    fetchImpl,
+    verifyAttachments: true,
+    deadline,
+    nowImpl,
+    allowedFlags: [finalFlags],
+    expectedNonce: migration.sourceBundle.artifact.announcement.nonce,
+    requireEditedTimestamp: true,
+  });
+}
+
+export async function migrateExistingAnnouncement({
+  bundle,
+  expectedTargetAnnouncementId,
+  expectedTargetArtifactSha256,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  sleepImpl = delay,
+  nowImpl = () => performance.now(),
+}) {
+  if (!bundle?.artifact || typeof fetchImpl !== "function") {
+    fail("INVALID_MIGRATION", "A verified announcement bundle and fetch implementation are required.");
+  }
+  const migration = buildApprovedMigration(bundle);
+  assertExpectedMigrationTarget({
+    migration,
+    expectedTargetAnnouncementId,
+    expectedTargetArtifactSha256,
+  });
+  const deadline = nowImpl() + MAX_DISCORD_OPERATION_MILLISECONDS;
+  const { channel, config } = await inspectDeliveryTarget({
+    bundle: migration.sourceBundle,
+    env,
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    deadline,
+    rejectExisting: false,
+    inspectHistory: false,
+  });
+  const candidate = await locateMigrationAnnouncement({
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    deadline,
+    token: config.token,
+    channel,
+    botId: config.botId,
+    migration,
+  });
+  const messageId = candidate.message?.id;
+  if (!SNOWFLAKE_PATTERN.test(messageId ?? "")) {
+    fail("DISCORD_CONFLICT", "The migration candidate has an invalid Discord message identity.");
+  }
+  const messageUrl = `${DISCORD_API}/channels/${channel.id}/messages/${messageId}`;
+  const current = await discordRequest({
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    deadline,
+    token: config.token,
+    url: messageUrl,
+  });
+
+  if (candidate.state === "target") {
+    const currentFlags = normalizedMessageFlags(current?.flags);
+    if (!NORMAL_MESSAGE_FLAGS.includes(currentFlags)) {
+      fail("DISCORD_VERIFICATION", "The migrated Discord announcement has unexpected message flags.", {
+        ambiguous: true,
+      });
+    }
+    await verifyMigratedTarget({
+      message: current,
+      messageId,
+      migration,
+      finalFlags: currentFlags,
+      config,
+      channel,
+      fetchImpl,
+      deadline,
+      nowImpl,
+    });
+    return migrationReceipt({ migration, status: "already-migrated", patchAttempted: false });
+  }
+
+  const strictSourceMismatches = collectDiscordMessageMismatches({
+    message: current,
+    expectedMessageId: messageId,
+    bundle: migration.sourceBundle,
+    botId: config.botId,
+    channelId: channel.id,
+    roleId: config.roleId,
+    allowedFlags: [0],
+  });
+  if (strictSourceMismatches.length !== 1 || strictSourceMismatches[0] !== "message.flags") {
+    fail("MIGRATION_SOURCE_MISMATCH", "The live Discord source no longer matches the approved diagnostic state.");
+  }
+  await verifyDiscordMessage({
+    message: current,
+    expectedMessageId: messageId,
+    bundle: migration.sourceBundle,
+    botId: config.botId,
+    channelId: channel.id,
+    roleId: config.roleId,
+    fetchImpl,
+    verifyAttachments: true,
+    deadline,
+    nowImpl,
+    allowedFlags: MIGRATION_SOURCE_MESSAGE_FLAGS,
+    expectedNonce: migration.sourceBundle.artifact.announcement.nonce,
+  });
+  const sourceFlags = normalizedMessageFlags(current.flags);
+  if (![MESSAGE_FLAG_SUPPRESS_EMBEDS, MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS, MESSAGE_FLAG_SUPPRESS_EMBEDS | MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS].includes(sourceFlags)) {
+    fail("MIGRATION_SOURCE_MISMATCH", "The live Discord source flags are not approved for migration.");
+  }
+  const finalFlags = sourceFlags & ~MESSAGE_FLAG_SUPPRESS_EMBEDS;
+  const patchResult = await patchDiscordMessageOnce({
+    fetchImpl,
+    token: config.token,
+    deadline,
+    nowImpl,
+    url: messageUrl,
+    body: {
+      components: migration.targetBundle.artifact.announcement.message.components,
+      embeds: migration.targetBundle.artifact.announcement.message.embeds,
+      flags: finalFlags,
+    },
+  });
+
+  let migrated;
+  try {
+    migrated = await discordRequest({
+      fetchImpl,
+      sleepImpl,
+      nowImpl,
+      deadline,
+      token: config.token,
+      url: messageUrl,
+    });
+    await verifyMigratedTarget({
+      message: migrated,
+      messageId,
+      migration,
+      finalFlags,
+      config,
+      channel,
+      fetchImpl,
+      deadline,
+      nowImpl,
+    });
+  } catch {
+    fail(
+      "MIGRATION_AMBIGUOUS",
+      patchResult.ambiguous
+        ? "The single Discord migration PATCH was ambiguous and exact-ID reconciliation did not prove the target."
+        : "Discord accepted the migration PATCH, but exact-ID verification did not prove the target.",
+      { ambiguous: true },
+    );
+  }
+  return migrationReceipt({ migration, status: "migrated", patchAttempted: true });
 }
 
 export async function preflightAnnouncement({
@@ -2418,6 +2871,21 @@ function reserveDiagnostic(reportPath, bundle) {
   );
 }
 
+function reserveMigrationReceipt(receiptPath, migration) {
+  return reserveOutput(
+    receiptPath,
+    {
+      ...migrationReceipt({ migration, status: "reserved", patchAttempted: false }),
+      verified: false,
+    },
+    {
+      label: "migration receipt",
+      reservationCode: "MIGRATION_RECEIPT_RESERVATION",
+      finalizationCode: "MIGRATION_RECEIPT_FINALIZATION",
+    },
+  );
+}
+
 async function runCli(argv) {
   const [command, ...rest] = argv;
   if (command === "generate") {
@@ -2433,13 +2901,22 @@ async function runCli(argv) {
     console.log(`Generated Discord announcement ${result.artifact.announcement.id}.`);
     return;
   }
-  if (command === "verify" || command === "preflight" || command === "post" || command === "diagnose-existing") {
+  if (
+    command === "verify" ||
+    command === "preflight" ||
+    command === "post" ||
+    command === "diagnose-existing" ||
+    command === "migrate-existing"
+  ) {
     const allowed = ["--artifact-dir", "--expected-tag", "--expected-ref", "--expected-commit"];
     if (command === "post") {
       allowed.push("--receipt");
     }
     if (command === "diagnose-existing") {
       allowed.push("--report");
+    }
+    if (command === "migrate-existing") {
+      allowed.push("--receipt", "--expected-target-announcement", "--expected-target-artifact-sha256");
     }
     const args = parseArguments(rest, allowed);
     const required = ["--artifact-dir", "--expected-tag", "--expected-ref", "--expected-commit"];
@@ -2448,6 +2925,9 @@ async function runCli(argv) {
     }
     if (command === "diagnose-existing") {
       required.push("--report");
+    }
+    if (command === "migrate-existing") {
+      required.push("--receipt", "--expected-target-announcement", "--expected-target-artifact-sha256");
     }
     requireArguments(args, required);
     const artifactDirectory = resolveInside(process.cwd(), args["--artifact-dir"], "Artifact directory");
@@ -2498,6 +2978,28 @@ async function runCli(argv) {
       console.log(`Discord announcement diagnostic completed with ${diagnostic.mismatchCodes.length} mismatch code(s).`);
       return;
     }
+    if (command === "migrate-existing") {
+      const migration = buildApprovedMigration(bundle);
+      assertExpectedMigrationTarget({
+        migration,
+        expectedTargetAnnouncementId: args["--expected-target-announcement"],
+        expectedTargetArtifactSha256: args["--expected-target-artifact-sha256"],
+      });
+      const receipt = reserveMigrationReceipt(args["--receipt"], migration);
+      let result;
+      try {
+        result = await migrateExistingAnnouncement({
+          bundle,
+          expectedTargetAnnouncementId: args["--expected-target-announcement"],
+          expectedTargetArtifactSha256: args["--expected-target-artifact-sha256"],
+        });
+        receipt.finalize(result);
+      } finally {
+        receipt.close();
+      }
+      console.log(`Discord announcement migration ${result.status} and verified.`);
+      return;
+    }
 
     const receipt = reserveReceipt(args["--receipt"], bundle);
     let result;
@@ -2525,7 +3027,10 @@ async function runCli(argv) {
     console.log(`Discord announcement ${result.status}; message ${result.messageId} verified.`);
     return;
   }
-  fail("INVALID_ARGUMENT", "Command must be 'generate', 'verify', 'preflight', 'diagnose-existing', or 'post'.");
+  fail(
+    "INVALID_ARGUMENT",
+    "Command must be 'generate', 'verify', 'preflight', 'diagnose-existing', 'migrate-existing', or 'post'.",
+  );
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
