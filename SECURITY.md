@@ -2,18 +2,21 @@
 
 ## Supported versions
 
-There is currently no supported production binary.
+SessionDock 3.1.2 is the current supported production release.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. Download nothing while this hold is active.
-> A future reviewed release must explicitly state that it lifts the hold and
-> has passed separate laptop validation before any public download is approved.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the documented incident and
+> distribution-hold procedure again.
 
-Development builds and older releases are unsupported. Support resumes only
-when a later release from the canonical
-[SessionDock repository](https://github.com/Makmatoe/SessionDock/releases)
-passes every source-provenance, transparent-inventory, Defender-response,
-staging, laptop-validation, and public re-download gate documented below.
+Development builds and older releases are unsupported. A future release
+becomes supported only after it passes every source-provenance,
+transparent-inventory, Defender-response, staging, laptop-validation, and
+public re-download gate documented below.
 
 The integrated HandleScope/ExactWheel/template source documented in this tree
 is not a production release unless it appears in the canonical release feed and
@@ -165,8 +168,9 @@ secret leakage, or unsafe local-API behavior.
 Use only assets attached to the canonical
 [`Makmatoe/SessionDock` GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases).
 A Discord post may link to that page, but a SessionDock binary obtained from
-Discord is not an approved release asset. While the distribution hold above is
-active, no download is approved.
+Discord is not an approved release asset. If a future detection or public byte
+mismatch starts a distribution hold, no download is approved until the
+documented reviewed-release procedure explicitly lifts it.
 
 SessionDock's permanent public format is a transparent, unsigned portable ZIP;
 there is no Setup executable or application Authenticode stage. A release also

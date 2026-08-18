@@ -4,14 +4,18 @@ namespace SessionDock.Tests;
 
 public sealed class InstallationDocumentationTests
 {
-    private const string DistributionHold = "Distribution hold — 2026-08-04";
+    private const string CurrentRelease = "SessionDock 3.1.2";
+    private const string CurrentReleaseUrl =
+        "https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2";
+    private const string StaleDistributionHold =
+        "Distribution hold — 2026-08-04";
     private const string PortableFileName = "SessionDock-win-x64-Portable.zip";
     private const string RetiredSetupFileName = "SessionDock-win-x64-Setup.exe";
     private const string ExactWheelCommit =
         "40023f516fe89977a35d94cc5580e790e48d54a1";
 
     [Fact]
-    public void EveryProductReadmeHonorsTheDistributionHold()
+    public void ProductReadmesSeparateCurrentGuidanceFromHistoricalArchives()
     {
         var root = FindRepositoryRoot();
         var readmes = Directory.EnumerateFiles(
@@ -53,10 +57,6 @@ public sealed class InstallationDocumentationTests
         foreach (var readme in readmes)
         {
             var contents = File.ReadAllText(readme);
-            Assert.Contains(
-                "distribution hold",
-                contents,
-                StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(
                 RetiredSetupFileName,
                 contents,
@@ -65,10 +65,73 @@ public sealed class InstallationDocumentationTests
                 @"https://github\.com/Makmatoe/SessionDock/releases/(?:latest/)?download/[^\s)]*SessionDock-win-x64-Setup\.exe",
                 contents);
         }
+
+        var currentReadmes = new[]
+        {
+            Path.Combine(root, "README.md"),
+            Path.Combine(root, "marketing", "README.md"),
+            Path.Combine(root, "SessionDock", "README.md"),
+            Path.Combine(
+                root,
+                "SessionDock",
+                "SystemProcesses",
+                "README.md")
+        };
+
+        foreach (var readme in currentReadmes)
+        {
+            var contents = File.ReadAllText(readme);
+            Assert.Contains(CurrentRelease, contents, StringComparison.Ordinal);
+            Assert.Contains(CurrentReleaseUrl, contents,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                StaleDistributionHold,
+                contents,
+                StringComparison.Ordinal);
+        }
+
+        var marketingIndex = Read(root, "marketing", "README.md");
+        Assert.Contains("no active distribution hold", marketingIndex,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("future named malware detection", marketingIndex,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Archived v2.7.0 release", marketingIndex,
+            StringComparison.Ordinal);
+        Assert.Contains("Trusted v2.7.0 marketing assets", marketingIndex,
+            StringComparison.Ordinal);
+
+        foreach (var archivedReadme in new[]
+                 {
+                     Path.Combine(
+                         root,
+                         "docs",
+                         "images",
+                         "sessiondock-v2.7.0",
+                         "README.md"),
+                     Path.Combine(
+                         root,
+                         "marketing",
+                         "trusted",
+                         "v2.7.0",
+                         "README.md")
+                 })
+        {
+            var contents = File.ReadAllText(archivedReadme);
+            Assert.Contains("SessionDock 2.7.0", contents,
+                StringComparison.Ordinal);
+            Assert.Contains("histor", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("not", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("current", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(CurrentRelease, contents,
+                StringComparison.Ordinal);
+        }
     }
 
     [Fact]
-    public void CurrentUserDocumentationRetainsHoldAndFuturePortableFlow()
+    public void CurrentUserDocumentationIdentifiesApprovedReleaseAndPortableFlow()
     {
         var root = FindRepositoryRoot();
         var rootReadme = Read(root, "README.md");
@@ -81,6 +144,10 @@ public sealed class InstallationDocumentationTests
             "SystemProcesses",
             "README.md");
         var security = Read(root, "SECURITY.md");
+        var detectionResponse = Read(
+            root,
+            "docs",
+            "DEFENDER_DETECTION_RESPONSE.md");
 
         var currentDocuments = new[]
         {
@@ -89,12 +156,30 @@ public sealed class InstallationDocumentationTests
             updates,
             desktopReadme,
             integrationsReadme,
-            security
+            security,
+            detectionResponse
         };
 
         Assert.All(currentDocuments, contents =>
         {
-            Assert.Contains(DistributionHold, contents, StringComparison.Ordinal);
+            Assert.Contains(CurrentRelease, contents, StringComparison.Ordinal);
+            Assert.Contains(CurrentReleaseUrl, contents, StringComparison.Ordinal);
+            Assert.Contains("no active distribution hold", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("future named", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("distribution-hold", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(StaleDistributionHold, contents,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain(
+                "the current latest release is a zero-asset security-hold record",
+                contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(
+                "No SessionDock download is approved while this hold is active",
+                contents,
+                StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(
                 RetiredSetupFileName,
                 contents,
@@ -108,15 +193,6 @@ public sealed class InstallationDocumentationTests
                 contents,
                 StringComparison.OrdinalIgnoreCase);
         });
-
-        Assert.Contains("zero-asset security-hold", updates,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("zero-asset security-hold", gettingStarted,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Download nothing", gettingStarted,
-            StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("lifts the hold", updates,
-            StringComparison.OrdinalIgnoreCase);
 
         foreach (var contents in new[] { rootReadme, gettingStarted, updates })
         {
@@ -226,7 +302,13 @@ public sealed class InstallationDocumentationTests
                 StringComparison.OrdinalIgnoreCase);
         }
 
-        Assert.Contains(DistributionHold, releasing, StringComparison.Ordinal);
+        Assert.Contains(CurrentRelease, releasing, StringComparison.Ordinal);
+        Assert.Contains("no active distribution hold", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("future named malware detection", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(StaleDistributionHold, releasing,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(RetiredSetupFileName, releasing,
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Azure Artifact Signing", releasing,
@@ -243,6 +325,45 @@ public sealed class InstallationDocumentationTests
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains("separate immutable announcement", releasing,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void MaintainerAndAnnouncementGuidesShareCurrentReleaseState()
+    {
+        var root = FindRepositoryRoot();
+        var releasing = Read(root, "docs", "RELEASING.md");
+        var announcementReadme = Read(
+            root,
+            "discord-release-bot",
+            "README.md");
+
+        foreach (var contents in new[] { releasing, announcementReadme })
+        {
+            Assert.Contains(CurrentRelease, contents, StringComparison.Ordinal);
+            Assert.Contains("future named", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("distribution hold", contents,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain(StaleDistributionHold, contents,
+                StringComparison.Ordinal);
+            Assert.DoesNotMatch(
+                @"https://github\.com/Makmatoe/SessionDock/releases/(?:latest/)?download/[^\s)]*SessionDock-win-x64-Setup\.exe",
+                contents);
+        }
+
+        Assert.Contains("no active distribution hold", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(PortableFileName, announcementReadme,
+            StringComparison.Ordinal);
+        Assert.Matches(@"Download\s+portable ZIP", announcementReadme);
+        Assert.Contains("View latest release", announcementReadme,
+            StringComparison.Ordinal);
+        Assert.Contains("immutable version page", announcementReadme,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("current latest release", announcementReadme,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Setup.exe` are rejected", announcementReadme,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -288,10 +409,6 @@ public sealed class InstallationDocumentationTests
         var updates = Read(root, "docs", "UPDATES.md");
         var desktopReadme = Read(root, "SessionDock", "README.md");
         var contributing = Read(root, "CONTRIBUTING.md");
-        var announcementReadme = Read(
-            root,
-            "discord-release-bot",
-            "README.md");
 
         Assert.Contains("saved destination", rootReadme,
             StringComparison.OrdinalIgnoreCase);
@@ -345,8 +462,6 @@ public sealed class InstallationDocumentationTests
         Assert.Contains(
             "## Moving from Roblox One or SessionDock 2.3.0 and earlier",
             updates,
-            StringComparison.Ordinal);
-        Assert.Contains(DistributionHold, announcementReadme,
             StringComparison.Ordinal);
     }
 

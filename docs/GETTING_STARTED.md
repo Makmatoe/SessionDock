@@ -7,10 +7,14 @@ session templates.
 > A published release has these features only when its own notes say so. Source
 > and test builds are not release announcements.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. Download nothing while this hold is active.
-> The future flow below applies only after a reviewed release explicitly states
-> that it lifts the hold and has passed separate laptop validation.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the documented incident and
+> distribution-hold procedure again.
 
 ## Before you start
 
@@ -32,8 +36,7 @@ You do **not** need:
 ## 1. Get and verify SessionDock
 
 SessionDock is permanently distributed as a transparent, unsigned portable
-ZIP. There is no Setup executable. After a reviewed release explicitly lifts
-the hold:
+ZIP. There is no Setup executable. To use the current approved release:
 
 1. Open only the canonical
    [`Makmatoe/SessionDock` GitHub Releases page](https://github.com/Makmatoe/SessionDock/releases).
@@ -48,8 +51,8 @@ the hold:
 6. Complete the first-launch Get Started tutorial.
 
 Unsigned SessionDock may show **Unknown publisher** or a reputation warning.
-Proceed through a normal warning only after the hold is explicitly lifted, the
-GitHub source and hash match, and Windows reports no named threat. A named
+Proceed through a normal warning only after confirming the release is approved,
+the GitHub source and hash match, and Windows reports no named threat. A named
 malware detection is always a hard stop. A matching checksum or attestation
 does not make detected bytes safe. Never disable Defender, restore or allow a
 detected file, add an exclusion, remove download-zone metadata, change
@@ -75,10 +78,11 @@ prove that the file is trustworthy.
 Recover safely:
 
 1. Delete the incomplete download.
-2. Check the canonical release notes. Download nothing while the distribution
-   hold is active.
-3. After a reviewed release explicitly lifts the hold, download only its
-   portable ZIP from GitHub Releases and verify SHA-256 before extracting it.
+2. Check the canonical release feed and release notes. If a future incident has
+   placed distribution on hold, download nothing until a reviewed release
+   explicitly lifts that hold.
+3. When no hold is active, download only the approved portable ZIP from GitHub
+   Releases and verify SHA-256 before extracting it.
 4. Check **Windows Security > Virus & threat protection > Protection history**.
 5. If the laptop is managed, give its administrator the canonical URL and
    checksum.
@@ -475,7 +479,8 @@ Use test accounts and reversible actions throughout:
     macro byte and confirm SHA-256 validation rejects the package unchanged.
 
 Do not treat this checklist or a passing source build as public-release
-approval or as lifting the distribution hold.
+approval. Only the protected release process can approve a new release or lift
+a future distribution hold.
 
 ## 14. Find local data
 

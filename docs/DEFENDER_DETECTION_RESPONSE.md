@@ -10,10 +10,14 @@ SessionDock's Windows distribution is permanently unsigned. **Unknown
 publisher** may therefore appear for a clean canonical build. That status does
 not prove safety and does not authorize bypassing a named Defender detection.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. No SessionDock download is approved while
-> this hold is active. A future reviewed release must explicitly lift the hold
-> after completing the transparent-build, Defender, and separate laptop gates.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the incident and distribution-hold
+> procedure below again.
 
 ## For users
 
