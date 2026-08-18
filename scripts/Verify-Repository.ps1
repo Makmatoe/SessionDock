@@ -624,6 +624,258 @@ try {
         (Join-Path $root '.github/workflows/ci.yml') -Raw
     $releaseWorkflowContents = Get-Content -LiteralPath `
         (Join-Path $root '.github/workflows/release.yml') -Raw
+    $discordReconciliationWorkflowPath = Join-Path `
+        $root '.github/workflows/reconcile-v3.1.2-discord.yml'
+    if (-not (Test-Path -LiteralPath $discordReconciliationWorkflowPath -PathType Leaf)) {
+        throw 'The reviewed one-time v3.1.2 Discord diagnostic workflow is missing.'
+    }
+    $discordReconciliationWorkflowContents = Get-Content -LiteralPath `
+        $discordReconciliationWorkflowPath -Raw
+    $discordReconciliationJobsMatch = [regex]::Match(
+        $discordReconciliationWorkflowContents,
+        '(?ms)^jobs:\s*\r?\n(?<jobs>.*)\z')
+    $discordReconciliationJobHeaders = @()
+    if ($discordReconciliationJobsMatch.Success) {
+        $discordReconciliationJobHeaders = @([regex]::Matches(
+                $discordReconciliationJobsMatch.Groups['jobs'].Value,
+                '(?m)^  [A-Za-z0-9][A-Za-z0-9_-]*:\s*$'))
+    }
+    if ($discordReconciliationJobHeaders.Count -ne 1 -or
+        $discordReconciliationJobHeaders[0].Value.Trim() -cne
+            'diagnose-existing-announcement:') {
+        throw 'The one-time Discord diagnostic workflow must contain exactly one reviewed job.'
+    }
+    $discordReconciliationJob = Get-WorkflowJobBlock `
+        -Contents $discordReconciliationWorkflowContents `
+        -Name 'diagnose-existing-announcement'
+    $discordReconciliationSteps = @(Get-WorkflowStepBlocks `
+            -Contents $discordReconciliationJob)
+    $expectedDiscordReconciliationStepNames = @(
+        'Validate the one-time invocation',
+        'Check out the protected workflow commit',
+        'Install the pinned Node.js runtime',
+        'Verify the immutable GitHub release and source artifact',
+        'Download the exact v3.1.2 announcement artifact',
+        'Validate the exact source announcement',
+        'Run the content-free GET-only diagnostic',
+        'Validate the sanitized diagnostic report',
+        'Upload the sanitized diagnostic')
+    if ($discordReconciliationSteps.Count -ne
+            $expectedDiscordReconciliationStepNames.Count) {
+        throw 'The one-time Discord diagnostic workflow step topology changed.'
+    }
+    for ($stepIndex = 0;
+        $stepIndex -lt $expectedDiscordReconciliationStepNames.Count;
+        $stepIndex++) {
+        if ($discordReconciliationSteps[$stepIndex].Name -cne
+                $expectedDiscordReconciliationStepNames[$stepIndex]) {
+            throw 'The one-time Discord diagnostic workflow step order changed.'
+        }
+    }
+    $discordReconciliationSecretSteps = @($discordReconciliationSteps |
+        Where-Object {
+            @((Get-WorkflowSecretReferences -Contents $_.Contents)).Count -gt 0
+        })
+    if ($discordReconciliationSecretSteps.Count -ne 1 -or
+        $discordReconciliationSecretSteps[0].Name -cne
+            'Run the content-free GET-only diagnostic') {
+        throw 'Only the exact GET-only diagnostic step may receive the Discord token.'
+    }
+    $discordDiagnosticStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordReconciliationJob `
+        -Name 'Run the content-free GET-only diagnostic'
+    $expectedDiscordDiagnosticStep = @'
+      - name: Run the content-free GET-only diagnostic
+        shell: bash
+        env:
+          DISCORD_RELEASE_BOT_ID: ${{ vars.DISCORD_RELEASE_BOT_ID }}
+          DISCORD_RELEASE_BOT_TOKEN: ${{ secrets.DISCORD_RELEASE_BOT_TOKEN }}
+          DISCORD_RELEASE_CHANNEL_ID: ${{ vars.DISCORD_RELEASE_CHANNEL_ID }}
+          DISCORD_RELEASE_ROLE_ID: ${{ vars.DISCORD_RELEASE_ROLE_ID }}
+        run: |
+          set -euo pipefail
+          node ./discord-release-bot/src/release-automation.js diagnose-existing \
+            --artifact-dir reconciliation/source-announcement \
+            --expected-tag v3.1.2 \
+            --expected-ref refs/tags/v3.1.2 \
+            --expected-commit 0e257dd53b1c729bbf109185a10d470a1dd6483d \
+            --report reconciliation/diagnostic/report.json
+'@
+    if ((($discordDiagnosticStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordDiagnosticStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The Discord-token step must remain the exact reviewed GET-only diagnostic command.'
+    }
+    $discordDiagnosticValidationStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordReconciliationJob `
+        -Name 'Validate the sanitized diagnostic report'
+    $expectedDiscordDiagnosticValidationStep = @'
+      - name: Validate the sanitized diagnostic report
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f reconciliation/diagnostic/report.json
+          jq -e '
+            (keys == [
+              "announcementId",
+              "artifactSha256",
+              "kind",
+              "mismatchCodes",
+              "release",
+              "schemaVersion",
+              "status",
+              "verified"
+            ]) and
+            (.release | keys == ["sourceCommit", "tag"]) and
+            .kind == "sessiondock.discord-release-diagnostic" and
+            .schemaVersion == 1 and
+            .announcementId == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .artifactSha256 == "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4" and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            (.mismatchCodes | type == "array") and
+            ([
+              "message.author",
+              "message.author-bot",
+              "message.channel",
+              "message.components",
+              "message.content",
+              "message.edited",
+              "message.flags",
+              "message.id",
+              "message.mention-everyone",
+              "message.mention-roles",
+              "message.mentions",
+              "message.missing",
+              "message.object",
+              "message.optional.activity",
+              "message.optional.application",
+              "message.optional.application-id",
+              "message.optional.call",
+              "message.optional.interaction",
+              "message.optional.interaction-metadata",
+              "message.optional.mention-channels",
+              "message.optional.message-reference",
+              "message.optional.message-snapshots",
+              "message.optional.poll",
+              "message.optional.position",
+              "message.optional.referenced-message",
+              "message.optional.resolved",
+              "message.optional.role-subscription-data",
+              "message.optional.shared-client-theme",
+              "message.optional.thread",
+              "message.pinned",
+              "message.presentation",
+              "message.sticker-items",
+              "message.stickers",
+              "message.tts",
+              "message.type",
+              "message.webhook"
+            ] as $allowed |
+              (.mismatchCodes | length) <= ($allowed | length) and
+              (.mismatchCodes | unique | length) == (.mismatchCodes | length) and
+              all(.mismatchCodes[]; . as $code | ($allowed | index($code)) != null)
+            ) and
+            (.status == "mismatch" or .status == "not-found" or .status == "verified") and
+            (.verified == (.status == "verified")) and
+            (if .status == "verified" then
+              (.mismatchCodes | length) == 0
+            elif .status == "not-found" then
+              .mismatchCodes == ["message.missing"]
+            else
+              (.mismatchCodes | length) > 0 and
+              (.mismatchCodes | index("message.missing")) == null
+            end)
+          ' reconciliation/diagnostic/report.json >/dev/null
+'@
+    if ((($discordDiagnosticValidationStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordDiagnosticValidationStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The diagnostic report must pass the exact finite, content-free sanitizer before upload.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordDiagnosticValidationStep `
+        -Name 'Validate the sanitized diagnostic report'
+    $discordDiagnosticUploadStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordReconciliationJob `
+        -Name 'Upload the sanitized diagnostic'
+    $expectedDiscordDiagnosticUploadStep = @'
+      - name: Upload the sanitized diagnostic
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: discord-v3.1.2-sanitized-diagnostic-${{ github.sha }}
+          path: reconciliation/diagnostic/report.json
+          if-no-files-found: error
+          retention-days: 7
+'@
+    if ((($discordDiagnosticUploadStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordDiagnosticUploadStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'Only the exact sanitized diagnostic report may be uploaded after successful validation.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordDiagnosticUploadStep `
+        -Name 'Upload the sanitized diagnostic'
+    $expectedDiscordReadOnlyGhApiCalls = @(
+        'tag_reference="$(gh api /repos/Makmatoe/SessionDock/git/ref/tags/v3.1.2)"',
+        'tag_object="$(gh api "/repos/Makmatoe/SessionDock/git/tags/$tag_object_sha")"',
+        'artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9338871798)"',
+        'release_metadata="$(gh api /repos/Makmatoe/SessionDock/releases/372542551)"')
+    $discordGhApiCalls = @([regex]::Matches(
+            $discordReconciliationWorkflowContents,
+            '(?m)^[^\r\n]*\bgh api\b[^\r\n]*$') |
+        ForEach-Object { $_.Value.Trim() })
+    if ($discordGhApiCalls.Count -ne $expectedDiscordReadOnlyGhApiCalls.Count) {
+        throw 'The one-time Discord diagnostic may use only its four fixed GET-only GitHub API reads.'
+    }
+    for ($callIndex = 0;
+        $callIndex -lt $expectedDiscordReadOnlyGhApiCalls.Count;
+        $callIndex++) {
+        if ($discordGhApiCalls[$callIndex] -cne
+                $expectedDiscordReadOnlyGhApiCalls[$callIndex]) {
+            throw 'A GitHub API call in the one-time Discord diagnostic is not the reviewed GET-only request.'
+        }
+    }
+    if ($discordReconciliationWorkflowContents -notmatch '(?m)^  workflow_dispatch:\s*$' -or
+        $discordReconciliationWorkflowContents -notmatch 'Type DIAGNOSE V3\.1\.2 exactly' -or
+        $discordReconciliationWorkflowContents -notmatch 'test "\$CONFIRMATION" = ''DIAGNOSE V3\.1\.2''' -or
+        $discordReconciliationWorkflowContents -notmatch 'test "\$EXPECTED_WORKFLOW_COMMIT" = "\$GITHUB_SHA"' -or
+        $discordReconciliationWorkflowContents -notmatch "inputs\.confirmation == 'DIAGNOSE V3\.1\.2'" -or
+        $discordReconciliationWorkflowContents -notmatch 'inputs\.expected_workflow_commit == github\.sha' -or
+        $discordReconciliationWorkflowContents -notmatch "github\.repository == 'Makmatoe/SessionDock'" -or
+        $discordReconciliationWorkflowContents -notmatch "github\.ref == 'refs/heads/main'" -or
+        $discordReconciliationWorkflowContents -notmatch 'github\.actor == github\.repository_owner' -or
+        $discordReconciliationWorkflowContents -notmatch 'github\.triggering_actor == github\.repository_owner' -or
+        $discordReconciliationWorkflowContents -notmatch '(?ms)^permissions:\s*\r?\n  actions:\s*read\s*\r?\n  contents:\s*read\s*$' -or
+        $discordReconciliationWorkflowContents -notmatch '(?ms)^concurrency:\s*\r?\n  group:\s*sessiondock-release-publication\s*\r?\n  cancel-in-progress:\s*false\s*$' -or
+        @([regex]::Matches(
+                $discordReconciliationWorkflowContents,
+                '(?m)^    environment:\s*release-announcement\s*$')).Count -ne 1 -or
+        @((Get-WorkflowSecretReferences `
+                -Contents $discordReconciliationWorkflowContents)).Count -ne 1 -or
+        @([regex]::Matches(
+                $discordReconciliationWorkflowContents,
+                '\$\{\{\s*secrets\.DISCORD_RELEASE_BOT_TOKEN\s*\}\}')).Count -ne 1 -or
+        @([regex]::Matches(
+                $discordReconciliationWorkflowContents,
+                '\$\{\{\s*vars\.DISCORD_RELEASE_(?:BOT_ID|CHANNEL_ID|ROLE_ID)\s*\}\}')).Count -ne 3 -or
+        $discordReconciliationWorkflowContents -notmatch 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1' -or
+        $discordReconciliationWorkflowContents -notmatch 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e' -or
+        $discordReconciliationWorkflowContents -notmatch 'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c' -or
+        $discordReconciliationWorkflowContents -notmatch 'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a' -or
+        $discordReconciliationWorkflowContents -notmatch 'persist-credentials:\s*false' -or
+        $discordReconciliationWorkflowContents -notmatch 'actions/artifacts/9338871798' -or
+        $discordReconciliationWorkflowContents -notmatch 'workflow_run\.head_sha == "0e257dd53b1c729bbf109185a10d470a1dd6483d"' -or
+        $discordReconciliationWorkflowContents -notmatch 'git/ref/tags/v3\.1\.2' -or
+        $discordReconciliationWorkflowContents -notmatch 'git/tags/\$tag_object_sha' -or
+        $discordReconciliationWorkflowContents -notmatch 'run-id:\s*30960123719' -or
+        $discordReconciliationWorkflowContents -notmatch 'releases/372542551' -or
+        $discordReconciliationWorkflowContents -notmatch 'id == 519788140' -or
+        $discordReconciliationWorkflowContents -notmatch 'ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4' -or
+        $discordReconciliationWorkflowContents -notmatch 'a4d4fd9d4f7b5353b06ebf04aa39fef888ee5afbbd39aadd64651d81780a3bbf' -or
+        $discordReconciliationWorkflowContents -notmatch 'release-automation\.js diagnose-existing' -or
+        $discordReconciliationWorkflowContents -notmatch '--report reconciliation/diagnostic/report\.json' -or
+        $discordReconciliationWorkflowContents -match 'release-automation\.js post|(?:^|\s)(?:POST|PATCH|PUT|DELETE)(?:\s|$)|(?i)(?:^|\s)(?:curl|wget)(?:\.exe)?(?:\s|$)|continue-on-error|cancelled\(\)|failure\(\)' -or
+        $discordReconciliationWorkflowContents -match '(?m)^\s+(?:actions|contents|id-token|attestations|artifact-metadata):\s*write\s*$') {
+        throw 'The one-time v3.1.2 Discord workflow must remain owner-triggered, GET-only, content-free, immutable-input-bound, and least-privileged.'
+    }
     if ($releaseWorkflowContents -notmatch
             '(?ms)^concurrency:\s*\r?\n  group:\s*sessiondock-release-publication\s*\r?\n  queue:\s*max\s*\r?\n  cancel-in-progress:\s*false\s*$') {
         throw 'Release workflows must share one non-cancelling publication lane across all version tags.'
@@ -1631,6 +1883,8 @@ try {
     $releaseAutomationTests = Get-Content -LiteralPath `
         (Join-Path $root 'discord-release-bot/test/release-automation.test.js') -Raw
     if ($releaseAutomationContents -notmatch 'const DISCORD_API = "https://discord\.com/api/v10"' -or
+        $releaseAutomationContents -notmatch 'const SCHEMA_VERSION = 3' -or
+        $releaseAutomationContents -notmatch 'const LEGACY_SCHEMA_VERSION = 2' -or
         $releaseAutomationContents -notmatch 'const MAX_JSON_RESPONSE_BYTES = 1024 \* 1024' -or
         $releaseAutomationContents -notmatch 'enforce_nonce:\s*true' -or
         $releaseAutomationContents -notmatch 'allowed_mentions' -or
@@ -1638,6 +1892,8 @@ try {
         $releaseAutomationContents -notmatch 'MAX_HISTORY_PAGES = 100' -or
         $releaseAutomationContents -notmatch 'MAX_DISCORD_OPERATION_MILLISECONDS = 180_000' -or
         $releaseAutomationContents -notmatch 'export async function preflightAnnouncement\(' -or
+        $releaseAutomationContents -notmatch 'export async function diagnoseExistingAnnouncement\(' -or
+        $releaseAutomationContents -notmatch 'async function locateAnnouncement\(' -or
         $releaseAutomationContents -notmatch 'function assertBotChannelPermissions\(' -or
         $releaseAutomationContents -notmatch 'roleId === channel\.guild_id' -or
         $releaseAutomationContents -notmatch 'PERMISSION_READ_MESSAGE_HISTORY' -or
@@ -1645,6 +1901,7 @@ try {
         $releaseAutomationContents -notmatch 'DELIVERY_AMBIGUOUS' -or
         $releaseAutomationContents -notmatch 'role\.managed !== false' -or
         $releaseAutomationContents -notmatch 'function reserveReceipt\(' -or
+        $releaseAutomationContents -notmatch 'function reserveDiagnostic\(' -or
         $releaseAutomationContents -notmatch 'openSync\(resolved, "wx", 0o600\)' -or
         $releaseAutomationContents -notmatch 'renameSync\(temporary, resolved\)' -or
         $releaseAutomationContents -notmatch 'temporaryCreated && existsSync\(temporary\)' -or
@@ -1658,7 +1915,10 @@ try {
         $releaseAutomationContents -notmatch 'actual\?\.provider !== undefined' -or
         $releaseAutomationContents -notmatch 'Object\.keys\(actual\.footer\)' -or
         $releaseAutomationContents -notmatch 'Object\.hasOwn\(actual \?\? \{\}, "timestamp"\)' -or
-        $releaseAutomationContents -notmatch '!isAbsentOrEmptyArray\(message\.components\)' -or
+        $releaseAutomationContents -notmatch 'function validateMessageComponents\(' -or
+        $releaseAutomationContents -notmatch 'label:\s*"Download portable ZIP"' -or
+        $releaseAutomationContents -notmatch 'label:\s*"View latest release"' -or
+        $releaseAutomationContents -notmatch 'https://github\.com/\$\{REPOSITORY\}/releases/latest' -or
         $releaseAutomationContents -notmatch '"poll"' -or
         $releaseAutomationContents -notmatch 'message\.flags !== undefined && message\.flags !== 0' -or
         $releaseAutomationContents -notmatch 'message\.type !== 0' -or
@@ -1687,12 +1947,15 @@ try {
     }
     $requiredDiscordRegressionTests = @(
         'the staged standalone module executes workflow-shaped generate and verify commands',
+        'schema 3 renders compact feature sections and prominent official links',
         'the read-only preflight proves identity, permissions, role, and history without posting',
         'preflight rejects an early matching announcement and never posts',
         'preflight proves Read Message History through effective channel permissions',
         'effective channel permission overwrites follow Discord precedence',
         'preflight rejects @everyone in Bota''s assigned member roles',
         'the workflow-shaped preflight CLI uses the standalone staged module and makes no POST',
+        'the existing-message diagnostic is GET-only and returns only allowlisted mismatch codes',
+        'the diagnostic CLI reserves a content-free report and never mutates Discord',
         'an existing announcement reread is bound to the exact history message ID',
         'a same-tag marker from different immutable inputs fails closed',
         'an ambiguous POST is reconciled without a second POST',
@@ -1715,6 +1978,7 @@ try {
         'unexpected top-level display state fails closed',
         'unexpected embed timestamps and changed field inline layout fail closed',
         'an explicit false field inline value is equivalent to its Discord-default absence',
+        'announcement link buttons reject changed targets, labels, actions, and enabled state',
         'the configured release role must explicitly be unmanaged',
         'the CLI refuses an existing receipt before any network request',
         'the CLI refuses an unwritable receipt path before any network request',
@@ -1982,7 +2246,7 @@ try {
             if ($contents -match '(?m)^\s*secrets\s*:\s*inherit\s*$') {
                 throw "Workflow secret inheritance is intentionally prohibited: $($workflow.Name)"
             }
-            if ($workflow.Name -cne 'release.yml' -and
+            if ($workflow.Name -cnotin @('release.yml', 'reconcile-v3.1.2-discord.yml') -and
                 ($workflowSecretReferences.Count -ne 0 -or
                  $contents -match '(?m)^\s+environment\s*:' -or
                  $contents -match 'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64|DISCORD_RELEASE_(?:BOT_TOKEN|BOT_ID|CHANNEL_ID|ROLE_ID)')) {

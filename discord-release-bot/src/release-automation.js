@@ -22,7 +22,8 @@ import { fileURLToPath } from "node:url";
 const PRODUCT = "SessionDock";
 const REPOSITORY = "Makmatoe/SessionDock";
 const KIND = "sessiondock.discord-release-announcement";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+const LEGACY_SCHEMA_VERSION = 2;
 const DISCORD_API = "https://discord.com/api/v10";
 const USER_AGENT = "DiscordBot (https://github.com/Makmatoe/SessionDock, 1.0)";
 const EMBED_COLOR = 0x5865f2;
@@ -53,7 +54,28 @@ const VERSION_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 const SAFE_FILE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
-const MARKER_PATTERN = /^sdrel:v1:Makmatoe\/SessionDock:(v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)):[0-9a-f]{64}$/;
+const LEGACY_MARKER_PATTERN = /^sdrel:v1:Makmatoe\/SessionDock:(v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)):[0-9a-f]{64}$/;
+const COMPACT_MARKER_PATTERN = /^sdrel:v2:(v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)):([0-9a-f]{32})$/;
+const COMPACT_FOOTER_PATTERN = /^Official SessionDock release • (v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)) • ID ([0-9a-f]{32})$/;
+const DIAGNOSTIC_KIND = "sessiondock.discord-release-diagnostic";
+const OPTIONAL_MESSAGE_FIELDS = [
+  "activity",
+  "application",
+  "application_id",
+  "call",
+  "interaction",
+  "interaction_metadata",
+  "mention_channels",
+  "message_reference",
+  "message_snapshots",
+  "poll",
+  "position",
+  "referenced_message",
+  "resolved",
+  "role_subscription_data",
+  "shared_client_theme",
+  "thread",
+];
 
 export class ReleaseAutomationError extends Error {
   constructor(code, message, { ambiguous = false } = {}) {
@@ -287,10 +309,6 @@ export function parseCanonicalNotes(buffer, version) {
   if (!description.trim()) {
     fail("INVALID_NOTES", "Canonical release notes must contain an announcement body.");
   }
-  if (description.length > 4096) {
-    fail("INVALID_NOTES", "Canonical release notes exceed Discord's 4,096-character description limit.");
-  }
-
   return {
     buffer,
     text,
@@ -454,9 +472,175 @@ function loadReviewedImagesFromRepository(root, relativeDirectory, version) {
   });
 }
 
-function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
+function releaseNoteSections(description) {
+  const blocks = description.split(/\n{2,}/u).map((block) => block.trim()).filter(Boolean);
+  const sections = [];
+  for (let index = 0; index < blocks.length; index += 1) {
+    const heading = blocks[index];
+    const following = blocks[index + 1];
+    const bulletLines = following?.split("\n").filter(Boolean) ?? [];
+    if (
+      !heading.includes("\n") &&
+      bulletLines.length > 0 &&
+      bulletLines.every((line) => line.startsWith("- "))
+    ) {
+      sections.push({
+        heading,
+        bullets: bulletLines.map((line) => line.slice(2).trim()).filter(Boolean),
+      });
+      index += 1;
+      continue;
+    }
+
+    const standaloneBullets = heading.split("\n").filter(Boolean);
+    if (standaloneBullets.every((line) => line.startsWith("- "))) {
+      sections.push({
+        heading: "Release highlights",
+        bullets: standaloneBullets.map((line) => line.slice(2).trim()).filter(Boolean),
+      });
+      continue;
+    }
+    sections.push({
+      heading: "Release highlights",
+      bullets: [heading.replaceAll("\n", " ")],
+    });
+  }
+
+  const displayable = sections.filter((section) => section.bullets.length > 0);
+  if (displayable.length > 1 && displayable[0].heading.toLowerCase() === "release approval") {
+    displayable.shift();
+  }
+  return (displayable.length > 0
+    ? displayable
+    : [{ heading: "Release highlights", bullets: [description.replaceAll("\n", " ").trim()] }]
+  ).slice(0, 4);
+}
+
+function truncateUtf16Safely(value, maximum) {
+  let result = "";
+  for (const symbol of value) {
+    if (result.length + symbol.length > maximum) {
+      break;
+    }
+    result += symbol;
+  }
+  return result;
+}
+
+function compactSentence(value, maximum = 338) {
+  const withoutLinkDestinations = value.replace(/\[([^\]]+)\]\([^)]+\)/gu, "$1").replace(/\s+/gu, " ").trim();
+  const first = withoutLinkDestinations.split(/(?<=[.!?])\s+(?=[A-Z0-9@<\[])/u)[0] ?? withoutLinkDestinations;
+  if (first.length <= maximum) {
+    return first;
+  }
+  const clipped = truncateUtf16Safely(first, maximum - 1);
+  const boundary = clipped.lastIndexOf(" ");
+  return `${clipped.slice(0, boundary >= Math.floor(maximum * 0.67) ? boundary : clipped.length).trimEnd()}…`;
+}
+
+function generatedEmbedTextLength(embeds) {
+  return embeds.reduce(
+    (total, embed) =>
+      total +
+      (embed.title?.length ?? 0) +
+      (embed.description?.length ?? 0) +
+      (embed.footer?.text?.length ?? 0) +
+      (embed.author?.name?.length ?? 0) +
+      (embed.fields ?? []).reduce((fieldTotal, field) => fieldTotal + field.name.length + field.value.length, 0),
+    0,
+  );
+}
+
+function validateGeneratedCompactMessage(message) {
+  if (
+    !Array.isArray(message.embeds) ||
+    message.embeds.length < 1 ||
+    message.embeds.length > 10 ||
+    generatedEmbedTextLength(message.embeds) > 6_000 ||
+    message.embeds.some(
+      (embed) =>
+        (embed.title?.length ?? 0) > 256 ||
+        (embed.description?.length ?? 0) > 4_096 ||
+        (embed.footer?.text?.length ?? 0) > 2_048 ||
+        !Array.isArray(embed.fields ?? []) ||
+        (embed.fields ?? []).length > 25 ||
+        (embed.fields ?? []).some(
+          (field) => !field.name || !field.value || field.name.length > 256 || field.value.length > 1_024,
+        ),
+    )
+  ) {
+    fail("INVALID_NOTES", "Canonical release notes cannot be rendered within Discord's compact embed limits.");
+  }
+}
+
+function buildCompactMessage({ version, releaseUrl, latestUrl, portableUrl, notes, images, marker }) {
+  const icons = ["✨", "🪟", "⚙️", "🧭"];
+  const sectionFields = releaseNoteSections(notes.description).map((section, index) => ({
+    name: truncateUtf16Safely(`${icons[index]} ${section.heading}`, 256),
+    value: section.bullets
+      .slice(0, 3)
+      .map((bullet) => `• ${compactSentence(bullet)}`)
+      .join("\n"),
+  }));
+  const compactMarker = marker === undefined ? null : COMPACT_MARKER_PATTERN.exec(marker);
+  if (marker !== undefined && !compactMarker) {
+    fail("INVALID_ARTIFACT", "The compact announcement marker is invalid.");
+  }
+  const footer = `Official SessionDock release • v${version}`;
+  const firstEmbed = {
+    color: EMBED_COLOR,
+    description: "A new SessionDock release is ready. Use the official links below, then see the highlights at a glance.",
+    fields: sectionFields,
+    footer: { text: compactMarker ? `${footer} • ID ${compactMarker[5]}` : footer },
+    title: `${PRODUCT} ${version} is available`,
+    url: releaseUrl,
+  };
+  if (images[0]) {
+    firstEmbed.image = { url: `attachment://${images[0].fileName}` };
+  }
+  const embeds = [firstEmbed];
+  for (const image of images.slice(1)) {
+    embeds.push({
+      color: EMBED_COLOR,
+      image: { url: `attachment://${image.fileName}` },
+    });
+  }
+  const message = {
+    components: [
+      {
+        components: [
+          {
+            label: "Download portable ZIP",
+            style: 5,
+            type: 2,
+            url: portableUrl,
+          },
+          {
+            label: "View latest release",
+            style: 5,
+            type: 2,
+            url: latestUrl,
+          },
+        ],
+        type: 1,
+      },
+    ],
+    embeds,
+  };
+  validateGeneratedCompactMessage(message);
+  return message;
+}
+
+function buildArtifact({ version, sourceCommit, notes, reviewedImages, schemaVersion = SCHEMA_VERSION }) {
+  if (![LEGACY_SCHEMA_VERSION, SCHEMA_VERSION].includes(schemaVersion)) {
+    fail("INVALID_ARTIFACT", "Announcement artifact uses an unsupported schema.");
+  }
+  if (schemaVersion === LEGACY_SCHEMA_VERSION && notes.description.length > 4_096) {
+    fail("INVALID_NOTES", "Schema-2 release notes exceed Discord's 4,096-character description limit.");
+  }
   const tag = `v${version}`;
   const releaseUrl = `https://github.com/${REPOSITORY}/releases/tag/${tag}`;
+  const latestUrl = `https://github.com/${REPOSITORY}/releases/latest`;
   const portableUrl = `https://github.com/${REPOSITORY}/releases/download/${tag}/SessionDock-win-x64-Portable.zip`;
   const images = reviewedImages?.images ?? [];
   const attachments = images.map((image) => ({
@@ -469,27 +653,40 @@ function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
     sourcePath: image.sourcePath,
   }));
 
-  const firstEmbed = {
-    color: EMBED_COLOR,
-    description: notes.description,
-    fields: [
-      {
-        name: "Download",
-        value: `[Windows x64 portable ZIP](${portableUrl})`,
-      },
-    ],
-    title: `${PRODUCT} ${version}`,
-    url: releaseUrl,
-  };
-  if (images[0]) {
-    firstEmbed.image = { url: `attachment://${images[0].fileName}` };
-  }
-  const embeds = [firstEmbed];
-  for (const image of images.slice(1)) {
-    embeds.push({
+  let baseMessage;
+  if (schemaVersion === LEGACY_SCHEMA_VERSION) {
+    const firstEmbed = {
       color: EMBED_COLOR,
-      image: { url: `attachment://${image.fileName}` },
+      description: notes.description,
+      fields: [
+        {
+          name: "Download",
+          value: `[Windows x64 portable ZIP](${portableUrl})`,
+        },
+      ],
+      title: `${PRODUCT} ${version}`,
       url: releaseUrl,
+    };
+    if (images[0]) {
+      firstEmbed.image = { url: `attachment://${images[0].fileName}` };
+    }
+    const embeds = [firstEmbed];
+    for (const image of images.slice(1)) {
+      embeds.push({
+        color: EMBED_COLOR,
+        image: { url: `attachment://${image.fileName}` },
+        url: releaseUrl,
+      });
+    }
+    baseMessage = { embeds };
+  } else {
+    baseMessage = buildCompactMessage({
+      version,
+      releaseUrl,
+      latestUrl,
+      portableUrl,
+      notes,
+      images,
     });
   }
 
@@ -513,6 +710,7 @@ function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
       : null,
   };
   const release = {
+    ...(schemaVersion === SCHEMA_VERSION ? { latestUrl } : {}),
     portableUrl,
     product: PRODUCT,
     repository: REPOSITORY,
@@ -525,19 +723,31 @@ function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
   const core = {
     attachments,
     kind: KIND,
-    message: { embeds },
+    message: baseMessage,
     release,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion,
     sources,
   };
   const announcementId = sha256(Buffer.from(canonicalJson(core), "utf8"));
-  const marker = `sdrel:v1:${REPOSITORY}:${tag}:${announcementId}`;
+  const marker = schemaVersion === LEGACY_SCHEMA_VERSION
+    ? `sdrel:v1:${REPOSITORY}:${tag}:${announcementId}`
+    : `sdrel:v2:${tag}:${announcementId.slice(0, 32)}`;
   const nonce = `sd-${Buffer.from(announcementId, "hex").subarray(0, 16).toString("base64url")}`;
-  const message = {
-    embeds: embeds.map((embed, index) =>
-      index === 0 ? { ...embed, footer: { text: marker } } : embed,
-    ),
-  };
+  const message = schemaVersion === LEGACY_SCHEMA_VERSION
+    ? {
+        embeds: baseMessage.embeds.map((embed, index) =>
+          index === 0 ? { ...embed, footer: { text: marker } } : embed,
+        ),
+      }
+    : buildCompactMessage({
+        version,
+        releaseUrl,
+        latestUrl,
+        portableUrl,
+        notes,
+        images,
+        marker,
+      });
   const payload = {
     announcement: {
       attachments,
@@ -548,7 +758,7 @@ function buildArtifact({ version, sourceCommit, notes, reviewedImages }) {
     },
     kind: KIND,
     release,
-    schemaVersion: SCHEMA_VERSION,
+    schemaVersion,
     sources,
   };
   return {
@@ -618,18 +828,31 @@ function validateReleaseShape(artifact, expected = {}) {
     ["announcement", "integrity", "kind", "release", "schemaVersion", "sources"],
     "Announcement artifact",
   );
-  if (artifact.schemaVersion !== SCHEMA_VERSION || artifact.kind !== KIND) {
+  if (![LEGACY_SCHEMA_VERSION, SCHEMA_VERSION].includes(artifact.schemaVersion) || artifact.kind !== KIND) {
     fail("INVALID_ARTIFACT", "Announcement artifact uses an unsupported schema.");
   }
   assertExactKeys(
     artifact.release,
-    ["portableUrl", "product", "repository", "sourceCommit", "sourceRef", "tag", "url", "version"],
+    [
+      ...(artifact.schemaVersion === SCHEMA_VERSION ? ["latestUrl"] : []),
+      "portableUrl",
+      "product",
+      "repository",
+      "sourceCommit",
+      "sourceRef",
+      "tag",
+      "url",
+      "version",
+    ],
     "Announcement release identity",
   );
   validateVersion(artifact.release.version);
   validateCommit(artifact.release.sourceCommit);
   const tag = `v${artifact.release.version}`;
   const expectedRelease = {
+    ...(artifact.schemaVersion === SCHEMA_VERSION
+      ? { latestUrl: `https://github.com/${REPOSITORY}/releases/latest` }
+      : {}),
     portableUrl: `https://github.com/${REPOSITORY}/releases/download/${tag}/SessionDock-win-x64-Portable.zip`,
     product: PRODUCT,
     repository: REPOSITORY,
@@ -739,6 +962,7 @@ export function readAnnouncementBundle({ artifactDirectory, expectedTag, expecte
     sourceCommit: artifact.release.sourceCommit,
     notes,
     reviewedImages,
+    schemaVersion: artifact.schemaVersion,
   });
   const expectedText = prettyJson(expectedArtifact);
   if (artifactText !== expectedText) {
@@ -784,7 +1008,15 @@ export function readAnnouncementBundle({ artifactDirectory, expectedTag, expecte
   };
 }
 
-export function generateAnnouncement({ root = process.cwd(), version, sourceCommit, notesPath, imagesPath, outputPath }) {
+export function generateAnnouncement({
+  root = process.cwd(),
+  version,
+  sourceCommit,
+  notesPath,
+  imagesPath,
+  outputPath,
+  schemaVersion = SCHEMA_VERSION,
+}) {
   validateVersion(version);
   validateCommit(sourceCommit);
   const expectedNotesPath = `SessionDock/ReleaseNotes/${version}.en-US.md`;
@@ -802,7 +1034,7 @@ export function generateAnnouncement({ root = process.cwd(), version, sourceComm
   const reviewedImages = imagesPath
     ? loadReviewedImagesFromRepository(root, imagesPath, version)
     : null;
-  const artifact = buildArtifact({ version, sourceCommit, notes, reviewedImages });
+  const artifact = buildArtifact({ version, sourceCommit, notes, reviewedImages, schemaVersion });
   const artifactText = prettyJson(artifact);
   const artifactDigest = sha256(Buffer.from(artifactText, "utf8"));
   const parent = path.dirname(output);
@@ -879,7 +1111,13 @@ async function cancelResponseReader(reader) {
 
 async function readBoundedResponseBytes(
   response,
-  { maxBytes, code = "DISCORD_RESPONSE", description = "Discord response", ambiguous = false },
+  {
+    maxBytes,
+    code = "DISCORD_RESPONSE",
+    limitCode = code,
+    description = "Discord response",
+    ambiguous = false,
+  },
 ) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
     fail(code, `${description} has an invalid byte limit.`, { ambiguous });
@@ -890,11 +1128,11 @@ async function readBoundedResponseBytes(
     const header = response?.headers?.get("content-length");
     if (header !== null) {
       if (!/^(?:0|[1-9]\d*)$/u.test(header)) {
-        fail(code, `${description} has an invalid Content-Length.`, { ambiguous });
+        fail(limitCode, `${description} has an invalid Content-Length.`, { ambiguous });
       }
       declaredLength = Number(header);
       if (!Number.isSafeInteger(declaredLength) || declaredLength > maxBytes) {
-        fail(code, `${description} exceeds the permitted byte limit.`, { ambiguous });
+        fail(limitCode, `${description} exceeds the permitted byte limit.`, { ambiguous });
       }
     }
   } catch (error) {
@@ -941,7 +1179,7 @@ async function readBoundedResponseBytes(
     }
     if (chunk.value.byteLength > maxBytes - totalBytes) {
       await cancelResponseReader(reader);
-      fail(code, `${description} exceeds the permitted byte limit.`, { ambiguous });
+      fail(limitCode, `${description} exceeds the permitted byte limit.`, { ambiguous });
     }
     chunks.push(Buffer.from(chunk.value));
     totalBytes += chunk.value.byteLength;
@@ -1087,7 +1325,7 @@ async function fetchAttachment({ fetchImpl, url, expectedBytes, expectedDigest, 
   let response;
   const remainingMilliseconds = deadline - nowImpl();
   if (!Number.isFinite(remainingMilliseconds) || remainingMilliseconds <= 0) {
-    fail("DISCORD_VERIFICATION", "Discord attachment verification exceeded the bounded operation deadline.", {
+    fail("DISCORD_ATTACHMENT_READ", "Discord attachment verification exceeded the bounded operation deadline.", {
       ambiguous: true,
     });
   }
@@ -1099,14 +1337,15 @@ async function fetchAttachment({ fetchImpl, url, expectedBytes, expectedDigest, 
       signal: AbortSignal.timeout(Math.max(1, Math.min(20_000, Math.floor(remainingMilliseconds)))),
     });
   } catch {
-    fail("DISCORD_VERIFICATION", "Discord attachment verification could not complete.", { ambiguous: true });
+    fail("DISCORD_ATTACHMENT_READ", "Discord attachment verification could not complete.", { ambiguous: true });
   }
   if (!response.ok) {
-    fail("DISCORD_VERIFICATION", "Discord attachment verification was rejected.", { ambiguous: true });
+    fail("DISCORD_ATTACHMENT_READ", "Discord attachment verification was rejected.", { ambiguous: true });
   }
   const bytes = await readBoundedResponseBytes(response, {
     maxBytes: Math.min(expectedBytes, MAX_IMAGE_BYTES),
-    code: "DISCORD_VERIFICATION",
+    code: "DISCORD_ATTACHMENT_READ",
+    limitCode: "DISCORD_VERIFICATION",
     description: "Discord attachment",
     ambiguous: true,
   });
@@ -1115,17 +1354,81 @@ async function fetchAttachment({ fetchImpl, url, expectedBytes, expectedDigest, 
   }
 }
 
+function parseReleaseMarker(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const legacy = LEGACY_MARKER_PATTERN.exec(value);
+  if (legacy) {
+    return { marker: value, tag: legacy[1] };
+  }
+  const compact = COMPACT_MARKER_PATTERN.exec(value);
+  if (compact) {
+    return { marker: value, tag: compact[1] };
+  }
+  return null;
+}
+
 function markerFromMessage(message) {
   if (!Array.isArray(message?.embeds)) {
     return null;
   }
-  const markers = message.embeds
-    .map((embed) => embed?.footer?.text)
-    .filter((text) => typeof text === "string" && MARKER_PATTERN.test(text));
-  if (markers.length > 1) {
+  const markers = new Set();
+  for (const embed of message.embeds) {
+    const footerText = embed?.footer?.text;
+    const directFooterMarker = parseReleaseMarker(footerText);
+    if (directFooterMarker) {
+      markers.add(directFooterMarker.marker);
+    } else if (typeof footerText === "string") {
+      const compactFooter = COMPACT_FOOTER_PATTERN.exec(footerText);
+      if (compactFooter) {
+        markers.add(`sdrel:v2:${compactFooter[1]}:${compactFooter[5]}`);
+      }
+    }
+    if (typeof embed?.url === "string") {
+      try {
+        const rawFragment = new URL(embed.url).hash.slice(1);
+        const fragment = decodeURIComponent(rawFragment);
+        const fragmentMarker = parseReleaseMarker(fragment);
+        if (fragmentMarker) {
+          markers.add(fragmentMarker.marker);
+        }
+      } catch {
+        // Malformed URLs are rejected by exact presentation verification.
+      }
+    }
+  }
+  if (markers.size > 1) {
     fail("DISCORD_CONFLICT", "A Discord message contains multiple release markers.");
   }
-  return markers[0] ?? null;
+  return markers.values().next().value ?? null;
+}
+
+function releaseTagFromMessage(message) {
+  if (!Array.isArray(message?.embeds)) {
+    return null;
+  }
+  const tags = new Set();
+  for (const embed of message.embeds) {
+    if (typeof embed?.url !== "string") {
+      continue;
+    }
+    try {
+      const parsed = new URL(embed.url);
+      const pathMatch = /^\/Makmatoe\/SessionDock\/releases\/tag\/(v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))\/?$/u.exec(
+        parsed.pathname,
+      );
+      if (parsed.origin === "https://github.com" && parsed.search === "" && pathMatch) {
+        tags.add(pathMatch[1]);
+      }
+    } catch {
+      // Malformed URLs are rejected by exact presentation verification.
+    }
+  }
+  if (tags.size > 1) {
+    fail("DISCORD_CONFLICT", "A Discord message links to multiple SessionDock release tags.");
+  }
+  return tags.values().next().value ?? null;
 }
 
 function compareVersions(left, right) {
@@ -1199,74 +1502,125 @@ function isAbsentOrEmptyArray(value) {
   return value === undefined || (Array.isArray(value) && value.length === 0);
 }
 
+function validServerComponentId(value) {
+  return value === undefined || (Number.isSafeInteger(value) && value >= 0);
+}
+
+function validateMessageComponents(actual, expected) {
+  const expectedRows = expected ?? [];
+  if (!Array.isArray(expectedRows)) {
+    fail("DISCORD_VERIFICATION", "The expected Discord component layout is invalid.", { ambiguous: true });
+  }
+  if (expectedRows.length === 0) {
+    if (!isAbsentOrEmptyArray(actual)) {
+      fail("DISCORD_VERIFICATION", "Discord changed the announcement component layout.", { ambiguous: true });
+    }
+    return;
+  }
+  if (!Array.isArray(actual) || actual.length !== expectedRows.length) {
+    fail("DISCORD_VERIFICATION", "Discord changed the announcement component layout.", { ambiguous: true });
+  }
+  for (let rowIndex = 0; rowIndex < expectedRows.length; rowIndex += 1) {
+    const actualRow = actual[rowIndex];
+    const expectedRow = expectedRows[rowIndex];
+    if (
+      !isPlainObject(actualRow) ||
+      actualRow.type !== 1 ||
+      expectedRow?.type !== 1 ||
+      !validServerComponentId(actualRow.id) ||
+      Object.keys(actualRow).some((key) => !["components", "id", "type"].includes(key)) ||
+      !Array.isArray(actualRow.components) ||
+      !Array.isArray(expectedRow.components) ||
+      actualRow.components.length !== expectedRow.components.length
+    ) {
+      fail("DISCORD_VERIFICATION", "Discord changed an announcement action row.", { ambiguous: true });
+    }
+    for (let buttonIndex = 0; buttonIndex < expectedRow.components.length; buttonIndex += 1) {
+      const actualButton = actualRow.components[buttonIndex];
+      const expectedButton = expectedRow.components[buttonIndex];
+      if (
+        !isPlainObject(actualButton) ||
+        Object.keys(actualButton).some(
+          (key) => !["disabled", "emoji", "id", "label", "style", "type", "url"].includes(key),
+        ) ||
+        actualButton.type !== 2 ||
+        actualButton.style !== 5 ||
+        actualButton.label !== expectedButton?.label ||
+        actualButton.url !== expectedButton?.url ||
+        expectedButton?.type !== 2 ||
+        expectedButton?.style !== 5 ||
+        !validServerComponentId(actualButton.id) ||
+        (actualButton.disabled !== undefined && actualButton.disabled !== false) ||
+        (actualButton.emoji !== undefined && actualButton.emoji !== null)
+      ) {
+        fail("DISCORD_VERIFICATION", "Discord changed an announcement link button.", { ambiguous: true });
+      }
+    }
+  }
+}
+
+function collectDiscordMessageMismatches({ message, expectedMessageId, bundle, botId, channelId, roleId }) {
+  const mismatches = [];
+  const add = (condition, code) => {
+    if (condition) mismatches.push(code);
+  };
+  add(!isPlainObject(message), "message.object");
+  if (!isPlainObject(message)) {
+    return mismatches;
+  }
+  add(!SNOWFLAKE_PATTERN.test(expectedMessageId ?? "") || message.id !== expectedMessageId, "message.id");
+  add(message.channel_id !== channelId, "message.channel");
+  add(message.author?.id !== botId, "message.author");
+  add(message.author?.bot !== true, "message.author-bot");
+  add(message.webhook_id !== undefined, "message.webhook");
+  add(message.content !== `<@&${roleId}>`, "message.content");
+  add(message.type !== 0, "message.type");
+  add(message.tts !== false, "message.tts");
+  add(message.edited_timestamp !== null, "message.edited");
+  add(message.pinned !== false, "message.pinned");
+  add(message.mention_everyone !== false, "message.mention-everyone");
+  add(!Array.isArray(message.mentions) || message.mentions.length !== 0, "message.mentions");
+  add(
+    !Array.isArray(message.mention_roles) ||
+      message.mention_roles.length !== 1 ||
+      message.mention_roles[0] !== roleId,
+    "message.mention-roles",
+  );
+  add(message.flags !== undefined && message.flags !== 0, "message.flags");
+  add(!isAbsentOrEmptyArray(message.sticker_items), "message.sticker-items");
+  add(!isAbsentOrEmptyArray(message.stickers), "message.stickers");
+  for (const key of OPTIONAL_MESSAGE_FIELDS) {
+    add(Object.hasOwn(message, key), `message.optional.${key.replaceAll("_", "-")}`);
+  }
+  try {
+    validateMessageComponents(message.components, bundle.artifact.announcement.message.components);
+  } catch (error) {
+    if (!(error instanceof ReleaseAutomationError)) throw error;
+    mismatches.push("message.components");
+  }
+  return [...new Set(mismatches)].sort();
+}
+
 function reviewedAttachmentDescription(bundle) {
   return `${PRODUCT} ${bundle.artifact.release.version} reviewed release image`;
 }
 
-async function verifyDiscordMessage({
+async function verifyDiscordPresentation({
   message,
-  expectedMessageId,
   bundle,
-  botId,
-  channelId,
-  roleId,
   fetchImpl,
   verifyAttachments,
   deadline,
   nowImpl,
 }) {
   const expected = bundle.artifact.announcement;
-  if (
-    !isPlainObject(message) ||
-    !SNOWFLAKE_PATTERN.test(expectedMessageId ?? "") ||
-    message.id !== expectedMessageId ||
-    message.channel_id !== channelId ||
-    message.author?.id !== botId ||
-    message.author?.bot !== true ||
-    message.webhook_id !== undefined ||
-    message.content !== `<@&${roleId}>` ||
-    message.type !== 0 ||
-    message.tts !== false ||
-    message.edited_timestamp !== null ||
-    message.pinned !== false ||
-    message.mention_everyone !== false ||
-    !Array.isArray(message.mentions) ||
-    message.mentions.length !== 0 ||
-    !Array.isArray(message.mention_roles) ||
-    message.mention_roles.length !== 1 ||
-    message.mention_roles[0] !== roleId ||
-    (message.flags !== undefined && message.flags !== 0) ||
-    !isAbsentOrEmptyArray(message.components) ||
-    !isAbsentOrEmptyArray(message.sticker_items) ||
-    !isAbsentOrEmptyArray(message.stickers) ||
-    [
-      "activity",
-      "application",
-      "application_id",
-      "call",
-      "interaction",
-      "interaction_metadata",
-      "mention_channels",
-      "message_reference",
-      "message_snapshots",
-      "poll",
-      "position",
-      "referenced_message",
-      "resolved",
-      "role_subscription_data",
-      "shared_client_theme",
-      "thread",
-    ].some((key) => Object.hasOwn(message, key))
-  ) {
-    fail("DISCORD_VERIFICATION", "Discord message identity or presentation verification failed.", { ambiguous: true });
-  }
-  if (message.nonce !== undefined && String(message.nonce) !== expected.nonce) {
+  if (message?.nonce !== undefined && String(message.nonce) !== expected.nonce) {
     fail("DISCORD_VERIFICATION", "Discord message nonce verification failed.", { ambiguous: true });
   }
-  if (!Array.isArray(message.attachments) || message.attachments.length !== expected.attachments.length) {
+  if (!Array.isArray(message?.attachments) || message.attachments.length !== expected.attachments.length) {
     fail("DISCORD_VERIFICATION", "Discord message attachment count verification failed.", { ambiguous: true });
   }
-  if (!Array.isArray(message.embeds) || message.embeds.length !== expected.message.embeds.length) {
+  if (!Array.isArray(message?.embeds) || message.embeds.length !== expected.message.embeds.length) {
     fail("DISCORD_VERIFICATION", "Discord message embed count verification failed.", { ambiguous: true });
   }
   for (let index = 0; index < expected.message.embeds.length; index += 1) {
@@ -1300,10 +1654,36 @@ async function verifyDiscordMessage({
       });
     }
   }
+}
+
+async function verifyDiscordMessage({
+  message,
+  expectedMessageId,
+  bundle,
+  botId,
+  channelId,
+  roleId,
+  fetchImpl,
+  verifyAttachments,
+  deadline,
+  nowImpl,
+}) {
+  const identityMismatches = collectDiscordMessageMismatches({
+    message,
+    expectedMessageId,
+    bundle,
+    botId,
+    channelId,
+    roleId,
+  });
+  if (identityMismatches.length > 0) {
+    fail("DISCORD_VERIFICATION", "Discord message identity or presentation verification failed.", { ambiguous: true });
+  }
+  await verifyDiscordPresentation({ message, bundle, fetchImpl, verifyAttachments, deadline, nowImpl });
   return message;
 }
 
-async function scanHistory({ fetchImpl, sleepImpl, nowImpl, deadline, token, channel, botId, roleId, bundle }) {
+async function locateAnnouncement({ fetchImpl, sleepImpl, nowImpl, deadline, token, channel, botId, bundle }) {
   let before;
   const exact = [];
   for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
@@ -1327,14 +1707,18 @@ async function scanHistory({ fetchImpl, sleepImpl, nowImpl, deadline, token, cha
         continue;
       }
       const marker = markerFromMessage(message);
-      if (!marker) {
+      const linkedTag = releaseTagFromMessage(message);
+      if (!marker && !linkedTag) {
         continue;
       }
-      const match = MARKER_PATTERN.exec(marker);
-      const tag = match[1];
+      const parsedMarker = parseReleaseMarker(marker);
+      if (parsedMarker && linkedTag && parsedMarker.tag !== linkedTag) {
+        fail("DISCORD_CONFLICT", "A Discord release marker and immutable release link disagree.");
+      }
+      const tag = parsedMarker?.tag ?? linkedTag;
       const version = tag.slice(1);
       if (tag === bundle.artifact.release.tag && marker !== bundle.artifact.announcement.marker) {
-        fail("DISCORD_CONFLICT", "Bota already posted this release tag from different immutable inputs.");
+        fail("DISCORD_CONFLICT", "Bota already posted or linked this release tag from different immutable inputs.");
       }
       if (compareVersions(version, bundle.artifact.release.version) > 0) {
         fail("DISCORD_CONFLICT", "A newer SessionDock release is already present in the configured channel.");
@@ -1347,20 +1731,6 @@ async function scanHistory({ fetchImpl, sleepImpl, nowImpl, deadline, token, cha
       if (exact.length > 1) {
         fail("DISCORD_CONFLICT", "Bota has more than one matching release announcement.");
       }
-      if (exact.length === 1) {
-        await verifyDiscordMessage({
-          message: exact[0],
-          expectedMessageId: exact[0].id,
-          bundle,
-          botId,
-          channelId: channel.id,
-          roleId,
-          fetchImpl,
-          verifyAttachments: true,
-          deadline,
-          nowImpl,
-        });
-      }
       return exact[0] ?? null;
     }
     const lastId = messages.at(-1)?.id;
@@ -1370,6 +1740,25 @@ async function scanHistory({ fetchImpl, sleepImpl, nowImpl, deadline, token, cha
     before = lastId;
   }
   fail("DISCORD_HISTORY", "Discord channel history exceeded the safe reconciliation window.");
+}
+
+async function scanHistory(options) {
+  const existing = await locateAnnouncement(options);
+  if (existing) {
+    await verifyDiscordMessage({
+      message: existing,
+      expectedMessageId: existing.id,
+      bundle: options.bundle,
+      botId: options.botId,
+      channelId: options.channel.id,
+      roleId: options.roleId,
+      fetchImpl: options.fetchImpl,
+      verifyAttachments: true,
+      deadline: options.deadline,
+      nowImpl: options.nowImpl,
+    });
+  }
+  return existing;
 }
 
 function parsePermissionBits(value, label) {
@@ -1493,6 +1882,7 @@ async function inspectDeliveryTarget({
   nowImpl,
   deadline,
   rejectExisting,
+  verifyExisting = true,
 }) {
   const config = loadDeliveryConfig(env);
   const user = await discordRequest({
@@ -1547,7 +1937,7 @@ async function inspectDeliveryTarget({
   });
   assertBotChannelPermissions({ bundle, channel, roles, member, botId: config.botId });
 
-  const existing = await scanHistory({
+  const existing = await (verifyExisting ? scanHistory : locateAnnouncement)({
     fetchImpl,
     sleepImpl,
     nowImpl,
@@ -1562,6 +1952,90 @@ async function inspectDeliveryTarget({
     fail("DISCORD_EARLY_DISCLOSURE", "The release announcement already exists before GitHub publication.");
   }
   return { channel, config, existing };
+}
+
+export async function diagnoseExistingAnnouncement({
+  bundle,
+  env = process.env,
+  fetchImpl = globalThis.fetch,
+  sleepImpl = delay,
+  nowImpl = () => performance.now(),
+}) {
+  if (!bundle?.artifact || typeof fetchImpl !== "function") {
+    fail("INVALID_DELIVERY", "A verified announcement bundle and fetch implementation are required.");
+  }
+  const deadline = nowImpl() + MAX_DISCORD_OPERATION_MILLISECONDS;
+  const { channel, config, existing } = await inspectDeliveryTarget({
+    bundle,
+    env,
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    deadline,
+    rejectExisting: false,
+    verifyExisting: false,
+  });
+  if (!existing) {
+    return {
+      announcementId: bundle.artifact.announcement.id,
+      artifactSha256: bundle.artifactDigest,
+      kind: DIAGNOSTIC_KIND,
+      mismatchCodes: ["message.missing"],
+      release: {
+        sourceCommit: bundle.artifact.release.sourceCommit,
+        tag: bundle.artifact.release.tag,
+      },
+      schemaVersion: 1,
+      status: "not-found",
+      verified: false,
+    };
+  }
+  const current = await discordRequest({
+    fetchImpl,
+    sleepImpl,
+    nowImpl,
+    deadline,
+    token: config.token,
+    url: `${DISCORD_API}/channels/${channel.id}/messages/${existing.id}`,
+  });
+  const mismatchCodes = collectDiscordMessageMismatches({
+    message: current,
+    expectedMessageId: existing.id,
+    bundle,
+    botId: config.botId,
+    channelId: channel.id,
+    roleId: config.roleId,
+  });
+  try {
+    await verifyDiscordPresentation({
+      message: current,
+      bundle,
+      fetchImpl,
+      verifyAttachments: true,
+      deadline,
+      nowImpl,
+    });
+  } catch (error) {
+    if (error instanceof ReleaseAutomationError && error.code === "DISCORD_VERIFICATION") {
+      mismatchCodes.push("message.presentation");
+    } else {
+      throw error;
+    }
+  }
+  const uniqueMismatchCodes = [...new Set(mismatchCodes)].sort();
+  return {
+    announcementId: bundle.artifact.announcement.id,
+    artifactSha256: bundle.artifactDigest,
+    kind: DIAGNOSTIC_KIND,
+    mismatchCodes: uniqueMismatchCodes,
+    release: {
+      sourceCommit: bundle.artifact.release.sourceCommit,
+      tag: bundle.artifact.release.tag,
+    },
+    schemaVersion: 1,
+    status: uniqueMismatchCodes.length === 0 ? "verified" : "mismatch",
+    verified: uniqueMismatchCodes.length === 0,
+  };
 }
 
 export async function preflightAnnouncement({
@@ -1603,7 +2077,7 @@ function buildDiscordPayload(bundle, roleId) {
       users: [],
     },
     content: `<@&${roleId}>`,
-    embeds: announcement.message.embeds,
+    ...announcement.message,
     enforce_nonce: true,
     nonce: announcement.nonce,
   };
@@ -1846,8 +2320,8 @@ function receiptBase(bundle) {
   };
 }
 
-function reserveReceipt(receiptPath, bundle) {
-  const relative = normalizeRelativePath(receiptPath, "Receipt path");
+function reserveOutput(outputPath, initialValue, { label, reservationCode, finalizationCode }) {
+  const relative = normalizeRelativePath(outputPath, `${label} path`);
   const root = realpathSync(process.cwd());
   const resolved = path.resolve(root, ...relative.split("/"));
   const parent = path.dirname(resolved);
@@ -1862,9 +2336,7 @@ function reserveReceipt(receiptPath, bundle) {
     writeFileSync(
       descriptor,
       prettyJson({
-        ...receiptBase(bundle),
-        status: "reserved",
-        verified: false,
+        ...initialValue,
       }),
     );
     fsyncSync(descriptor);
@@ -1874,7 +2346,7 @@ function reserveReceipt(receiptPath, bundle) {
     if (descriptor !== undefined) {
       closeSync(descriptor);
     }
-    fail("RECEIPT_RESERVATION", "The delivery receipt could not be reserved before network access.");
+    fail(reservationCode, `The ${label} could not be reserved before network access.`);
   }
   return {
     close() {},
@@ -1898,12 +2370,52 @@ function reserveReceipt(receiptPath, bundle) {
         if (temporaryCreated && existsSync(temporary)) {
           rmSync(temporary, { force: true });
         }
-        fail("RECEIPT_FINALIZATION", "The delivery receipt could not be finalized.", {
+        fail(finalizationCode, `The ${label} could not be finalized.`, {
           ambiguous: true,
         });
       }
     },
   };
+}
+
+function reserveReceipt(receiptPath, bundle) {
+  return reserveOutput(
+    receiptPath,
+    {
+      ...receiptBase(bundle),
+      status: "reserved",
+      verified: false,
+    },
+    {
+      label: "delivery receipt",
+      reservationCode: "RECEIPT_RESERVATION",
+      finalizationCode: "RECEIPT_FINALIZATION",
+    },
+  );
+}
+
+function reserveDiagnostic(reportPath, bundle) {
+  return reserveOutput(
+    reportPath,
+    {
+      announcementId: bundle.artifact.announcement.id,
+      artifactSha256: bundle.artifactDigest,
+      kind: DIAGNOSTIC_KIND,
+      mismatchCodes: ["message.missing"],
+      release: {
+        sourceCommit: bundle.artifact.release.sourceCommit,
+        tag: bundle.artifact.release.tag,
+      },
+      schemaVersion: 1,
+      status: "reserved",
+      verified: false,
+    },
+    {
+      label: "diagnostic report",
+      reservationCode: "DIAGNOSTIC_RESERVATION",
+      finalizationCode: "DIAGNOSTIC_FINALIZATION",
+    },
+  );
 }
 
 async function runCli(argv) {
@@ -1921,15 +2433,21 @@ async function runCli(argv) {
     console.log(`Generated Discord announcement ${result.artifact.announcement.id}.`);
     return;
   }
-  if (command === "verify" || command === "preflight" || command === "post") {
+  if (command === "verify" || command === "preflight" || command === "post" || command === "diagnose-existing") {
     const allowed = ["--artifact-dir", "--expected-tag", "--expected-ref", "--expected-commit"];
     if (command === "post") {
       allowed.push("--receipt");
+    }
+    if (command === "diagnose-existing") {
+      allowed.push("--report");
     }
     const args = parseArguments(rest, allowed);
     const required = ["--artifact-dir", "--expected-tag", "--expected-ref", "--expected-commit"];
     if (command === "post") {
       required.push("--receipt");
+    }
+    if (command === "diagnose-existing") {
+      required.push("--report");
     }
     requireArguments(args, required);
     const artifactDirectory = resolveInside(process.cwd(), args["--artifact-dir"], "Artifact directory");
@@ -1946,6 +2464,38 @@ async function runCli(argv) {
     if (command === "preflight") {
       await preflightAnnouncement({ bundle });
       console.log(`Discord announcement preflight is ready for ${bundle.artifact.release.tag}.`);
+      return;
+    }
+    if (command === "diagnose-existing") {
+      const report = reserveDiagnostic(args["--report"], bundle);
+      let diagnostic;
+      try {
+        diagnostic = await diagnoseExistingAnnouncement({ bundle });
+        report.finalize(diagnostic);
+      } catch (error) {
+        try {
+          report.finalize({
+            announcementId: bundle.artifact.announcement.id,
+            artifactSha256: bundle.artifactDigest,
+            errorCode: error instanceof ReleaseAutomationError ? error.code : "UNEXPECTED_FAILURE",
+            kind: DIAGNOSTIC_KIND,
+            release: {
+              sourceCommit: bundle.artifact.release.sourceCommit,
+              tag: bundle.artifact.release.tag,
+            },
+            schemaVersion: 1,
+            status: "failed",
+            verified: false,
+          });
+        } catch {
+          // Preserve the original safe diagnostic classification.
+        } finally {
+          report.close();
+        }
+        throw error;
+      }
+      report.close();
+      console.log(`Discord announcement diagnostic completed with ${diagnostic.mismatchCodes.length} mismatch code(s).`);
       return;
     }
 
@@ -1975,7 +2525,7 @@ async function runCli(argv) {
     console.log(`Discord announcement ${result.status}; message ${result.messageId} verified.`);
     return;
   }
-  fail("INVALID_ARGUMENT", "Command must be 'generate', 'verify', 'preflight', or 'post'.");
+  fail("INVALID_ARGUMENT", "Command must be 'generate', 'verify', 'preflight', 'diagnose-existing', or 'post'.");
 }
 
 const isMain = process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
