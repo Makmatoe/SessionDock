@@ -22,14 +22,18 @@ the integrated SessionDock path.
 > The integrated source described here is not a release announcement. A
 > published release contains this behavior only when its own notes say so.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. Download nothing while this hold is active.
-> A future reviewed release must explicitly state that it lifts the hold and
-> has passed separate laptop validation before any public download is approved.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the documented incident and
+> distribution-hold procedure again.
 
-## Use one SessionDock build after the hold is lifted
+## Use one SessionDock build
 
-After a reviewed release explicitly lifts the hold:
+To use the current approved release:
 
 1. Open only the canonical `Makmatoe/SessionDock` GitHub Releases page.
 2. Download `SessionDock-win-x64-Portable.zip` and its matching
@@ -45,7 +49,7 @@ is always a hard stop. A matching checksum or attestation never overrides a
 detection. Do not restore, allow, exclude, unblock, or bypass the file.
 
 Use the
-[root download guide](../../README.md#download-and-launch-after-the-hold-is-lifted)
+[root download guide](../../README.md#download-and-launch)
 for the complete portable, update, and removal workflow.
 
 ## Generic local API hook

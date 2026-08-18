@@ -14,16 +14,19 @@ clients, arrange their windows, and restore a saved session template.
 > target. It is not a release announcement. Use a published release only when
 > its own notes explicitly include that behavior.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. Download nothing while this hold is active.
-> A future reviewed release must explicitly state that it lifts the hold and
-> has passed separate laptop validation before any public download is approved.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the documented incident and
+> distribution-hold procedure again.
 
-## Download and launch after the hold is lifted
+## Download and launch
 
 SessionDock is permanently distributed as a transparent, unsigned portable
-ZIP. There is no Setup executable. After a reviewed release explicitly lifts
-the hold:
+ZIP. There is no Setup executable. To use the current approved release:
 
 1. Install Roblox Player on a Windows x64 PC.
 2. Open only the canonical
@@ -41,8 +44,8 @@ the hold:
 
 Because SessionDock is unsigned, Windows may show **Unknown publisher** or a
 reputation warning. That is expected of an unsigned app, but it is not a safety
-verdict: proceed through a normal warning only after the hold is explicitly
-lifted, the GitHub source and hash match, and Windows reports no named threat.
+verdict: proceed through a normal warning only after confirming the release is
+approved, the GitHub source and hash match, and Windows reports no named threat.
 A named detection such as `Trojan:Win32/Wacatac.B!ml` is always a hard stop.
 Checksums and attestations identify bytes; they never override a malware
 detection. Never disable Defender, restore a detected file, add an exclusion,
@@ -102,17 +105,18 @@ Use this recovery order:
 
 1. Delete the incomplete download; do not keep retrying an old standalone ZIP
    or script.
-2. Check the canonical release notes. Download nothing while the distribution
-   hold is active.
-3. After an approved release explicitly lifts the hold, download only its
-   portable ZIP from GitHub Releases and verify its SHA-256.
+2. Check the canonical release feed and release notes. If a future incident has
+   placed distribution on hold, download nothing until a reviewed release
+   explicitly lifts that hold.
+3. When no hold is active, download only the approved portable ZIP from GitHub
+   Releases and verify its SHA-256.
 4. Open **Windows Security > Virus & threat protection > Protection history**
    and read the exact event, if one exists.
 5. On a managed laptop, ask the administrator to review the canonical URL,
    hash, and policy. Do not disable antivirus, SmartScreen, execution policy,
    or application control.
-6. If no reviewed release has lifted the hold, do not invent an alternate
-   download path or substitute a separate HandleScope package.
+6. Never invent an alternate download path or substitute a separate
+   HandleScope package.
 
 ## First run
 
@@ -536,7 +540,8 @@ implementation/lock files at commit
 build definition, and the root MIT license. Follow
 [Releasing](docs/RELEASING.md) only after code, security, provenance,
 accessibility, documentation, and end-to-end tests all pass; none of those
-gates overrides the live distribution hold.
+gates overrides a named malware detection or public byte mismatch. Either
+event immediately starts a new distribution hold.
 
 ## More documentation
 

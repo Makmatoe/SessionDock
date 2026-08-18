@@ -9,10 +9,14 @@ This directory contains the Windows WPF application. Start with the
 > execution-policy bypass. The current integrated source is not a release
 > announcement.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. Download nothing while this hold is active.
-> A future reviewed release must explicitly state that it lifts the hold and
-> has passed separate laptop validation before any public download is approved.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the documented incident and
+> distribution-hold procedure again.
 
 ## Run from source
 
@@ -261,10 +265,10 @@ matched account order, and pinned public favorites. See
 
 ## Integrated distribution boundary
 
-After a reviewed release explicitly lifts the hold, users download only the
-transparent `SessionDock-win-x64-Portable.zip` from the canonical GitHub
-release and extract it into a new folder. HandleScope and ExactWheel must remain
-inside the reviewed SessionDock inventory. Do not add:
+For an approved public release, users download only the transparent
+`SessionDock-win-x64-Portable.zip` from the canonical GitHub release and
+extract it into a new folder. HandleScope and ExactWheel must remain inside the
+reviewed SessionDock inventory. Do not add:
 
 - a separate HandleScope or ExactWheel package;
 - a PowerShell install or execution-policy bypass step;

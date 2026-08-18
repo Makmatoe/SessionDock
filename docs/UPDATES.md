@@ -5,15 +5,18 @@ New users download one transparent ZIP from the canonical GitHub release. There
 is no SessionDock setup executable and no separate HandleScope or ExactWheel
 download.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. No SessionDock download is approved while
-> this hold is active. The flow below applies only after a reviewed replacement
-> explicitly lifts the hold and passes separate laptop validation before
-> publication.
+> **Current approved release:** SessionDock 3.1.2 completed the protected
+> release, separate-laptop, publication, and anonymous public-download gates.
+> Its official unsigned `SessionDock-win-x64-Portable.zip` and matching
+> `SHA256SUMS.txt` are available from the
+> [canonical v3.1.2 GitHub release](https://github.com/Makmatoe/SessionDock/releases/tag/v3.1.2).
+> There is no active distribution hold. Any future named malware detection or
+> public byte mismatch immediately starts the documented incident and
+> distribution-hold procedure again.
 
 ## First download
 
-After a reviewed release explicitly lifts the hold:
+To install the current approved release:
 
 1. Open the canonical
    [SessionDock Releases page](https://github.com/Makmatoe/SessionDock/releases).
@@ -110,7 +113,7 @@ directory that older builds used for account settings and browser profiles.
 Preserve the old data until the current portable copy proves migration is
 complete.
 
-After a reviewed release explicitly lifts the distribution hold:
+To move safely to the current approved release:
 
 1. Close every Roblox One and SessionDock window. Do not uninstall either app
    and do not delete `%LOCALAPPDATA%\RobloxOne`,

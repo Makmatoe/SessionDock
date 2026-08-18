@@ -9,10 +9,9 @@ your job; they are deliberately not interchangeable.
 > message cannot turn an untested or provenance-blocked source tree into a
 > release.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record. Do not stage or announce a replacement until
-> its reviewed draft has passed the complete release gate and separate laptop
-> validation, and the publication approval explicitly lifts the hold.
+> **Current release state:** SessionDock 3.1.2 completed the protected release,
+> separate-laptop, publication, and anonymous-download gates. A future named
+> antivirus detection still starts the documented distribution hold again.
 
 | Path | Audience | What it does | Official release authority |
 | --- | --- | --- | --- |
@@ -36,13 +35,27 @@ the announcement from
 `SessionDock/ReleaseNotes/<version>.en-US.md`; there is no announcement form,
 preview confirmation, or assistant-operated posting step.
 
-The announcement's **Download** field identifies the
-**Windows x64 portable ZIP** and links only to the canonical
-`SessionDock-win-x64-Portable.zip` release asset. The protected path does not
-advertise or accept a Setup executable. Announcement schema 2 makes that
-portable-only identity mandatory; legacy schema-1 artifacts containing
-`installerUrl` or `SessionDock-win-x64-Setup.exe` are rejected rather than
-silently upgraded.
+The announcement is deliberately scannable: one short introduction, up to four
+compact feature sections with at most three short bullets each, a **Download
+portable ZIP** button, and a **View latest release** button. The title links to
+the immutable version page, the first button links directly to that version's
+canonical `SessionDock-win-x64-Portable.zip`, and the second links to GitHub's
+current latest release. Bota never advertises a Setup executable or attaches an
+application binary.
+
+Announcement schema 3 keeps the title URL clean. Its readable footer contains
+the version and a stable short release ID derived from the deterministic
+announcement identity; that ID is part of the exact history and read-back
+verification. The two links use Discord's legacy action-row format with
+style-5 link buttons. The payload deliberately does not set
+`IS_COMPONENTS_V2`: that flag cannot be combined with the role-notification
+content and rich embeds used by this announcement. Link buttons open URLs and
+do not send interactions to Bota.
+
+Schema-2 artifacts remain byte-exact legacy inputs: validation reconstructs
+their original full marker, footer, embed, and portable-download field rather
+than silently converting them to schema 3. Schema 1 and any artifact containing
+`installerUrl` or `SessionDock-win-x64-Setup.exe` are rejected.
 
 ### Configure the protected path
 
@@ -83,9 +96,14 @@ silently upgraded.
    Approve the separate `release` and `release-publication` environments only
    after reviewing their evidence.
 8. Let the post-publication job deliver and read back the announcement. If it
-   reports ambiguous delivery, inspect the configured channel and use **Re-run
-   failed jobs** for that same workflow run; do not create a new tag or post a
-   manual replacement.
+   reports ambiguous delivery, preserve the receipt and inspect the configured
+   channel before rerunning that same bounded job. Do not create a new tag or
+   post a manual replacement. If exactly one existing Bota message is found but
+   its presentation does not verify, run the protected, content-free GET-only
+   diagnostic first. Diagnosis does not authorize a write. Any presentation
+   migration must be a separate, reviewed operation bound to that exact message
+   and immutable announcement; it may PATCH that message at most once, must
+   leave notification content untouched, and must never fall back to POST.
 
 ### What this path verifies
 
@@ -94,7 +112,8 @@ announcement bundle, pinned Bota identity, target channel and role, effective
 least-privilege permissions, and complete bounded release-marker history. After
 GitHub publication, the sender repeats those checks, uses a deterministic
 marker and Discord nonce, posts at most once, and reads the exact message and
-reviewed attachments back. Conflicting or inconclusive history fails closed.
+short release ID, legacy link buttons, reviewed attachments, and presentation
+back. Conflicting or inconclusive history fails closed.
 
 The generated JSON/Markdown audit artifact records evidence; it does not
 replace Discord delivery. The official job needs no Gateway connection and no

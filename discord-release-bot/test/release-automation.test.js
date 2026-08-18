@@ -16,6 +16,7 @@ import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   createDeliveryReceipt,
+  diagnoseExistingAnnouncement,
   deliverAnnouncement,
   generateAnnouncement,
   preflightAnnouncement,
@@ -98,7 +99,13 @@ function fixtureNotes(version = "2.7.2") {
 
 function createFixture(
   t,
-  { withImage = false, notes = fixtureNotes(), imageFileName = "sessiondock-v2.7.2-social-wide.png" } = {},
+  {
+    withImage = false,
+    notes = fixtureNotes(),
+    imageFileName = "sessiondock-v2.7.2-social-wide.png",
+    imageFileNames = [imageFileName],
+    schemaVersion = 3,
+  } = {},
 ) {
   const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -111,13 +118,14 @@ function createFixture(
     imagesPath = "docs/images/sessiondock-v2.7.2";
     const imageDirectory = path.join(root, ...imagesPath.split("/"));
     mkdirSync(imageDirectory, { recursive: true });
-    const fileName = imageFileName;
-    writeFileSync(path.join(imageDirectory, fileName), PNG);
+    for (const fileName of imageFileNames) {
+      writeFileSync(path.join(imageDirectory, fileName), PNG);
+    }
     writeFileSync(
       path.join(imageDirectory, "discord.json"),
       `${JSON.stringify(
         {
-          images: [fileName],
+          images: imageFileNames,
           product: "SessionDock",
           schemaVersion: 1,
           version: "2.7.2",
@@ -132,7 +140,7 @@ function createFixture(
         {
           product: "SessionDock",
           version: "2.7.2",
-          outputs: [{ file: fileName, sha256: sha256(PNG), width: 1, height: 1 }],
+          outputs: imageFileNames.map((file) => ({ file, sha256: sha256(PNG), width: 1, height: 1 })),
         },
         null,
         2,
@@ -147,6 +155,7 @@ function createFixture(
     notesPath: "SessionDock/ReleaseNotes/2.7.2.en-US.md",
     imagesPath,
     outputPath: "artifacts/announcement",
+    schemaVersion,
   });
   const artifactDirectory = path.join(root, "artifacts", "announcement");
   const bundle = readAnnouncementBundle({
@@ -176,7 +185,7 @@ function discordPayload(bundle) {
       users: [],
     },
     content: `<@&${ROLE_ID}>`,
-    embeds: bundle.artifact.announcement.message.embeds,
+    ...bundle.artifact.announcement.message,
     enforce_nonce: true,
     nonce: bundle.artifact.announcement.nonce,
   };
@@ -207,7 +216,7 @@ function discordMessage(bundle, overrides = {}) {
     attachments,
     author: { bot: true, id: BOT_ID },
     channel_id: CHANNEL_ID,
-    components: [],
+    components: payload.components ?? [],
     content: payload.content,
     edited_timestamp: null,
     embeds,
@@ -266,7 +275,7 @@ const message = {
   attachments: [],
   author: { bot: true, id: botId },
   channel_id: channelId,
-  components: [],
+  components: artifact.announcement.message.components ?? [],
   content: "<@&" + roleId + ">",
   edited_timestamp: null,
   embeds: artifact.announcement.message.embeds,
@@ -280,6 +289,9 @@ const message = {
   tts: false,
   type: 0,
 };
+if (process.env.MOCK_MODE === "diagnostic") {
+  message.shared_client_theme = { attacker: process.env.ATTACKER_VALUE };
+}
 let historyReads = 0;
 function json(value, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
@@ -302,6 +314,7 @@ globalThis.fetch = async (url, init) => {
   }
   if (requestUrl.includes("/messages?limit=100")) {
     historyReads += 1;
+    if (process.env.MOCK_MODE === "diagnostic") return json([message]);
     return json(process.env.MOCK_MODE === "ambiguous" || historyReads === 1 ? [] : [message]);
   }
   if (requestUrl.endsWith("/messages") && init.method === "POST") {
@@ -395,6 +408,45 @@ function runPreflightCliChild(fixture, automationScript = AUTOMATION_SCRIPT) {
   return { fetchLog, result };
 }
 
+function runDiagnosticCliChild(fixture, reportPath, automationScript = AUTOMATION_SCRIPT) {
+  const preload = installChildFetchMock(fixture.root);
+  const fetchLog = path.join(fixture.root, "diagnostic-fetch.log");
+  const attackerValue = `message value containing ${TOKEN}`;
+  const result = spawnSync(
+    process.execPath,
+    [
+      automationScript,
+      "diagnose-existing",
+      "--artifact-dir",
+      "artifacts/announcement",
+      "--expected-tag",
+      "v2.7.2",
+      "--expected-ref",
+      "refs/tags/v2.7.2",
+      "--expected-commit",
+      COMMIT,
+      "--report",
+      reportPath,
+    ],
+    {
+      cwd: fixture.root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ATTACKER_VALUE: attackerValue,
+        DISCORD_RELEASE_BOT_ID: BOT_ID,
+        DISCORD_RELEASE_BOT_TOKEN: TOKEN,
+        DISCORD_RELEASE_CHANNEL_ID: CHANNEL_ID,
+        DISCORD_RELEASE_ROLE_ID: ROLE_ID,
+        FETCH_LOG: fetchLog,
+        MOCK_MODE: "diagnostic",
+        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+      },
+    },
+  );
+  return { attackerValue, fetchLog, result };
+}
+
 test("the staged standalone module executes workflow-shaped generate and verify commands", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-cli-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -459,15 +511,34 @@ test("generation is byte-for-byte deterministic and records canonical sources", 
       readFileSync(path.join(second.artifactDirectory, file)),
     );
   }
-  assert.equal(first.bundle.artifact.schemaVersion, 2);
+  assert.equal(first.bundle.artifact.schemaVersion, 3);
   assert.equal(
     first.bundle.artifact.release.portableUrl,
     "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip",
   );
+  assert.equal(
+    first.bundle.artifact.release.latestUrl,
+    "https://github.com/Makmatoe/SessionDock/releases/latest",
+  );
   assert.equal(Object.hasOwn(first.bundle.artifact.release, "installerUrl"), false);
   assert.equal(
-    first.bundle.artifact.announcement.message.embeds[0].fields[0].value,
-    "[Windows x64 portable ZIP](https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip)",
+    first.bundle.artifact.announcement.message.components[0].components[0].url,
+    "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip",
+  );
+  assert.equal(
+    first.bundle.artifact.announcement.message.components[0].components[1].url,
+    "https://github.com/Makmatoe/SessionDock/releases/latest",
+  );
+  assert.equal(first.bundle.artifact.announcement.message.embeds[0].title, "SessionDock 2.7.2 is available");
+  assert.ok(first.bundle.artifact.announcement.message.embeds[0].description.length < 180);
+  assert.equal(
+    first.bundle.artifact.announcement.message.embeds[0].url,
+    "https://github.com/Makmatoe/SessionDock/releases/tag/v2.7.2",
+  );
+  assert.match(first.bundle.artifact.announcement.marker, /^sdrel:v2:v2\.7\.2:[0-9a-f]{32}$/);
+  assert.match(
+    first.bundle.artifact.announcement.message.embeds[0].footer.text,
+    /^Official SessionDock release • v2\.7\.2 • ID [0-9a-f]{32}$/,
   );
   assert.equal(first.bundle.artifact.release.sourceCommit, COMMIT);
   assert.equal(first.bundle.artifact.sources.releaseNotes.canonicalPath, "SessionDock/ReleaseNotes/2.7.2.en-US.md");
@@ -475,27 +546,133 @@ test("generation is byte-for-byte deterministic and records canonical sources", 
   assert.match(first.bundle.summaryText, /No form, preview confirmation, or manual publish action/);
 });
 
-test("bundle validation rejects legacy and schema-2 installer identities", (t) => {
-  for (const schemaVersion of [1, 2]) {
-    const fixture = createFixture(t);
+test("schema 3 renders compact feature sections and prominent official links", (t) => {
+  const notes = [
+    "SessionDock 2.7.2",
+    "",
+    "Release approval",
+    "",
+    "- Internal gate detail that should not dominate the community announcement.",
+    "",
+    "Sessions from one home screen",
+    "",
+    "- Accounts and destinations now stay visible from Home. The complete details remain on GitHub.",
+    "- Templates keep the selected destinations and scalable layouts.",
+    "- A third detail belongs in the full release notes only.",
+    "",
+    "Continuous macros",
+    "",
+    "- Playback loops until the user explicitly stops it. Temporary lag pauses safely.",
+    "- Client switching includes a bounded settle delay.",
+    "",
+    "Guidance",
+    "",
+    "- First launch includes Get Started and Advanced tours.",
+    "",
+  ].join("\n");
+  const { bundle } = createFixture(t, { notes });
+  const message = bundle.artifact.announcement.message;
+  const primary = message.embeds[0];
+  assert.equal(primary.fields.length, 3);
+  assert.doesNotMatch(JSON.stringify(primary), /Release approval|Internal gate detail/);
+  assert.equal(primary.fields[0].value.split("\n").length, 3);
+  assert.ok(primary.fields.every((field) => field.value.split("\n").length <= 3));
+  assert.ok(
+    primary.fields.reduce((total, field) => total + field.name.length + field.value.length, 0) < 2_000,
+  );
+  assert.equal(
+    primary.footer.text,
+    `Official SessionDock release • v2.7.2 • ID ${bundle.artifact.announcement.marker.split(":").at(-1)}`,
+  );
+  assert.deepEqual(
+    message.components[0].components.map(({ label, style, type, url }) => ({ label, style, type, url })),
+    [
+      {
+        label: "Download portable ZIP",
+        style: 5,
+        type: 2,
+        url: "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip",
+      },
+      {
+        label: "View latest release",
+        style: 5,
+        type: 2,
+        url: "https://github.com/Makmatoe/SessionDock/releases/latest",
+      },
+    ],
+  );
+});
+
+test("schema 3 truncates Unicode release highlights without producing invalid surrogate halves", (t) => {
+  const notes = [
+    "SessionDock 2.7.2",
+    "",
+    "Unicode-safe highlights",
+    "",
+    `- ${"😀".repeat(400)}`,
+    "",
+  ].join("\n");
+  const { bundle } = createFixture(t, { notes });
+  const value = bundle.artifact.announcement.message.embeds[0].fields[0].value;
+  assert.match(value, /…$/u);
+  assert.equal(Buffer.from(value, "utf8").toString("utf8"), value);
+  assert.doesNotMatch(value, /�/u);
+});
+
+test("schema 3 budgets three long highlights within one Discord field", (t) => {
+  const longHighlight = "A".repeat(600);
+  const notes = [
+    "SessionDock 2.7.2",
+    "",
+    "Performance",
+    "",
+    `- ${longHighlight}`,
+    `- ${longHighlight}`,
+    `- ${longHighlight}`,
+    "",
+  ].join("\n");
+  const { bundle } = createFixture(t, { notes });
+  const field = bundle.artifact.announcement.message.embeds[0].fields[0];
+  assert.equal(field.value.split("\n").length, 3);
+  assert.ok(field.value.length <= 1_024);
+});
+
+test("bundle validation preserves schema-2 compatibility and rejects installer identities", (t) => {
+  const legacy = createFixture(t, { schemaVersion: 2 });
+  assert.equal(legacy.bundle.artifact.schemaVersion, 2);
+  assert.equal(Object.hasOwn(legacy.bundle.artifact.release, "latestUrl"), false);
+  assert.equal(Object.hasOwn(legacy.bundle.artifact.announcement.message, "components"), false);
+  assert.match(legacy.bundle.artifact.announcement.message.embeds[0].footer.text, /^sdrel:v1:/);
+
+  for (const schemaVersion of [2, 3]) {
+    const fixture = createFixture(t, { schemaVersion });
     const artifactPath = path.join(fixture.artifactDirectory, "announcement.json");
     const portableUrl =
       "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Portable.zip";
     const installerUrl =
       "https://github.com/Makmatoe/SessionDock/releases/download/v2.7.2/SessionDock-win-x64-Setup.exe";
-    let artifactText = readFileSync(artifactPath, "utf8")
+    const artifactText = readFileSync(artifactPath, "utf8")
       .replace(`"portableUrl": "${portableUrl}"`, `"installerUrl": "${installerUrl}"`)
-      .replace(`[Windows x64 portable ZIP](${portableUrl})`, `[Windows x64 installer](${installerUrl})`);
-    if (schemaVersion === 1) {
-      artifactText = artifactText.replace('"schemaVersion": 2', '"schemaVersion": 1');
-    }
+      .replace(portableUrl, installerUrl);
     writeFileSync(artifactPath, artifactText);
 
     assert.throws(
       () => readAnnouncementBundle({ artifactDirectory: fixture.artifactDirectory }),
-      (error) => error instanceof ReleaseAutomationError && error.code === "INVALID_ARTIFACT",
+      (error) =>
+        error instanceof ReleaseAutomationError && ["INVALID_ARTIFACT", "INVALID_JSON"].includes(error.code),
     );
   }
+
+  const unsupported = createFixture(t);
+  const unsupportedPath = path.join(unsupported.artifactDirectory, "announcement.json");
+  writeFileSync(
+    unsupportedPath,
+    readFileSync(unsupportedPath, "utf8").replace('"schemaVersion": 3', '"schemaVersion": 1'),
+  );
+  assert.throws(
+    () => readAnnouncementBundle({ artifactDirectory: unsupported.artifactDirectory }),
+    (error) => error instanceof ReleaseAutomationError && error.code === "INVALID_ARTIFACT",
+  );
 });
 
 test("generation rejects mismatched notes without leaving a partial output", (t) => {
@@ -548,7 +725,7 @@ test("generation rejects linked or non-regular canonical release notes", (t) => 
   );
 });
 
-test("canonical release note reads enforce the exact byte ceiling", (t) => {
+test("canonical release note reads enforce the exact byte ceiling without imposing the legacy embed limit", (t) => {
   const root = mkdtempSync(path.join(os.tmpdir(), "sessiondock-release-automation-bounded-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const notesDirectory = path.join(root, "SessionDock", "ReleaseNotes");
@@ -563,22 +740,24 @@ test("canonical release note reads enforce the exact byte ceiling", (t) => {
   assert.equal(exact.length, 64 * 1024);
   writeFileSync(notesPath, exact);
 
-  const generate = () =>
+  const generate = (schemaVersion, outputPath) =>
     generateAnnouncement({
       root,
       version: "2.7.2",
       sourceCommit: COMMIT,
       notesPath: "SessionDock/ReleaseNotes/2.7.2.en-US.md",
-      outputPath: "artifacts/announcement",
+      outputPath,
+      schemaVersion,
     });
+  assert.doesNotThrow(() => generate(3, "artifacts/schema-3"));
   assert.throws(
-    generate,
+    () => generate(2, "artifacts/schema-2"),
     (error) => error instanceof ReleaseAutomationError && error.code === "INVALID_NOTES",
   );
 
   writeFileSync(notesPath, Buffer.concat([exact, Buffer.from("x")]));
   assert.throws(
-    generate,
+    () => generate(3, "artifacts/too-large"),
     (error) => error instanceof ReleaseAutomationError && error.code === "FILE_TOO_LARGE",
   );
 });
@@ -868,6 +1047,96 @@ test("the workflow-shaped preflight CLI uses the standalone staged module and ma
   assert.doesNotMatch(requests, /^POST /m);
 });
 
+test("the existing-message diagnostic is GET-only and returns only allowlisted mismatch codes", async (t) => {
+  const { bundle } = createFixture(t, { schemaVersion: 2 });
+  const existing = discordMessage(bundle);
+  existing.shared_client_theme = { attacker: `private value containing ${TOKEN}` };
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push({ method: init.method, url: String(url) });
+    const response = preflightResponse(String(url));
+    if (response) return response;
+    if (String(url).endsWith("/messages?limit=100")) return jsonResponse([existing]);
+    if (String(url).endsWith(`/messages/${MESSAGE_ID}`)) return jsonResponse(existing);
+    throw new Error(`Unexpected request: ${init.method} ${url}`);
+  };
+
+  const diagnostic = await diagnoseExistingAnnouncement({
+    bundle,
+    env: deliveryEnv(),
+    fetchImpl,
+    sleepImpl: async () => {},
+  });
+  assert.equal(diagnostic.status, "mismatch");
+  assert.equal(diagnostic.verified, false);
+  assert.deepEqual(diagnostic.mismatchCodes, ["message.optional.shared-client-theme"]);
+  const serialized = JSON.stringify(diagnostic);
+  assert.doesNotMatch(serialized, new RegExp(TOKEN));
+  assert.doesNotMatch(serialized, /private value/);
+  assert.ok(calls.length >= 6);
+  assert.ok(calls.every((call) => call.method === "GET"));
+});
+
+test("the existing-message diagnostic does not classify a transient CDN failure as a presentation mismatch", async (t) => {
+  const { bundle } = createFixture(t, { withImage: true });
+  const existing = discordMessage(bundle);
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    const response = preflightResponse(requestUrl);
+    if (response) return response;
+    if (requestUrl.endsWith("/messages?limit=100")) return jsonResponse([existing]);
+    if (requestUrl.endsWith(`/messages/${MESSAGE_ID}`)) return jsonResponse(existing);
+    if (requestUrl.startsWith("https://cdn.discordapp.com/attachments/")) {
+      throw new Error("temporary CDN failure");
+    }
+    throw new Error(`Unexpected request: ${requestUrl}`);
+  };
+
+  await assert.rejects(
+    diagnoseExistingAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} }),
+    (error) => error instanceof ReleaseAutomationError && error.code === "DISCORD_ATTACHMENT_READ",
+  );
+});
+
+test("the existing-message diagnostic reports a missing announcement with one fixed code", async (t) => {
+  const { bundle } = createFixture(t);
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    const response = preflightResponse(requestUrl);
+    if (response) return response;
+    if (requestUrl.endsWith("/messages?limit=100")) return jsonResponse([]);
+    throw new Error(`Unexpected request: ${requestUrl}`);
+  };
+
+  const diagnostic = await diagnoseExistingAnnouncement({
+    bundle,
+    env: deliveryEnv(),
+    fetchImpl,
+    sleepImpl: async () => {},
+  });
+  assert.equal(diagnostic.status, "not-found");
+  assert.equal(diagnostic.verified, false);
+  assert.deepEqual(diagnostic.mismatchCodes, ["message.missing"]);
+});
+
+test("the diagnostic CLI reserves a content-free report and never mutates Discord", (t) => {
+  const fixture = createFixture(t, { schemaVersion: 2 });
+  const reportPath = "diagnostics/report.json";
+  const { attackerValue, fetchLog, result } = runDiagnosticCliChild(fixture, reportPath);
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(TOKEN));
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(attackerValue));
+  const reportText = readFileSync(path.join(fixture.root, ...reportPath.split("/")), "utf8");
+  const report = JSON.parse(reportText);
+  assert.equal(report.kind, "sessiondock.discord-release-diagnostic");
+  assert.deepEqual(report.mismatchCodes, ["message.optional.shared-client-theme"]);
+  assert.doesNotMatch(reportText, new RegExp(TOKEN));
+  assert.doesNotMatch(reportText, new RegExp(attackerValue));
+  const requests = readFileSync(fetchLog, "utf8");
+  assert.match(requests, /^GET /m);
+  assert.doesNotMatch(requests, /^(?:POST|PATCH|PUT|DELETE) /m);
+});
+
 test("automatic delivery pings exactly the configured role and verifies the message", async (t) => {
   const { bundle } = createFixture(t);
   const calls = [];
@@ -890,6 +1159,7 @@ test("automatic delivery pings exactly the configured role and verifies the mess
       assert.equal(body.content, `<@&${ROLE_ID}>`);
       assert.equal(body.enforce_nonce, true);
       assert.equal(body.nonce, bundle.artifact.announcement.nonce);
+      assert.equal(body.flags, undefined);
       assert.ok(!body.content.includes("everyone"));
       return jsonResponse(expectedMessage);
     }
@@ -965,6 +1235,26 @@ test("a same-tag marker from different immutable inputs fails closed", async (t)
     if (String(url).endsWith("/messages?limit=100")) return jsonResponse([conflict]);
     if (init.method === "POST") posts += 1;
     throw new Error("Unexpected request");
+  };
+  await assert.rejects(
+    deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} }),
+    (error) => error instanceof ReleaseAutomationError && error.code === "DISCORD_CONFLICT",
+  );
+  assert.equal(posts, 0);
+});
+
+test("an immutable same-tag release link blocks a duplicate even when its footer marker is missing", async (t) => {
+  const { bundle } = createFixture(t);
+  const candidate = discordMessage(bundle);
+  candidate.embeds = structuredClone(candidate.embeds);
+  delete candidate.embeds[0].footer;
+  let posts = 0;
+  const fetchImpl = async (url, init) => {
+    const preflight = preflightResponse(String(url));
+    if (preflight) return preflight;
+    if (String(url).endsWith("/messages?limit=100")) return jsonResponse([candidate]);
+    if (init.method === "POST") posts += 1;
+    throw new Error(`Unexpected request: ${init.method} ${url}`);
   };
   await assert.rejects(
     deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} }),
@@ -1098,6 +1388,44 @@ test("image delivery uses exact multipart bytes and verifies the Discord CDN cop
   assert.equal(result.status, "posted");
   assert.equal(inspectedMultipart, true);
   assert.equal(cdnGets, 1);
+});
+
+test("multiple reviewed images preserve their order through schema 3 and Discord read-back", async (t) => {
+  const imageFileNames = [
+    "sessiondock-v2.7.2-one.png",
+    "sessiondock-v2.7.2-two.png",
+    "sessiondock-v2.7.2-three.png",
+  ];
+  const { bundle } = createFixture(t, { withImage: true, imageFileNames });
+  const expectedMessage = discordMessage(bundle);
+  assert.equal(bundle.artifact.announcement.message.embeds.length, imageFileNames.length);
+  assert.equal(bundle.artifact.announcement.attachments.length, imageFileNames.length);
+  for (let index = 0; index < imageFileNames.length; index += 1) {
+    assert.equal(
+      bundle.artifact.announcement.message.embeds[index].image.url,
+      `attachment://${imageFileNames[index]}`,
+    );
+    if (index > 0) {
+      assert.equal(bundle.artifact.announcement.message.embeds[index].url, undefined);
+    }
+  }
+
+  const cdnFiles = [];
+  const fetchImpl = async (url) => {
+    const requestUrl = String(url);
+    const preflight = preflightResponse(requestUrl);
+    if (preflight) return preflight;
+    if (requestUrl.endsWith("/messages?limit=100")) return jsonResponse([expectedMessage]);
+    if (requestUrl.endsWith(`/messages/${MESSAGE_ID}`)) return jsonResponse(expectedMessage);
+    if (requestUrl.startsWith("https://cdn.discordapp.com/attachments/")) {
+      cdnFiles.push(new URL(requestUrl).pathname.split("/").at(-1));
+      return new Response(PNG, { status: 200, headers: { "content-type": "image/png" } });
+    }
+    throw new Error(`Unexpected request: ${requestUrl}`);
+  };
+  const result = await deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} });
+  assert.equal(result.status, "already-posted");
+  assert.deepEqual(cdnFiles, [...imageFileNames, ...imageFileNames]);
 });
 
 test("an oversized declared attachment is rejected before reading CDN bytes", async (t) => {
@@ -1596,11 +1924,14 @@ test("unexpected top-level display state fails closed", async (t) => {
 test("normal absent and empty Discord presentation defaults remain valid", async (t) => {
   const { bundle } = createFixture(t);
   const expectedMessage = discordMessage(bundle);
-  delete expectedMessage.components;
   delete expectedMessage.flags;
   expectedMessage.sticker_items = [];
   expectedMessage.stickers = [];
   expectedMessage.embeds[0].type = "rich";
+  expectedMessage.components[0].id = 0;
+  expectedMessage.components[0].components[0].id = 1;
+  expectedMessage.components[0].components[0].disabled = false;
+  expectedMessage.components[0].components[0].emoji = null;
   const fetchImpl = async (url, init) => {
     const preflight = preflightResponse(String(url));
     if (preflight) return preflight;
@@ -1684,6 +2015,36 @@ test("an explicit false field inline value is equivalent to its Discord-default 
   };
   const result = await deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} });
   assert.equal(result.status, "posted");
+});
+
+test("announcement link buttons reject changed targets, labels, actions, and enabled state", async (t) => {
+  const cases = [
+    (message) => { message.components[0].components[0].url = "https://example.com/download"; },
+    (message) => { message.components[0].components[1].label = "Different label"; },
+    (message) => { message.components[0].components[0].custom_id = "unexpected-action"; },
+    (message) => { message.components[0].components[0].disabled = true; },
+    (message) => { message.components[0].components.push({ label: "Extra", style: 5, type: 2, url: "https://example.com" }); },
+  ];
+  for (const mutate of cases) {
+    const { bundle } = createFixture(t);
+    const changed = discordMessage(bundle);
+    mutate(changed);
+    let writes = 0;
+    const fetchImpl = async (url, init) => {
+      const response = preflightResponse(String(url));
+      if (response) return response;
+      if (String(url).endsWith("/messages?limit=100")) return jsonResponse([changed]);
+      if (init.method !== "GET") writes += 1;
+      throw new Error("Unexpected request");
+    };
+    await assert.rejects(
+      deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} }),
+      (error) =>
+        error instanceof ReleaseAutomationError &&
+        ["DISCORD_VERIFICATION", "DELIVERY_AMBIGUOUS"].includes(error.code),
+    );
+    assert.equal(writes, 0);
+  }
 });
 
 test("the configured release role must explicitly be unmanaged", async (t) => {

@@ -11,11 +11,10 @@ publisher identity or overrides a named malware detection.
 Local production publication is disabled. The protected GitHub workflow is the
 only production staging and publication path.
 
-> **Distribution hold — 2026-08-04:** the current latest release is a
-> zero-asset security-hold record and no replacement public build is approved.
-> The hold remains in every current user-facing guide until one reviewed release
-> completes every gate below, passes separate laptop validation before
-> publication, and explicitly lifts it.
+> **Current release state:** SessionDock 3.1.2 completed the protected draft,
+> separate-laptop, publication, and anonymous public-download gates. There is
+> no active distribution hold. Any future named malware detection or public
+> byte mismatch starts the incident and hold procedure below again.
 
 ## Protected GitHub environments
 
@@ -88,8 +87,9 @@ Before creating a release tag:
    a tag without valid current-version notes is blocked.
 7. Review the current user, security, privacy, update, accessibility,
    localization, component-provenance, and announcement documentation as one
-   release surface. Do not remove the distribution hold before the later draft
-   and laptop gates actually pass.
+   release surface. If a distribution hold is active, do not remove it before
+   the later draft, laptop, publication, and anonymous-download gates pass for
+   the exact candidate.
 
 Documentation, a passing local build, or a tag proposal is not release
 approval.
@@ -242,8 +242,9 @@ The protected workflow must perform this order without mutable asset reuse:
     later named malware report triggers the same response even when hashes
     match.
 11. Only after the public re-download gate passes may Bota post or reconcile
-    the deterministic Discord announcement. The announcement must label and
-    link the **Windows x64 portable ZIP** on GitHub and contain no binary.
+    the deterministic Discord announcement. The compact announcement must link
+    the immutable version page, the **Windows x64 portable ZIP**, and the latest
+    release page on GitHub. It contains no binary.
 
 Do not rebuild, rezip, rename, or edit an asset after its first accepted hash.
 Do not replace an asset in place. A code or byte change requires a new version,
@@ -283,11 +284,20 @@ false positive before Microsoft returns its determination.
 ## Discord and recovery
 
 The protected announcement path is documented in
-[`discord-release-bot/README.md`](../discord-release-bot/README.md). Its artifact
-schema requires `portableUrl` for
-`SessionDock-win-x64-Portable.zip` and rejects legacy installer identities. A
-same-tag marker from different immutable inputs is a conflict, not permission
-to post again.
+[`discord-release-bot/README.md`](../discord-release-bot/README.md). Schema 3
+requires both the immutable `portableUrl` and the official `latestUrl`. It
+renders up to four compact release sections with at most three short bullets
+each, links the title to the immutable version page, and places the version plus
+a stable short release ID in a readable footer. The direct portable-download
+and latest-release actions are legacy Discord style-5 link buttons. They
+intentionally use no `IS_COMPONENTS_V2` flag so the role-notification content,
+rich embeds, and buttons can coexist in one message.
+
+Schema-2 artifacts remain byte-exact legacy inputs. Their original full marker,
+footer, embed text, and portable-download field are reconstructed and verified
+without being silently upgraded to schema 3. Schema 1 and installer identities
+remain invalid. A same-tag marker from different immutable inputs is a conflict,
+not permission to post again.
 
 ### Optional reviewed Discord images
 
@@ -307,3 +317,17 @@ verification fails, preserve receipts and evidence. Never replace the public
 bytes in place and never work around Discord idempotency. Resolve the release
 state first; then rerun only the bounded verification/delivery job for the same
 immutable release when safe.
+
+If an existing announcement needs presentation recovery, run a protected,
+GET-only diagnostic first. Its artifact may contain only fixed mismatch codes,
+release hashes, and status—never the token or message contents. The diagnostic
+must make no Discord write and is not approval to edit the message.
+
+Any migration is a separate, explicitly reviewed operation bound to the exact
+immutable announcement and the one matching Bota message discovered by the
+diagnostic. It must re-prove identity and history, omit `content` so the role is
+not notified again, PATCH that exact message at most once, and verify the final
+message with a GET by exact message ID before producing a success receipt.
+Missing, duplicate, conflicting, or ambiguous state blocks mutation. A
+migration must contain no POST fallback and cannot create a replacement
+announcement.
