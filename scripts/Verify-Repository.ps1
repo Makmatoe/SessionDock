@@ -77,6 +77,24 @@ function Get-RequiredWorkflowStepBlock {
     $matchingSteps[0].Contents
 }
 
+function Assert-ExactWorkflowStep {
+    param(
+        [Parameter(Mandatory)]
+        [string] $Actual,
+
+        [Parameter(Mandatory)]
+        [string] $Expected,
+
+        [Parameter(Mandatory)]
+        [string] $Name
+    )
+
+    if ((($Actual -replace "`r`n", "`n").TrimEnd()) -cne
+        (($Expected -replace "`r`n", "`n").TrimEnd())) {
+        throw "Workflow step must remain the exact reviewed block: $Name"
+    }
+}
+
 function Assert-WorkflowJobIsUnconditional {
     param(
         [Parameter(Mandatory)]
@@ -631,6 +649,62 @@ try {
     }
     $discordReconciliationWorkflowContents = Get-Content -LiteralPath `
         $discordReconciliationWorkflowPath -Raw
+    $discordMigrationWorkflowPath = Join-Path `
+        $root '.github/workflows/migrate-v3.1.2-discord.yml'
+    if (-not (Test-Path -LiteralPath $discordMigrationWorkflowPath -PathType Leaf)) {
+        throw 'The reviewed one-time v3.1.2 Discord migration workflow is missing.'
+    }
+    $discordMigrationWorkflowContents = Get-Content -LiteralPath `
+        $discordMigrationWorkflowPath -Raw
+    $normalizedDiscordMigrationWorkflow =
+        $discordMigrationWorkflowContents -replace "`r`n", "`n"
+    $discordMigrationSha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $discordMigrationBytes = [Text.UTF8Encoding]::new($false).GetBytes(
+            $normalizedDiscordMigrationWorkflow)
+        $discordMigrationDigest = [BitConverter]::ToString(
+            $discordMigrationSha.ComputeHash($discordMigrationBytes)).Replace('-', '').ToLowerInvariant()
+    }
+    finally {
+        $discordMigrationSha.Dispose()
+    }
+    if ($discordMigrationDigest -cne
+        '4df49983daddb9064da4f0f6f1e980d2f87a19c132ecfc9057b979685d50092a') {
+        throw 'The complete one-time Discord migration workflow must remain byte-for-byte equivalent to the reviewed LF-normalized file.'
+    }
+    $discordMigrationPreambleMatch = [regex]::Match(
+        $discordMigrationWorkflowContents,
+        '(?ms)\A(?<block>.*?^jobs:\s*)\r?\n')
+    $expectedDiscordMigrationPreamble = @'
+name: Migrate v3.1.2 Discord announcement
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type MIGRATE V3.1.2 exactly
+        required: true
+        type: string
+      expected_workflow_commit:
+        description: Exact protected-main commit containing this workflow
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: sessiondock-release-publication
+  cancel-in-progress: false
+
+jobs:
+'@
+    if (-not $discordMigrationPreambleMatch.Success -or
+        (($discordMigrationPreambleMatch.Groups['block'].Value -replace "`r`n", "`n").TrimEnd()) -cne
+            (($expectedDiscordMigrationPreamble -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The one-time Discord migration trigger, typed inputs, permissions, and concurrency must remain exact.'
+    }
     $discordReconciliationJobsMatch = [regex]::Match(
         $discordReconciliationWorkflowContents,
         '(?ms)^jobs:\s*\r?\n(?<jobs>.*)\z')
@@ -638,7 +712,7 @@ try {
     if ($discordReconciliationJobsMatch.Success) {
         $discordReconciliationJobHeaders = @([regex]::Matches(
                 $discordReconciliationJobsMatch.Groups['jobs'].Value,
-                '(?m)^  [A-Za-z0-9][A-Za-z0-9_-]*:\s*$'))
+                '(?m)^  \S[^\r\n]*:\s*$'))
     }
     if ($discordReconciliationJobHeaders.Count -ne 1 -or
         $discordReconciliationJobHeaders[0].Value.Trim() -cne
@@ -875,6 +949,497 @@ try {
         $discordReconciliationWorkflowContents -match 'release-automation\.js post|(?:^|\s)(?:POST|PATCH|PUT|DELETE)(?:\s|$)|(?i)(?:^|\s)(?:curl|wget)(?:\.exe)?(?:\s|$)|continue-on-error|cancelled\(\)|failure\(\)' -or
         $discordReconciliationWorkflowContents -match '(?m)^\s+(?:actions|contents|id-token|attestations|artifact-metadata):\s*write\s*$') {
         throw 'The one-time v3.1.2 Discord workflow must remain owner-triggered, GET-only, content-free, immutable-input-bound, and least-privileged.'
+    }
+    $discordMigrationJobsMatch = [regex]::Match(
+        $discordMigrationWorkflowContents,
+        '(?ms)^jobs:\s*\r?\n(?<jobs>.*)\z')
+    $discordMigrationJobHeaders = @()
+    if ($discordMigrationJobsMatch.Success) {
+        $discordMigrationJobHeaders = @([regex]::Matches(
+                $discordMigrationJobsMatch.Groups['jobs'].Value,
+                '(?m)^  [A-Za-z0-9][A-Za-z0-9_-]*:\s*$'))
+    }
+    if ($discordMigrationJobHeaders.Count -ne 1 -or
+        $discordMigrationJobHeaders[0].Value.Trim() -cne
+            'migrate-existing-announcement:') {
+        throw 'The one-time Discord migration workflow must contain exactly one reviewed job.'
+    }
+    $discordMigrationJob = Get-WorkflowJobBlock `
+        -Contents $discordMigrationWorkflowContents `
+        -Name 'migrate-existing-announcement'
+    $discordMigrationJobPreambleMatch = [regex]::Match(
+        $discordMigrationJob,
+        '(?ms)\A(?<block>.*?^    steps:\s*)\r?\n')
+    $expectedDiscordMigrationJobPreamble = @'
+    name: Migrate the existing v3.1.2 announcement
+    if: >-
+      inputs.confirmation == 'MIGRATE V3.1.2' &&
+      inputs.expected_workflow_commit == github.sha &&
+      github.repository == 'Makmatoe/SessionDock' &&
+      github.ref == 'refs/heads/main' &&
+      github.actor == github.repository_owner &&
+      github.triggering_actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: release-announcement
+    steps:
+'@
+    if (-not $discordMigrationJobPreambleMatch.Success -or
+        (($discordMigrationJobPreambleMatch.Groups['block'].Value -replace "`r`n", "`n").TrimEnd()) -cne
+            (($expectedDiscordMigrationJobPreamble -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The one-time Discord migration job must retain its exact owner, main, commit, timeout, and protected-environment guards.'
+    }
+    $discordMigrationSteps = @(Get-WorkflowStepBlocks `
+            -Contents $discordMigrationJob)
+    $expectedDiscordMigrationStepNames = @(
+        'Validate the one-time invocation',
+        'Check out the protected workflow commit',
+        'Install the pinned Node.js runtime',
+        'Verify the immutable GitHub release and source artifact',
+        'Download the exact v3.1.2 announcement artifact',
+        'Validate the exact schema-2 source announcement',
+        'Download the exact prior diagnostic evidence',
+        'Validate the exact prior diagnostic evidence',
+        'Migrate and verify the exact existing announcement',
+        'Validate the sanitized migration receipt',
+        'Upload the sanitized migration receipt')
+    if ($discordMigrationSteps.Count -ne $expectedDiscordMigrationStepNames.Count) {
+        throw 'The one-time Discord migration workflow step topology changed.'
+    }
+    for ($stepIndex = 0;
+        $stepIndex -lt $expectedDiscordMigrationStepNames.Count;
+        $stepIndex++) {
+        if ($discordMigrationSteps[$stepIndex].Name -cne
+                $expectedDiscordMigrationStepNames[$stepIndex]) {
+            throw 'The one-time Discord migration workflow step order changed.'
+        }
+    }
+    $discordMigrationInvocationStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Validate the one-time invocation'
+    $expectedDiscordMigrationInvocationStep = @'
+      - name: Validate the one-time invocation
+        shell: bash
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+          EXPECTED_WORKFLOW_COMMIT: ${{ inputs.expected_workflow_commit }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRMATION" = 'MIGRATE V3.1.2'
+          test "$EXPECTED_WORKFLOW_COMMIT" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+'@
+    Assert-ExactWorkflowStep `
+        -Actual $discordMigrationInvocationStep `
+        -Expected $expectedDiscordMigrationInvocationStep `
+        -Name 'Validate the one-time invocation'
+    $discordMigrationCheckoutStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Check out the protected workflow commit'
+    $expectedDiscordMigrationCheckoutStep = @'
+      - name: Check out the protected workflow commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+'@
+    Assert-ExactWorkflowStep `
+        -Actual $discordMigrationCheckoutStep `
+        -Expected $expectedDiscordMigrationCheckoutStep `
+        -Name 'Check out the protected workflow commit'
+    $discordMigrationNodeStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Install the pinned Node.js runtime'
+    $expectedDiscordMigrationNodeStep = @'
+      - name: Install the pinned Node.js runtime
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 24.18.0
+          package-manager-cache: false
+'@
+    Assert-ExactWorkflowStep `
+        -Actual $discordMigrationNodeStep `
+        -Expected $expectedDiscordMigrationNodeStep `
+        -Name 'Install the pinned Node.js runtime'
+    $discordMigrationMetadataStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Verify the immutable GitHub release and source artifact'
+    $expectedDiscordMigrationMetadataStep = @'
+      - name: Verify the immutable GitHub release and source artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+          tag_reference="$(gh api /repos/Makmatoe/SessionDock/git/ref/tags/v3.1.2)"
+          jq -e '.object.type == "tag"' <<<"$tag_reference" >/dev/null
+          tag_object_sha="$(jq -r '.object.sha' <<<"$tag_reference")"
+          [[ "$tag_object_sha" =~ ^[0-9a-f]{40}$ ]]
+          tag_object="$(gh api "/repos/Makmatoe/SessionDock/git/tags/$tag_object_sha")"
+          jq -e '
+            .tag == "v3.1.2" and
+            .object.type == "commit" and
+            .object.sha == "0e257dd53b1c729bbf109185a10d470a1dd6483d"
+          ' <<<"$tag_object" >/dev/null
+
+          artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9338871798)"
+          jq -e '
+            .id == 9338871798 and
+            .name == "discord-release-announcement-0e257dd53b1c729bbf109185a10d470a1dd6483d-4" and
+            .expired == false and
+            .workflow_run.id == 30960123719 and
+            .workflow_run.head_sha == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            .digest == "sha256:8c94a1e8f72e93083fa6d5815ec76e10dc798bef58df570c0de6a0e6b961865b"
+          ' <<<"$artifact_metadata" >/dev/null
+
+          diagnostic_artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9341080352)"
+          jq -e '
+            .id == 9341080352 and
+            .name == "discord-v3.1.2-sanitized-diagnostic-775b8503d1c81bc1fad7cf754db46d988ea4f82d" and
+            .expired == false and
+            .workflow_run.id == 32181879764 and
+            .workflow_run.head_branch == "main" and
+            .workflow_run.head_sha == "775b8503d1c81bc1fad7cf754db46d988ea4f82d" and
+            .digest == "sha256:6ae321e1ca62ecb726af955bb3ee9de44b8fa8a2a0ceb6e2b6d0c7eef6ae9811"
+          ' <<<"$diagnostic_artifact_metadata" >/dev/null
+
+          diagnostic_run_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/runs/32181879764)"
+          jq -e '
+            .id == 32181879764 and
+            .workflow_id == 337298978 and
+            .run_attempt == 1 and
+            .event == "workflow_dispatch" and
+            .head_branch == "main" and
+            .head_sha == "775b8503d1c81bc1fad7cf754db46d988ea4f82d" and
+            .path == ".github/workflows/reconcile-v3.1.2-discord.yml" and
+            .status == "completed" and
+            .conclusion == "success" and
+            .actor.login == "Makmatoe" and
+            .triggering_actor.login == "Makmatoe" and
+            .repository.full_name == "Makmatoe/SessionDock"
+          ' <<<"$diagnostic_run_metadata" >/dev/null
+
+          release_metadata="$(gh api /repos/Makmatoe/SessionDock/releases/372542551)"
+          jq -e '
+            .id == 372542551 and
+            .tag_name == "v3.1.2" and
+            .name == "SessionDock 3.1.2" and
+            .draft == false and
+            .prerelease == false and
+            .immutable == true and
+            ([.assets[] | select(
+              .id == 519788140 and
+              .name == "SessionDock-win-x64-Portable.zip" and
+              .digest == "sha256:a4d4fd9d4f7b5353b06ebf04aa39fef888ee5afbbd39aadd64651d81780a3bbf"
+            )] | length) == 1
+          ' <<<"$release_metadata" >/dev/null
+'@
+    Assert-ExactWorkflowStep `
+        -Actual $discordMigrationMetadataStep `
+        -Expected $expectedDiscordMigrationMetadataStep `
+        -Name 'Verify the immutable GitHub release and source artifact'
+    $discordMigrationSourceDownloadStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Download the exact v3.1.2 announcement artifact'
+    $expectedDiscordMigrationSourceDownloadStep = @'
+      - name: Download the exact v3.1.2 announcement artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: discord-release-announcement-0e257dd53b1c729bbf109185a10d470a1dd6483d-4
+          path: migration/source-announcement
+          github-token: ${{ github.token }}
+          repository: Makmatoe/SessionDock
+          run-id: 30960123719
+'@
+    Assert-ExactWorkflowStep `
+        -Actual $discordMigrationSourceDownloadStep `
+        -Expected $expectedDiscordMigrationSourceDownloadStep `
+        -Name 'Download the exact v3.1.2 announcement artifact'
+    $discordMigrationDiagnosticDownloadStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Download the exact prior diagnostic evidence'
+    $expectedDiscordMigrationDiagnosticDownloadStep = @'
+      - name: Download the exact prior diagnostic evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: discord-v3.1.2-sanitized-diagnostic-775b8503d1c81bc1fad7cf754db46d988ea4f82d
+          path: migration/prior-diagnostic
+          github-token: ${{ github.token }}
+          repository: Makmatoe/SessionDock
+          run-id: 32181879764
+'@
+    Assert-ExactWorkflowStep `
+        -Actual $discordMigrationDiagnosticDownloadStep `
+        -Expected $expectedDiscordMigrationDiagnosticDownloadStep `
+        -Name 'Download the exact prior diagnostic evidence'
+    $discordMigrationSecretSteps = @($discordMigrationSteps |
+        Where-Object {
+            @((Get-WorkflowSecretReferences -Contents $_.Contents)).Count -gt 0
+        })
+    if ($discordMigrationSecretSteps.Count -ne 1 -or
+        $discordMigrationSecretSteps[0].Name -cne
+            'Migrate and verify the exact existing announcement') {
+        throw 'Only the exact migration step may receive the Discord token.'
+    }
+    $discordMigrationSourceValidationStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Validate the exact schema-2 source announcement'
+    $expectedDiscordMigrationSourceValidationStep = @'
+      - name: Validate the exact schema-2 source announcement
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find migration/source-announcement -type f -printf '%P\n' | LC_ALL=C sort)
+          test "${#files[@]}" -eq 4
+          test "${files[0]}" = 'announcement.json'
+          test "${files[1]}" = 'announcement.sha256'
+          test "${files[2]}" = 'notes.md'
+          test "${files[3]}" = 'summary.md'
+          printf '%s  %s\n' \
+            'ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4' \
+            'migration/source-announcement/announcement.json' | sha256sum --check --strict
+          jq -e '
+            .schemaVersion == 2 and
+            .announcement.id == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d"
+          ' migration/source-announcement/announcement.json >/dev/null
+          node ./discord-release-bot/src/release-automation.js verify \
+            --artifact-dir migration/source-announcement \
+            --expected-tag v3.1.2 \
+            --expected-ref refs/tags/v3.1.2 \
+            --expected-commit 0e257dd53b1c729bbf109185a10d470a1dd6483d
+'@
+    if ((($discordMigrationSourceValidationStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordMigrationSourceValidationStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The migration source must pass the exact schema-2 inventory, digest, identity, and bundle checks.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordMigrationSourceValidationStep `
+        -Name 'Validate the exact schema-2 source announcement'
+    $discordMigrationDiagnosticValidationStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Validate the exact prior diagnostic evidence'
+    $expectedDiscordMigrationDiagnosticValidationStep = @'
+      - name: Validate the exact prior diagnostic evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(find migration/prior-diagnostic -type f -printf '%P\n' | LC_ALL=C sort)
+          test "${#files[@]}" -eq 1
+          test "${files[0]}" = 'report.json'
+          printf '%s  %s\n' \
+            'a816a3936ef13171d46ca1f56c312b51b2842eb086553508828324f1128faa2e' \
+            'migration/prior-diagnostic/report.json' | sha256sum --check --strict
+          jq -e '
+            (keys == [
+              "announcementId",
+              "artifactSha256",
+              "kind",
+              "mismatchCodes",
+              "release",
+              "schemaVersion",
+              "status",
+              "verified"
+            ]) and
+            (.release | keys == ["sourceCommit", "tag"]) and
+            .kind == "sessiondock.discord-release-diagnostic" and
+            .schemaVersion == 1 and
+            .announcementId == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .artifactSha256 == "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4" and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            .mismatchCodes == ["message.flags"] and
+            .status == "mismatch" and
+            .verified == false
+          ' migration/prior-diagnostic/report.json >/dev/null
+'@
+    if ((($discordMigrationDiagnosticValidationStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordMigrationDiagnosticValidationStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The migration must consume only the exact content-free prior diagnostic evidence.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordMigrationDiagnosticValidationStep `
+        -Name 'Validate the exact prior diagnostic evidence'
+    $discordMigrationStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Migrate and verify the exact existing announcement'
+    $expectedDiscordMigrationStep = @'
+      - name: Migrate and verify the exact existing announcement
+        shell: bash
+        env:
+          DISCORD_RELEASE_BOT_ID: ${{ vars.DISCORD_RELEASE_BOT_ID }}
+          DISCORD_RELEASE_BOT_TOKEN: ${{ secrets.DISCORD_RELEASE_BOT_TOKEN }}
+          DISCORD_RELEASE_CHANNEL_ID: ${{ vars.DISCORD_RELEASE_CHANNEL_ID }}
+          DISCORD_RELEASE_ROLE_ID: ${{ vars.DISCORD_RELEASE_ROLE_ID }}
+        run: |
+          set -euo pipefail
+          node ./discord-release-bot/src/release-automation.js migrate-existing \
+            --artifact-dir migration/source-announcement \
+            --expected-tag v3.1.2 \
+            --expected-ref refs/tags/v3.1.2 \
+            --expected-commit 0e257dd53b1c729bbf109185a10d470a1dd6483d \
+            --expected-target-announcement 969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93 \
+            --expected-target-artifact-sha256 ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5 \
+            --receipt migration/receipt/receipt.json
+'@
+    if ((($discordMigrationStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordMigrationStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The Discord-token step must remain the exact reviewed PATCH-capable migration command.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordMigrationStep `
+        -Name 'Migrate and verify the exact existing announcement'
+    $discordMigrationReceiptValidationStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Validate the sanitized migration receipt'
+    $expectedDiscordMigrationReceiptValidationStep = @'
+      - name: Validate the sanitized migration receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f migration/receipt/receipt.json
+          jq -e '
+            (keys == [
+              "kind",
+              "patchAttempted",
+              "release",
+              "schemaVersion",
+              "source",
+              "status",
+              "target",
+              "verified"
+            ]) and
+            (.release | keys == ["sourceCommit", "tag"]) and
+            (.source | keys == ["announcementId", "artifactSha256", "schemaVersion"]) and
+            (.target | keys == ["announcementId", "artifactSha256", "schemaVersion"]) and
+            .kind == "sessiondock.discord-release-migration-receipt" and
+            .schemaVersion == 1 and
+            .release.tag == "v3.1.2" and
+            .release.sourceCommit == "0e257dd53b1c729bbf109185a10d470a1dd6483d" and
+            .source.announcementId == "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83" and
+            .source.artifactSha256 == "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4" and
+            .source.schemaVersion == 2 and
+            .target.announcementId == "969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93" and
+            .target.artifactSha256 == "ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5" and
+            .target.schemaVersion == 3 and
+            (.status == "migrated" or .status == "already-migrated") and
+            (.patchAttempted == (.status == "migrated")) and
+            .verified == true
+          ' migration/receipt/receipt.json >/dev/null
+'@
+    if ((($discordMigrationReceiptValidationStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordMigrationReceiptValidationStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'The migration receipt must pass the exact finite, content-free sanitizer before upload.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordMigrationReceiptValidationStep `
+        -Name 'Validate the sanitized migration receipt'
+    $discordMigrationReceiptUploadStep = Get-RequiredWorkflowStepBlock `
+        -JobContents $discordMigrationJob `
+        -Name 'Upload the sanitized migration receipt'
+    $expectedDiscordMigrationReceiptUploadStep = @'
+      - name: Upload the sanitized migration receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: discord-v3.1.2-sanitized-migration-${{ github.sha }}
+          path: migration/receipt/receipt.json
+          if-no-files-found: error
+          retention-days: 7
+'@
+    if ((($discordMigrationReceiptUploadStep -replace "`r`n", "`n").TrimEnd()) -cne
+        (($expectedDiscordMigrationReceiptUploadStep -replace "`r`n", "`n").TrimEnd())) {
+        throw 'Only the exact sanitized migration receipt may be uploaded after successful validation.'
+    }
+    Assert-WorkflowStepIsUnconditional `
+        -Contents $discordMigrationReceiptUploadStep `
+        -Name 'Upload the sanitized migration receipt'
+    $expectedDiscordMigrationReadOnlyGhApiCalls = @(
+        'tag_reference="$(gh api /repos/Makmatoe/SessionDock/git/ref/tags/v3.1.2)"',
+        'tag_object="$(gh api "/repos/Makmatoe/SessionDock/git/tags/$tag_object_sha")"',
+        'artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9338871798)"',
+        'diagnostic_artifact_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/artifacts/9341080352)"',
+        'diagnostic_run_metadata="$(gh api /repos/Makmatoe/SessionDock/actions/runs/32181879764)"',
+        'release_metadata="$(gh api /repos/Makmatoe/SessionDock/releases/372542551)"')
+    $discordMigrationGhApiCalls = @([regex]::Matches(
+            $discordMigrationWorkflowContents,
+            '(?m)^[^\r\n]*\bgh api\b[^\r\n]*$') |
+        ForEach-Object { $_.Value.Trim() })
+    if ($discordMigrationGhApiCalls.Count -ne
+            $expectedDiscordMigrationReadOnlyGhApiCalls.Count) {
+        throw 'The one-time Discord migration may use only its fixed GET-only GitHub API reads.'
+    }
+    for ($callIndex = 0;
+        $callIndex -lt $expectedDiscordMigrationReadOnlyGhApiCalls.Count;
+        $callIndex++) {
+        if ($discordMigrationGhApiCalls[$callIndex] -cne
+                $expectedDiscordMigrationReadOnlyGhApiCalls[$callIndex]) {
+            throw 'A GitHub API call in the one-time Discord migration is not the reviewed GET-only request.'
+        }
+    }
+    if ($discordMigrationWorkflowContents -notmatch '(?m)^  workflow_dispatch:\s*$' -or
+        $discordMigrationWorkflowContents -notmatch 'Type MIGRATE V3\.1\.2 exactly' -or
+        $discordMigrationWorkflowContents -notmatch 'test "\$CONFIRMATION" = ''MIGRATE V3\.1\.2''' -or
+        $discordMigrationWorkflowContents -notmatch 'test "\$EXPECTED_WORKFLOW_COMMIT" = "\$GITHUB_SHA"' -or
+        $discordMigrationWorkflowContents -notmatch "inputs\.confirmation == 'MIGRATE V3\.1\.2'" -or
+        $discordMigrationWorkflowContents -notmatch 'inputs\.expected_workflow_commit == github\.sha' -or
+        $discordMigrationWorkflowContents -notmatch "github\.repository == 'Makmatoe/SessionDock'" -or
+        $discordMigrationWorkflowContents -notmatch "github\.ref == 'refs/heads/main'" -or
+        $discordMigrationWorkflowContents -notmatch 'github\.actor == github\.repository_owner' -or
+        $discordMigrationWorkflowContents -notmatch 'github\.triggering_actor == github\.repository_owner' -or
+        $discordMigrationWorkflowContents -notmatch '(?ms)^permissions:\s*\r?\n  actions:\s*read\s*\r?\n  contents:\s*read\s*$' -or
+        $discordMigrationWorkflowContents -notmatch '(?ms)^concurrency:\s*\r?\n  group:\s*sessiondock-release-publication\s*\r?\n  cancel-in-progress:\s*false\s*$' -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                '(?m)^    environment:\s*release-announcement\s*$')).Count -ne 1 -or
+        @((Get-WorkflowSecretReferences `
+                -Contents $discordMigrationWorkflowContents)).Count -ne 1 -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                '\$\{\{\s*secrets\.DISCORD_RELEASE_BOT_TOKEN\s*\}\}')).Count -ne 1 -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                '\$\{\{\s*vars\.DISCORD_RELEASE_(?:BOT_ID|CHANNEL_ID|ROLE_ID)\s*\}\}')).Count -ne 3 -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1')).Count -ne 1 -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e')).Count -ne 1 -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                'actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c')).Count -ne 2 -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a')).Count -ne 1 -or
+        $discordMigrationWorkflowContents -notmatch 'persist-credentials:\s*false' -or
+        $discordMigrationWorkflowContents -notmatch 'actions/artifacts/9338871798' -or
+        $discordMigrationWorkflowContents -notmatch 'actions/artifacts/9341080352' -or
+        $discordMigrationWorkflowContents -notmatch 'actions/runs/32181879764' -or
+        $discordMigrationWorkflowContents -notmatch 'workflow_run\.head_sha == "0e257dd53b1c729bbf109185a10d470a1dd6483d"' -or
+        $discordMigrationWorkflowContents -notmatch 'workflow_run\.head_sha == "775b8503d1c81bc1fad7cf754db46d988ea4f82d"' -or
+        $discordMigrationWorkflowContents -notmatch 'git/ref/tags/v3\.1\.2' -or
+        $discordMigrationWorkflowContents -notmatch 'git/tags/\$tag_object_sha' -or
+        $discordMigrationWorkflowContents -notmatch 'run-id:\s*30960123719' -or
+        $discordMigrationWorkflowContents -notmatch 'run-id:\s*32181879764' -or
+        $discordMigrationWorkflowContents -notmatch '\.conclusion == "success"' -or
+        $discordMigrationWorkflowContents -notmatch '\.path == "\.github/workflows/reconcile-v3\.1\.2-discord\.yml"' -or
+        $discordMigrationWorkflowContents -notmatch 'releases/372542551' -or
+        $discordMigrationWorkflowContents -notmatch 'id == 519788140' -or
+        $discordMigrationWorkflowContents -notmatch '8c94a1e8f72e93083fa6d5815ec76e10dc798bef58df570c0de6a0e6b961865b' -or
+        $discordMigrationWorkflowContents -notmatch '6ae321e1ca62ecb726af955bb3ee9de44b8fa8a2a0ceb6e2b6d0c7eef6ae9811' -or
+        $discordMigrationWorkflowContents -notmatch 'a816a3936ef13171d46ca1f56c312b51b2842eb086553508828324f1128faa2e' -or
+        $discordMigrationWorkflowContents -notmatch 'ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4' -or
+        $discordMigrationWorkflowContents -notmatch 'a4d4fd9d4f7b5353b06ebf04aa39fef888ee5afbbd39aadd64651d81780a3bbf' -or
+        @([regex]::Matches(
+                $discordMigrationWorkflowContents,
+                'release-automation\.js migrate-existing')).Count -ne 1 -or
+        $discordMigrationWorkflowContents -notmatch '--receipt migration/receipt/receipt\.json' -or
+        $discordMigrationWorkflowContents -match 'release-automation\.js (?:post|diagnose-existing)|(?i)(?:^|\s)(?:POST|PATCH|PUT|DELETE)(?:\s|$)|(?i)(?:^|\s)(?:curl|wget)(?:\.exe)?(?:\s|$)|Invoke-(?:WebRequest|RestMethod)|gh\s+api\s+.*(?:--method|-X)|gh\s+(?:release|pr|workflow|secret|variable)\b|git\s+push|node\s+(?:--eval|-e)\b|python\s+-c\b|/environments/|deployment_branch_policy|continue-on-error|cancelled\(\)|failure\(\)' -or
+        $discordMigrationWorkflowContents -match '(?m)^\s+(?:actions|contents|id-token|attestations|artifact-metadata):\s*write\s*$') {
+        throw 'The one-time v3.1.2 Discord migration must remain owner-triggered, exact-PATCH-only, content-free, immutable-input-bound, and least-privileged.'
     }
     if ($releaseWorkflowContents -notmatch
             '(?ms)^concurrency:\s*\r?\n  group:\s*sessiondock-release-publication\s*\r?\n  queue:\s*max\s*\r?\n  cancel-in-progress:\s*false\s*$') {
@@ -1920,7 +2485,9 @@ try {
         $releaseAutomationContents -notmatch 'label:\s*"View latest release"' -or
         $releaseAutomationContents -notmatch 'https://github\.com/\$\{REPOSITORY\}/releases/latest' -or
         $releaseAutomationContents -notmatch '"poll"' -or
-        $releaseAutomationContents -notmatch 'message\.flags !== undefined && message\.flags !== 0' -or
+        $releaseAutomationContents -notmatch 'function normalizedMessageFlags\(' -or
+        $releaseAutomationContents -notmatch 'allowedFlags = NORMAL_MESSAGE_FLAGS' -or
+        $releaseAutomationContents -notmatch '!Number\.isSafeInteger\(flags\) \|\| !allowedFlags\.includes\(flags\)' -or
         $releaseAutomationContents -notmatch 'message\.type !== 0' -or
         $releaseAutomationContents -notmatch 'message\.tts !== false' -or
         $releaseAutomationContents -notmatch 'message\.edited_timestamp !== null' -or
@@ -1942,8 +2509,34 @@ try {
         $releaseAutomationContents -match 'arrayBuffer\s*\(' -or
         $releaseAutomationContents -match '(?i)discord(?:_api|_base|_webhook)_url' -or
         $releaseAutomationContents -match 'Math\.random|Date\.now|GITHUB_RUN_ATTEMPT' -or
-        @([regex]::Matches($releaseAutomationContents, 'method:\s*"POST"')).Count -ne 1) {
-        throw 'Discord automation must retain its fixed endpoint, deterministic nonce, bounded reconciliation, receipt preflight, and verified-image contract.'
+        @([regex]::Matches($releaseAutomationContents, 'method:\s*"POST"')).Count -ne 1 -or
+        @([regex]::Matches($releaseAutomationContents, 'method:\s*"PATCH"')).Count -ne 1 -or
+        $releaseAutomationContents -match 'method:\s*"(?:PUT|DELETE)"' -or
+        $releaseAutomationContents -notmatch 'const MESSAGE_FLAG_SUPPRESS_EMBEDS = 1 << 2' -or
+        $releaseAutomationContents -notmatch 'const MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS = 1 << 12' -or
+        $releaseAutomationContents -notmatch 'const NORMAL_MESSAGE_FLAGS = \[0, MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS\]' -or
+        $releaseAutomationContents -notmatch 'const MIGRATION_SOURCE_MESSAGE_FLAGS = \[' -or
+        $releaseAutomationContents -notmatch 'const MIGRATION_RECEIPT_KIND = "sessiondock\.discord-release-migration-receipt"' -or
+        $releaseAutomationContents -notmatch 'const APPROVED_MIGRATION = Object\.freeze\(' -or
+        $releaseAutomationContents -notmatch 'announcementId: "2022db1656d2125f5ea79ce69e1b91e57292423488713278321f2eaeeef2ec83"' -or
+        $releaseAutomationContents -notmatch 'artifactSha256: "ccbcceb02c21a8d38bd14cd9f9369d34648016412f6e5006c3cbd1f141abfae4"' -or
+        $releaseAutomationContents -notmatch 'announcementId: "969011eb65d290bcf8d410da7d5050c46e5d226ab5c1b626e095b6653de28e93"' -or
+        $releaseAutomationContents -notmatch 'artifactSha256: "ee32312ca14ed64bc9e5a7bc2a54beba3b17595c2b0776a5c327d3300b8c6db5"' -or
+        $releaseAutomationContents -notmatch 'function buildApprovedMigration\(' -or
+        $releaseAutomationContents -notmatch 'function assertExpectedMigrationTarget\(' -or
+        $releaseAutomationContents -notmatch 'async function locateMigrationAnnouncement\(' -or
+        $releaseAutomationContents -notmatch 'async function patchDiscordMessageOnce\(' -or
+        $releaseAutomationContents -notmatch 'async function verifyMigratedTarget\(' -or
+        $releaseAutomationContents -notmatch 'export async function migrateExistingAnnouncement\(' -or
+        $releaseAutomationContents -notmatch 'strictSourceMismatches\.length !== 1 \|\| strictSourceMismatches\[0\] !== "message\.flags"' -or
+        $releaseAutomationContents -notmatch 'finalFlags = sourceFlags & ~MESSAGE_FLAG_SUPPRESS_EMBEDS' -or
+        $releaseAutomationContents -notmatch 'keys\.length !== 3 \|\| keys\[0\] !== "components" \|\| keys\[1\] !== "embeds" \|\| keys\[2\] !== "flags"' -or
+        $releaseAutomationContents -notmatch 'patchResult = await patchDiscordMessageOnce\(' -or
+        $releaseAutomationContents -notmatch 'migrated = await discordRequest\(' -or
+        $releaseAutomationContents -notmatch 'function reserveMigrationReceipt\(' -or
+        $releaseAutomationContents -notmatch 'allowed\.push\("--receipt", "--expected-target-announcement", "--expected-target-artifact-sha256"\)' -or
+        $releaseAutomationContents -notmatch 'required\.push\("--receipt", "--expected-target-announcement", "--expected-target-artifact-sha256"\)') {
+        throw 'Discord automation must retain its fixed endpoint, deterministic nonce, bounded reconciliation, receipt preflight, verified-image contract, and exact one-PATCH migration.'
     }
     $requiredDiscordRegressionTests = @(
         'the staged standalone module executes workflow-shaped generate and verify commands',
@@ -1985,7 +2578,19 @@ try {
         'the CLI finalizes a confirmed receipt and exits successfully',
         'the CLI preserves an ambiguous delivery receipt and safe exit output',
         'a confirmed delivery reports receipt finalization failure without replacing reserved evidence',
-        'an ambiguous delivery keeps its classification when receipt finalization also fails'
+        'an ambiguous delivery keeps its classification when receipt finalization also fails',
+        'normal verification accepts the harmless suppress-notifications message flag',
+        'approved schema-2 migration emits one minimal PATCH and preserves understood flags',
+        'migration rejects zero, unknown, components-v2, and non-integer source flags before writing',
+        'an exact migrated target rerun is read-only and accepts an omitted nonce',
+        'an ambiguous migration PATCH reconciles by exact-ID GET without retrying',
+        'post-PATCH exact-target verification rejects changed identity, state, flags, or nonce',
+        'a migration PATCH whose exact-ID readback is not the target fails ambiguously without a second write',
+        'migration reread rejects changed source identity or presentation before PATCH',
+        'migration history fails closed for missing, duplicate, mixed, conflicting, and newer announcements',
+        'migration target pins and attachment-free source eligibility fail before network access',
+        'the migration CLI writes a mode-0600 content-free receipt and performs one PATCH',
+        'the migration CLI rejects a mismatched target pin before receipt reservation or network access'
     )
     Assert-RequiredNodeTestDeclarations `
         -Contents $releaseAutomationTests `
@@ -2246,7 +2851,10 @@ try {
             if ($contents -match '(?m)^\s*secrets\s*:\s*inherit\s*$') {
                 throw "Workflow secret inheritance is intentionally prohibited: $($workflow.Name)"
             }
-            if ($workflow.Name -cnotin @('release.yml', 'reconcile-v3.1.2-discord.yml') -and
+            if ($workflow.Name -cnotin @(
+                    'release.yml',
+                    'reconcile-v3.1.2-discord.yml',
+                    'migrate-v3.1.2-discord.yml') -and
                 ($workflowSecretReferences.Count -ne 0 -or
                  $contents -match '(?m)^\s+environment\s*:' -or
                  $contents -match 'UPDATE_SIGNING_PRIVATE_KEY_PKCS8_BASE64|DISCORD_RELEASE_(?:BOT_TOKEN|BOT_ID|CHANNEL_ID|ROLE_ID)')) {
