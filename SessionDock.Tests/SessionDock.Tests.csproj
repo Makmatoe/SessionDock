@@ -28,7 +28,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="TestData\SessionDockApp-3.1.2-package-manifest.json"
-                      LogicalName="SessionDock.Tests.TestData.SessionDockApp.3.1.2.PackageManifest.json" />
+    <EmbeddedResource Include="TestData\SessionDockApp-3.1.2-package-manifest.tsv"
+                      LogicalName="SessionDock.Tests.TestData.SessionDockApp.3.1.2.PackageManifest.tsv" />
+    <EmbeddedResource Include="TestData\SessionDockApp-3.1.2.nuspec.base64"
+                      LogicalName="SessionDock.Tests.TestData.SessionDockApp.3.1.2.Nuspec.base64" />
   </ItemGroup>
 </Project>

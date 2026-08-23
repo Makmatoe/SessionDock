@@ -110,7 +110,8 @@ public static class ReleasePackagePolicy
                 "The update package contains missing or too many entries.");
         }
 
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var entryKinds = new Dictionary<string, bool>(
+            StringComparer.OrdinalIgnoreCase);
         var required = new HashSet<string>(
             CurrentRequiredEntries.Keys,
             StringComparer.Ordinal);
@@ -123,7 +124,7 @@ public static class ReleasePackagePolicy
                     out var canonicalName,
                     out var isDirectory) ||
                 !HasSafeEntryType(entry.ExternalAttributes, isDirectory) ||
-                !seen.Add(canonicalName))
+                !entryKinds.TryAdd(canonicalName, isDirectory))
             {
                 throw new ReleaseTrustException(
                     "The update package contains a duplicate or unsafe entry path.");
@@ -151,6 +152,8 @@ public static class ReleasePackagePolicy
                 required.Remove(entry.FullName!);
             AddToTotalLength(entry.Length, ref totalLength);
         }
+
+        ValidateNoFileContainsAnotherEntry(entryKinds);
 
         if (required.Count != 0)
         {
@@ -206,6 +209,27 @@ public static class ReleasePackagePolicy
         }
 
         return true;
+    }
+
+    private static void ValidateNoFileContainsAnotherEntry(
+        IReadOnlyDictionary<string, bool> entryKinds)
+    {
+        foreach (var name in entryKinds.Keys)
+        {
+            var separator = name.IndexOf('/');
+            while (separator >= 0)
+            {
+                var parent = name[..separator];
+                if (entryKinds.TryGetValue(parent, out var isDirectory) &&
+                    !isDirectory)
+                {
+                    throw new ReleaseTrustException(
+                        "The update package contains a file path that conflicts with another entry.");
+                }
+
+                separator = name.IndexOf('/', separator + 1);
+            }
+        }
     }
 
     private static bool HasSafeEntryType(

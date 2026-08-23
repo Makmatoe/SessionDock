@@ -67,6 +67,8 @@ public partial class MainWindow
                     return;
                 }
 
+                if (!await PrepareUpdateExitAsync())
+                    return;
                 await _updateService.ApplyAfterExitAsync(
                     pending,
                     verifiedPending,
@@ -125,6 +127,9 @@ public partial class MainWindow
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (!await PrepareUpdateExitAsync())
+                return;
+
             SetStatus(
                 Localize("Main.UpdateDownloadedTitle"),
                 Localize("Main.UpdateDownloadedDetail"),
@@ -168,6 +173,34 @@ public partial class MainWindow
             if (!applyingUpdate && !_operationLifetime.IsShuttingDown)
                 SetOperationBusy(false);
         }
+    }
+
+    private async Task<bool> PrepareUpdateExitAsync()
+    {
+        if (_currentWorkspacePage != MainWorkspacePage.Destinations ||
+            !HasDestinationEditorChanges())
+        {
+            return true;
+        }
+
+        var decision = await ShowDestinationEditorDecisionAsync();
+        if (decision == DestinationEditorDecision.Cancel)
+        {
+            SetStatus(
+                Localize("Main.UpdateRestartPostponedTitle"),
+                Localize("Main.UpdateRestartPostponedDetail"),
+                Localize("Main.UpdateReadyBadge"),
+                StatusTone.Neutral);
+            return false;
+        }
+
+        if (decision == DestinationEditorDecision.Discard)
+        {
+            RefreshDestinationsWorkspace(_editingDestinationId);
+            return true;
+        }
+
+        return await SaveDestinationAsync();
     }
 
     private bool ConfirmUpdate(

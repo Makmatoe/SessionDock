@@ -23,6 +23,7 @@ internal sealed class SessionDockUpdateService : IDisposable
     private const int MaximumManifestRedirects = 3;
     private const int MaximumNuspecMetadataElements = 128;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private static readonly ProcessLifetimePackageLease ApplyPackageLease = new();
     private readonly UpdateManager _manager;
     private readonly HttpClient _httpClient;
 
@@ -116,22 +117,24 @@ internal sealed class SessionDockUpdateService : IDisposable
             cancellationToken);
     }
 
-    public Task ApplyAfterExitAsync(
+    public async Task ApplyAfterExitAsync(
         VelopackAsset asset,
         VerifiedReleaseDescriptor release,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(asset);
         ArgumentNullException.ThrowIfNull(release);
-        return VerifyPackageIdentityAndInvokeAsync(
+        var lease = await OpenVerifiedPackageLeaseAsync(
             asset,
             release,
             VelopackLocator.Current.PackagesDir,
+            cancellationToken);
+        ApplyPackageLease.Schedule(
+            lease,
             () => _manager.WaitExitThenApplyUpdates(
                 asset,
                 silent: false,
-                restart: true),
-            cancellationToken);
+                restart: true));
     }
 
     public void Dispose() => _httpClient.Dispose();
@@ -435,16 +438,14 @@ internal sealed class SessionDockUpdateService : IDisposable
             Convert.ToHexString(actualHash));
     }
 
-    internal static async Task VerifyPackageIdentityAndInvokeAsync(
+    internal static async Task<FileStream> OpenVerifiedPackageLeaseAsync(
         VelopackAsset asset,
         VerifiedReleaseDescriptor release,
         string? packagesDirectory,
-        Action invokeApply,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(asset);
         ArgumentNullException.ThrowIfNull(release);
-        ArgumentNullException.ThrowIfNull(invokeApply);
         var descriptor = release.Descriptor;
         if (!asset.Version.ToString().Equals(
                 descriptor.Version,
@@ -459,29 +460,37 @@ internal sealed class SessionDockUpdateService : IDisposable
         }
 
         var packagePath = LocatePackage(packagesDirectory, asset.FileName);
-        await using var packageStream = new FileStream(
+        var packageStream = new FileStream(
             packagePath,
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read,
             bufferSize: 128 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
-        if (packageStream.Length != descriptor.PackageSize)
-            throw new ReleaseTrustException("The downloaded package size changed.");
-
-        var actualHash = await SHA256.HashDataAsync(
-            packageStream,
-            cancellationToken);
-        if (!CryptographicOperations.FixedTimeEquals(
-                actualHash,
-                Convert.FromHexString(descriptor.PackageSha256)))
+        try
         {
-            throw new ReleaseTrustException(
-                "The downloaded package changed before installation.");
-        }
+            if (packageStream.Length != descriptor.PackageSize)
+                throw new ReleaseTrustException("The downloaded package size changed.");
 
-        cancellationToken.ThrowIfCancellationRequested();
-        invokeApply();
+            var actualHash = await SHA256.HashDataAsync(
+                packageStream,
+                cancellationToken);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    actualHash,
+                    Convert.FromHexString(descriptor.PackageSha256)))
+            {
+                throw new ReleaseTrustException(
+                    "The downloaded package changed before installation.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return packageStream;
+        }
+        catch
+        {
+            await packageStream.DisposeAsync();
+            throw;
+        }
     }
 
     private static string LocatePackage(
@@ -754,3 +763,45 @@ internal sealed class SessionDockUpdateService : IDisposable
 internal sealed record AvailableSessionDockUpdate(
     UpdateInfo UpdateInfo,
     VerifiedReleaseDescriptor Release);
+
+internal sealed class ProcessLifetimePackageLease : IDisposable
+{
+    private FileStream? _lease;
+
+    public void Schedule(FileStream lease, Action scheduleApply)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        ArgumentNullException.ThrowIfNull(scheduleApply);
+        if (Interlocked.CompareExchange(
+                ref _lease,
+                lease,
+                comparand: null) is not null)
+        {
+            lease.Dispose();
+            throw new InvalidOperationException(
+                "An update is already scheduled for installation.");
+        }
+
+        try
+        {
+            scheduleApply();
+        }
+        catch
+        {
+            if (ReferenceEquals(
+                    Interlocked.CompareExchange(
+                        ref _lease,
+                        value: null,
+                        comparand: lease),
+                    lease))
+            {
+                lease.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    public void Dispose() =>
+        Interlocked.Exchange(ref _lease, value: null)?.Dispose();
+}

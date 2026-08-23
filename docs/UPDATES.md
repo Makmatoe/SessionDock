@@ -93,9 +93,11 @@ Update behavior depends on how the existing copy was obtained:
   application folder can be deleted.
 - **Compatible installed copies:** beginning with SessionDock 3.1.3, an
   installed copy that can reach the current verifier may use the in-app update
-  control and full NUPKG feed. Before confirmation, SessionDock binds the
-  downloaded file's measured size and SHA-256 to the descriptor signed by the
-  pinned release key. It then verifies package identity, version, channel,
+  control and full NUPKG feed. Before confirmation, SessionDock binds the feed's
+  package identity to the descriptor signed by the pinned release key. After
+  download, and again immediately before the apply handoff, it measures and
+  hashes the local file and requires those exact bytes to match that descriptor.
+  It then verifies package identity, version, channel,
   required metadata and launch files, executable format, safe normalized paths,
   safe package metadata and canonical empty directory entries, unique Windows
   names, and bounded entry and expansion counts. It rejects reparse points,

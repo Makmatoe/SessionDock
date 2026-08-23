@@ -3387,6 +3387,10 @@ public partial class MainWindow : Window
         HomeSaveTemplateButton.IsEnabled = auxiliaryActionsEnabled;
         HomeDestinationsButton.IsEnabled = auxiliaryActionsEnabled;
         HomeManageAccountsButton.IsEnabled = auxiliaryActionsEnabled;
+        NamedDestinationsList.IsEnabled = auxiliaryActionsEnabled;
+        DestinationNameBox.IsEnabled = auxiliaryActionsEnabled;
+        DestinationValueBox.IsEnabled = auxiliaryActionsEnabled;
+        DestinationAccountAssignmentsList.IsEnabled = auxiliaryActionsEnabled;
         NewDestinationButton.IsEnabled = auxiliaryActionsEnabled;
         SaveDestinationButton.IsEnabled = auxiliaryActionsEnabled;
         DeleteDestinationButton.IsEnabled = auxiliaryActionsEnabled &&

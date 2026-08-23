@@ -162,7 +162,7 @@ public sealed class SessionDockUpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task VerifyPackageIdentityAndInvokeAsync_InvokesWithPackageWriteLocked()
+    public async Task OpenVerifiedPackageLeaseAsync_ReturnsWriteBlockingLease()
     {
         var packagesDirectory = CreatePackagesDirectory();
         var packagePath = Path.Combine(packagesDirectory, PackageFile);
@@ -173,28 +173,32 @@ public sealed class SessionDockUpdateServiceTests : IDisposable
             packageBytes,
             TestContext.Current.CancellationToken);
         var release = CreateVerifiedRelease(packageBytes);
-        var invokeCount = 0;
-
-        await SessionDockUpdateService.VerifyPackageIdentityAndInvokeAsync(
+        var lease = await SessionDockUpdateService.OpenVerifiedPackageLeaseAsync(
             CreatePendingAsset(PackageFile),
             release,
             packagesDirectory,
-            () =>
-            {
-                invokeCount++;
-                Assert.Throws<IOException>(() => File.Open(
-                    packagePath,
-                    FileMode.Open,
-                    FileAccess.Write,
-                    FileShare.ReadWrite | FileShare.Delete));
-            },
             TestContext.Current.CancellationToken);
+        Assert.Throws<IOException>(() => File.Open(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete));
+        Assert.Throws<IOException>(() => File.Move(
+            packagePath,
+            packagePath + ".moved"));
+        Assert.Throws<IOException>(() => File.Delete(packagePath));
 
-        Assert.Equal(1, invokeCount);
+        await lease.DisposeAsync();
+        using var writable = File.Open(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.Read);
+        Assert.True(writable.CanWrite);
     }
 
     [Fact]
-    public async Task VerifyPackageIdentityAndInvokeAsync_ChangedBytesRejectWithoutInvoking()
+    public async Task OpenVerifiedPackageLeaseAsync_ChangedBytesAreRejected()
     {
         var packagesDirectory = CreatePackagesDirectory();
         var packagePath = Path.Combine(packagesDirectory, PackageFile);
@@ -210,25 +214,21 @@ public sealed class SessionDockUpdateServiceTests : IDisposable
             packagePath,
             packageBytes,
             TestContext.Current.CancellationToken);
-        var invoked = false;
-
         var exception = await Assert.ThrowsAsync<ReleaseTrustException>(() =>
-            SessionDockUpdateService.VerifyPackageIdentityAndInvokeAsync(
+            SessionDockUpdateService.OpenVerifiedPackageLeaseAsync(
                 CreatePendingAsset(PackageFile),
                 release,
                 packagesDirectory,
-                () => invoked = true,
                 TestContext.Current.CancellationToken));
 
         Assert.Contains(
             "changed",
             exception.Message,
             StringComparison.OrdinalIgnoreCase);
-        Assert.False(invoked);
     }
 
     [Fact]
-    public async Task VerifyPackageIdentityAndInvokeAsync_MismatchedAssetRejectsWithoutInvoking()
+    public async Task OpenVerifiedPackageLeaseAsync_MismatchedAssetIsRejected()
     {
         var packagesDirectory = CreatePackagesDirectory();
         var packageBytes = new byte[ReleaseDescriptorPolicy.MinimumPackageSize];
@@ -237,17 +237,64 @@ public sealed class SessionDockUpdateServiceTests : IDisposable
             packageBytes,
             TestContext.Current.CancellationToken);
         var release = CreateVerifiedRelease(packageBytes);
-        var invoked = false;
-
         await Assert.ThrowsAsync<ReleaseTrustException>(() =>
-            SessionDockUpdateService.VerifyPackageIdentityAndInvokeAsync(
+            SessionDockUpdateService.OpenVerifiedPackageLeaseAsync(
                 CreatePendingAsset("SessionDockApp-3.1.2-other-full.nupkg"),
                 release,
                 packagesDirectory,
-                () => invoked = true,
                 TestContext.Current.CancellationToken));
+    }
 
-        Assert.False(invoked);
+    [Fact]
+    public void ProcessLifetimePackageLease_ScheduleFailureReleasesFile()
+    {
+        var packagesDirectory = CreatePackagesDirectory();
+        var packagePath = Path.Combine(packagesDirectory, PackageFile);
+        File.WriteAllBytes(packagePath, [0x01]);
+        using var slot = new ProcessLifetimePackageLease();
+        var lease = OpenReadLease(packagePath);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            slot.Schedule(
+                lease,
+                () => throw new InvalidOperationException("schedule failed")));
+
+        using var writable = File.Open(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.Read);
+        Assert.True(writable.CanWrite);
+    }
+
+    [Fact]
+    public void ProcessLifetimePackageLease_RejectsSecondScheduleAndRetainsFirst()
+    {
+        var packagesDirectory = CreatePackagesDirectory();
+        var packagePath = Path.Combine(packagesDirectory, PackageFile);
+        File.WriteAllBytes(packagePath, [0x01]);
+        using var slot = new ProcessLifetimePackageLease();
+        var firstLease = OpenReadLease(packagePath);
+        var scheduled = 0;
+        slot.Schedule(firstLease, () => scheduled++);
+        var secondLease = OpenReadLease(packagePath);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            slot.Schedule(secondLease, () => scheduled++));
+        Assert.Equal(1, scheduled);
+        Assert.Throws<IOException>(() => File.Open(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.ReadWrite | FileShare.Delete));
+
+        slot.Dispose();
+        using var writable = File.Open(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Write,
+            FileShare.Read);
+        Assert.True(writable.CanWrite);
     }
 
     public void Dispose()
@@ -262,6 +309,12 @@ public sealed class SessionDockUpdateServiceTests : IDisposable
         Directory.CreateDirectory(packagesDirectory);
         return packagesDirectory;
     }
+
+    private static FileStream OpenReadLease(string path) => new(
+        path,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.Read);
 
     private static VelopackAsset CreatePendingAsset(string fileName) => new()
     {

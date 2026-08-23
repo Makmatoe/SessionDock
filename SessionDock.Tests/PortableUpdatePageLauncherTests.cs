@@ -78,6 +78,10 @@ public sealed class PortableUpdatePageLauncherTests
             root,
             "SessionDock",
             "MainWindow.Localization.cs"));
+        var mainSource = File.ReadAllText(Path.Combine(
+            root,
+            "SessionDock",
+            "MainWindow.xaml.cs"));
         var mainWindow = XDocument.Load(Path.Combine(
             root,
             "SessionDock",
@@ -103,6 +107,24 @@ public sealed class PortableUpdatePageLauncherTests
             "_updateService.ApplyAfterExitAsync(",
             updateSource,
             StringComparison.Ordinal);
+        Assert.Equal(
+            2,
+            updateSource.Split(
+                "if (!await PrepareUpdateExitAsync())",
+                StringSplitOptions.None).Length - 1);
+        foreach (var control in new[]
+                 {
+                     "NamedDestinationsList",
+                     "DestinationNameBox",
+                     "DestinationValueBox",
+                     "DestinationAccountAssignmentsList"
+                 })
+        {
+            Assert.Contains(
+                $"{control}.IsEnabled = auxiliaryActionsEnabled;",
+                mainSource,
+                StringComparison.Ordinal);
+        }
         Assert.Contains(
             "Main.PortableUpdateName",
             localizationSource,

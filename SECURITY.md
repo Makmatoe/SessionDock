@@ -60,7 +60,8 @@ SessionDock is designed around these boundaries:
   logged or persisted.
 - Only trusted Roblox installation paths and Roblox-signed Player executables
   may be launched or closed.
-- Application updates come only from this repository and require a valid
+- Starting with SessionDock 3.1.3, application updates come only from this
+  repository and require a valid
   descriptor signed by the release key pinned in the app, an exact package
   hash, bounded safe archive structure, operationally required package metadata
   and launch files, and matching version and channel. Runtime update
@@ -208,7 +209,8 @@ Every expected runtime PE outside those six application PEs and two recognized
 NUPKG-only helpers must have a valid Microsoft signature. The protected release
 verifier rejects any unexpected executable, installation script, reparse point,
 package file, component payload, or mismatch between the portable ZIP and the
-NUPKG's shared application inventory. The installed-copy runtime verifier binds
+NUPKG's shared application inventory. The installed-copy runtime verifier
+introduced for SessionDock 3.1.3 binds
 the complete local NUPKG to the exact signed hash, then rejects unsafe or
 duplicate paths, reparse points, devices and other nonregular types,
 noncanonical directories, missing operationally required metadata or launch

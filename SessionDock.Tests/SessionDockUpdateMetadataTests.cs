@@ -1,5 +1,7 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using System.Text;
+using System.Xml.Linq;
 using SessionDock.ReleaseTrust;
 using SessionDock.Services;
 
@@ -25,6 +27,33 @@ public sealed class SessionDockUpdateMetadataTests
         SessionDockUpdateService.ValidatePackageMetadata(
             archive,
             CreateVerifiedRelease(),
+            useCurrentLayout: true);
+    }
+
+    [Fact]
+    public void ValidatePackageMetadata_PublicV312Nuspec_IsAcceptedByteForByte()
+    {
+        var nuspec = ReadPublicV312Nuspec();
+        Assert.Equal(8_947, nuspec.Length);
+        Assert.Equal(
+            "4E1795E9907A8AF8621EB6137DABF7F5E8FC561E84779529A3AC8580227A51C7",
+            Convert.ToHexString(SHA256.HashData(nuspec)));
+
+        var document = XDocument.Load(new MemoryStream(nuspec));
+        var metadata = Assert.Single(document.Root!.Elements());
+        var releaseNotes = Assert.Single(metadata.Elements(), element =>
+                element.Name.LocalName.Equals(
+                    "releaseNotes",
+                    StringComparison.Ordinal))
+            .Value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
+        using var archive = CreateArchive(nuspec);
+
+        SessionDockUpdateService.ValidatePackageMetadata(
+            archive,
+            CreateVerifiedRelease(releaseNotes: releaseNotes),
             useCurrentLayout: true);
     }
 
@@ -221,6 +250,25 @@ public sealed class SessionDockUpdateMetadataTests
             leaveOpen: false);
     }
 
+    private static ZipArchive CreateArchive(byte[] nuspec)
+    {
+        var stream = new MemoryStream();
+        using (var writer = new ZipArchive(
+                   stream,
+                   ZipArchiveMode.Create,
+                   leaveOpen: true))
+        {
+            WriteEntry(writer, "SessionDockApp.nuspec", nuspec);
+            WriteEntry(writer, "lib/app/sq.version", nuspec);
+        }
+
+        stream.Position = 0;
+        return new ZipArchive(
+            stream,
+            ZipArchiveMode.Read,
+            leaveOpen: false);
+    }
+
     private static void WriteEntry(
         ZipArchive archive,
         string name,
@@ -233,8 +281,30 @@ public sealed class SessionDockUpdateMetadataTests
         output.Write(value);
     }
 
+    private static void WriteEntry(
+        ZipArchive archive,
+        string name,
+        byte[] value)
+    {
+        var entry = archive.CreateEntry(name);
+        using var output = entry.Open();
+        output.Write(value);
+    }
+
+    private static byte[] ReadPublicV312Nuspec()
+    {
+        using var stream = typeof(SessionDockUpdateMetadataTests).Assembly
+            .GetManifestResourceStream(
+                "SessionDock.Tests.TestData.SessionDockApp.3.1.2.Nuspec.base64")
+            ?? throw new InvalidOperationException(
+                "The public SessionDock v3.1.2 Nuspec fixture is unavailable.");
+        using var reader = new StreamReader(stream, Encoding.ASCII);
+        return Convert.FromBase64String(reader.ReadToEnd().Trim());
+    }
+
     private static VerifiedReleaseDescriptor CreateVerifiedRelease(
-        bool useLegacyIdentity = false)
+        bool useLegacyIdentity = false,
+        string releaseNotes = SignedReleaseNotes)
     {
         var version = useLegacyIdentity ? "2.1.5" : "3.1.2";
         var descriptor = new ReleaseDescriptor(
@@ -259,7 +329,7 @@ public sealed class SessionDockUpdateMetadataTests
                 : "SessionDockApp-3.1.2-win-x64-sessiondock-full.nupkg",
             81_267_441,
             new string('A', 64),
-            SignedReleaseNotes,
+            releaseNotes,
             "test-signature");
         return new VerifiedReleaseDescriptor(
             descriptor,

@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Globalization;
 using SessionDock.ReleaseTrust;
 
 namespace SessionDock.Tests;
@@ -47,28 +47,12 @@ public sealed class ReleasePackagePolicyTests
     public void ValidateEntries_PublicV312CompactManifest_IsAccepted()
     {
         var manifest = ReadPublicV312Manifest();
-        var entries = manifest.OperationalEntries.Select(entry =>
+        var entries = manifest.Entries.Select(entry =>
             new ReleasePackageEntryIdentity(
                 entry.FullName,
                 entry.Length,
                 entry.CompressedLength,
                 entry.ExternalAttributes)).ToList();
-        var remainingCount = manifest.EntryCount - entries.Count;
-        var remainingLength = manifest.TotalUncompressedBytes -
-                              entries.Sum(entry => entry.Length);
-        var remainingCompressedLength = manifest.TotalCompressedBytes -
-                                        entries.Sum(entry => entry.CompressedLength);
-        entries.Add(Entry(
-            "lib/app/runtime/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-            remainingLength,
-            remainingCompressedLength));
-        for (var index = 1; index < remainingCount; index++)
-        {
-            entries.Add(Entry(
-                $"lib/app/runtime/optional-{index:D4}.dat",
-                0,
-                0));
-        }
 
         var mainExecutable = Assert.Single(
             entries,
@@ -221,6 +205,17 @@ public sealed class ReleasePackagePolicyTests
             0,
             0x10));
         entries.Add(Entry("lib/app/runtime/Collision"));
+
+        Assert.Throws<ReleaseTrustException>(() =>
+            ReleasePackagePolicy.ValidateEntries(entries, useCurrentLayout: true));
+    }
+
+    [Fact]
+    public void ValidateEntries_CurrentLayoutFileAndChildPathConflict_IsRejected()
+    {
+        var entries = CreateValidCurrentEntries();
+        entries.Add(Entry("lib/app/Runtime"));
+        entries.Add(Entry("lib/app/runtime/child.dll"));
 
         Assert.Throws<ReleaseTrustException>(() =>
             ReleasePackagePolicy.ValidateEntries(entries, useCurrentLayout: true));
@@ -443,16 +438,64 @@ public sealed class ReleasePackagePolicyTests
     {
         using var stream = typeof(ReleasePackagePolicyTests).Assembly
             .GetManifestResourceStream(
-                "SessionDock.Tests.TestData.SessionDockApp.3.1.2.PackageManifest.json")
+                "SessionDock.Tests.TestData.SessionDockApp.3.1.2.PackageManifest.tsv")
             ?? throw new InvalidOperationException(
                 "The compact SessionDock v3.1.2 package manifest is unavailable.");
-        return JsonSerializer.Deserialize<PublicPackageManifest>(
-            stream,
-            new JsonSerializerOptions
+        using var reader = new StreamReader(stream);
+        var metadata = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var index = 0; index < 9; index++)
+        {
+            var parts = (reader.ReadLine() ?? string.Empty).Split('\t', 2);
+            if (parts.Length != 2 || !metadata.TryAdd(parts[0], parts[1]))
             {
-                PropertyNameCaseInsensitive = true
-            }) ?? throw new InvalidOperationException(
-            "The compact SessionDock v3.1.2 package manifest is empty.");
+                throw new InvalidOperationException(
+                    "The compact SessionDock v3.1.2 package manifest has invalid metadata.");
+            }
+        }
+
+        if (!string.Equals(
+                reader.ReadLine(),
+                "fullName\tlength\tcompressedLength\texternalAttributes",
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "The compact SessionDock v3.1.2 package manifest has an invalid header.");
+        }
+
+        var entries = new List<PublicPackageEntry>();
+        while (reader.ReadLine() is { } line)
+        {
+            var parts = line.Split('\t');
+            if (parts.Length != 4)
+            {
+                throw new InvalidOperationException(
+                    "The compact SessionDock v3.1.2 package manifest has an invalid entry.");
+            }
+
+            entries.Add(new PublicPackageEntry(
+                parts[0],
+                long.Parse(parts[1], CultureInfo.InvariantCulture),
+                long.Parse(parts[2], CultureInfo.InvariantCulture),
+                int.Parse(parts[3], CultureInfo.InvariantCulture)));
+        }
+
+        static int ParseInt(IReadOnlyDictionary<string, string> values, string key) =>
+            int.Parse(values[key], CultureInfo.InvariantCulture);
+        static long ParseLong(IReadOnlyDictionary<string, string> values, string key) =>
+            long.Parse(values[key], CultureInfo.InvariantCulture);
+
+        return new PublicPackageManifest(
+            metadata["source"],
+            metadata["packageFile"],
+            ParseLong(metadata, "packageSize"),
+            metadata["packageSha256"],
+            ParseInt(metadata, "entryCount"),
+            ParseLong(metadata, "totalUncompressedBytes"),
+            ParseLong(metadata, "totalCompressedBytes"),
+            ParseInt(metadata, "maximumEntryNameLength"),
+            metadata["externalAttributes"].Split(',').Select(value =>
+                int.Parse(value, CultureInfo.InvariantCulture)).ToArray(),
+            entries.ToArray());
     }
 
     private sealed record PublicPackageManifest(
@@ -465,7 +508,7 @@ public sealed class ReleasePackagePolicyTests
         long TotalCompressedBytes,
         int MaximumEntryNameLength,
         int[] ExternalAttributes,
-        PublicPackageEntry[] OperationalEntries);
+        PublicPackageEntry[] Entries);
 
     private sealed record PublicPackageEntry(
         string FullName,
