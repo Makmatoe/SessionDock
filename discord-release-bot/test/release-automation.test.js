@@ -2201,17 +2201,43 @@ test("normal absent and empty Discord presentation defaults remain valid", async
 
 test("normal verification accepts the harmless suppress-notifications message flag", async (t) => {
   const { bundle } = createFixture(t);
-  const expectedMessage = discordMessage(bundle, { flags: 4096 });
-  const fetchImpl = async (url, init) => {
-    const preflight = preflightResponse(String(url));
-    if (preflight) return preflight;
-    if (String(url).endsWith("/messages?limit=100")) return jsonResponse([]);
-    if (String(url).endsWith("/messages") && init.method === "POST") return jsonResponse(expectedMessage);
-    if (String(url).endsWith(`/messages/${MESSAGE_ID}`)) return jsonResponse(expectedMessage);
-    throw new Error("Unexpected request");
-  };
-  const result = await deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} });
-  assert.equal(result.status, "posted");
+  for (const flags of [0, 1, 32, 33, 4096, 4097, 4128, 4129]) {
+    await t.test(`flags ${flags}`, async () => {
+      const expectedMessage = discordMessage(bundle, { flags });
+      const fetchImpl = async (url, init) => {
+        const preflight = preflightResponse(String(url));
+        if (preflight) return preflight;
+        if (String(url).endsWith("/messages?limit=100")) return jsonResponse([]);
+        if (String(url).endsWith("/messages") && init.method === "POST") return jsonResponse(expectedMessage);
+        if (String(url).endsWith(`/messages/${MESSAGE_ID}`)) return jsonResponse(expectedMessage);
+        throw new Error("Unexpected request");
+      };
+      const result = await deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} });
+      assert.equal(result.status, "posted");
+    });
+  }
+});
+
+test("normal verification rejects action, delivery-state, components-v2, and unknown message flags", async (t) => {
+  const { bundle } = createFixture(t);
+  for (const flags of [2, 4, 8, 16, 64, 128, 256, 512, 1024, 2048, 8192, 16384, 32768, 65536, 2 ** 32]) {
+    await t.test(`flags ${flags}`, async () => {
+      const changed = discordMessage(bundle, { flags });
+      let writes = 0;
+      const fetchImpl = async (url, init) => {
+        const preflight = preflightResponse(String(url));
+        if (preflight) return preflight;
+        if (String(url).endsWith("/messages?limit=100")) return jsonResponse([changed]);
+        if (init.method !== "GET") writes += 1;
+        throw new Error("Unexpected request");
+      };
+      await assert.rejects(
+        deliverAnnouncement({ bundle, env: deliveryEnv(), fetchImpl, sleepImpl: async () => {} }),
+        (error) => error instanceof ReleaseAutomationError && error.code === "DISCORD_VERIFICATION",
+      );
+      assert.equal(writes, 0);
+    });
+  }
 });
 
 test("attachment alt text, title, and spoiler presentation metadata fail closed on rerun", async (t) => {
@@ -2422,11 +2448,9 @@ test("an ambiguous delivery keeps its classification when receipt finalization a
 
 test("approved schema-2 migration emits one minimal PATCH and preserves understood flags", async (t) => {
   const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
-  for (const { sourceFlags, finalFlags } of [
-    { sourceFlags: 4, finalFlags: 0 },
-    { sourceFlags: 4096, finalFlags: 4096 },
-    { sourceFlags: 4100, finalFlags: 4096 },
-  ]) {
+  const allowedSourceFlags = [1, 4, 5, 32, 33, 36, 37, 4096, 4097, 4100, 4101, 4128, 4129, 4132, 4133];
+  for (const sourceFlags of allowedSourceFlags) {
+    const finalFlags = sourceFlags & ~4;
     await t.test(`${sourceFlags} -> ${finalFlags}`, async () => {
       const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, sourceFlags });
       const result = await migrateExistingAnnouncement(
@@ -2452,6 +2476,7 @@ test("approved schema-2 migration emits one minimal PATCH and preserves understo
       });
       assert.equal(harness.historyReads, 1);
       assert.equal(harness.patchBodies.length, 1);
+      assert.equal(harness.requests.filter(({ method }) => method === "PATCH").length, 1);
       const patchBody = harness.patchBodies[0];
       assert.deepEqual(Object.keys(patchBody).sort(), ["components", "embeds", "flags"]);
       assert.equal(patchBody.flags, finalFlags);
@@ -2487,7 +2512,19 @@ test("approved schema-2 migration emits one minimal PATCH and preserves understo
 
 test("migration rejects zero, unknown, components-v2, and non-integer source flags before writing", async (t) => {
   const { sourceBundle, targetBundle } = createApprovedMigrationFixture(t);
-  for (const sourceFlags of [0, 1, 32768, 8192, "4"]) {
+  const prohibitedBits = [2, 8, 16, 64, 128, 256, 8192, 16384, 32768];
+  const unknownBits = [512, 1024, 2048, 65536, 2 ** 32];
+  const invalidFlags = [
+    0,
+    -1,
+    1.5,
+    "4",
+    ...prohibitedBits,
+    ...prohibitedBits.map((bit) => bit | 4133),
+    ...unknownBits,
+    ...unknownBits.map((bit) => bit + 4133),
+  ];
+  for (const sourceFlags of invalidFlags) {
     await t.test(`flags ${String(sourceFlags)}`, async () => {
       const harness = createMigrationFetchHarness({ sourceBundle, targetBundle, sourceFlags });
       await assert.rejects(
