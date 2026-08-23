@@ -102,7 +102,7 @@ public sealed class AppIconTests
             workflow,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Velopack 1.2 adds setup.ico to the full nupkg",
+            "setup.ico would be an update-only file outside the reviewed",
             workflow,
             StringComparison.Ordinal);
 

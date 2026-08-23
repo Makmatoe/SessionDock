@@ -24,11 +24,24 @@ public partial class MainWindow
         {
             if (!_updateService.CanSelfUpdate)
             {
-                SetStatus(
-                    Localize("Main.UpdateInstalledAppRequiredTitle"),
-                    Localize("Main.UpdateInstalledAppRequiredDetail"),
-                    Localize("Main.UpdatesUnavailableBadge"),
-                    StatusTone.Warning);
+                if (PortableUpdatePageLauncher.TryOpen())
+                {
+                    SetStatus(
+                        Localize("Main.PortableUpdateOpenedTitle"),
+                        Localize("Main.PortableUpdateOpenedDetail"),
+                        Localize("Main.ManualUpdateBadge"),
+                        StatusTone.Success);
+                }
+                else
+                {
+                    SetStatus(
+                        Localize("Main.PortableUpdateOpenFailedTitle"),
+                        Localize(
+                            "Main.PortableUpdateOpenFailedDetail",
+                            PortableUpdatePageLauncher.LatestReleaseUrl),
+                        Localize("Main.ManualUpdateBadge"),
+                        StatusTone.Error);
+                }
                 return;
             }
 
@@ -54,7 +67,12 @@ public partial class MainWindow
                     return;
                 }
 
-                _updateService.ApplyAfterExit(pending);
+                if (!await PrepareUpdateExitAsync())
+                    return;
+                await _updateService.ApplyAfterExitAsync(
+                    pending,
+                    verifiedPending,
+                    cancellationToken);
                 applyingUpdate = true;
                 _ = Dispatcher.BeginInvoke(() => Close());
                 return;
@@ -109,12 +127,18 @@ public partial class MainWindow
                 cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (!await PrepareUpdateExitAsync())
+                return;
+
             SetStatus(
                 Localize("Main.UpdateDownloadedTitle"),
                 Localize("Main.UpdateDownloadedDetail"),
                 Localize("Main.UpdateRestartingBadge"),
                 StatusTone.Success);
-            _updateService.ApplyAfterExit(available.UpdateInfo.TargetFullRelease);
+            await _updateService.ApplyAfterExitAsync(
+                available.UpdateInfo.TargetFullRelease,
+                available.Release,
+                cancellationToken);
             applyingUpdate = true;
             _ = Dispatcher.BeginInvoke(() => Close());
         }
@@ -149,6 +173,34 @@ public partial class MainWindow
             if (!applyingUpdate && !_operationLifetime.IsShuttingDown)
                 SetOperationBusy(false);
         }
+    }
+
+    private async Task<bool> PrepareUpdateExitAsync()
+    {
+        if (_currentWorkspacePage != MainWorkspacePage.Destinations ||
+            !HasDestinationEditorChanges())
+        {
+            return true;
+        }
+
+        var decision = await ShowDestinationEditorDecisionAsync();
+        if (decision == DestinationEditorDecision.Cancel)
+        {
+            SetStatus(
+                Localize("Main.UpdateRestartPostponedTitle"),
+                Localize("Main.UpdateRestartPostponedDetail"),
+                Localize("Main.UpdateReadyBadge"),
+                StatusTone.Neutral);
+            return false;
+        }
+
+        if (decision == DestinationEditorDecision.Discard)
+        {
+            RefreshDestinationsWorkspace(_editingDestinationId);
+            return true;
+        }
+
+        return await SaveDestinationAsync();
     }
 
     private bool ConfirmUpdate(

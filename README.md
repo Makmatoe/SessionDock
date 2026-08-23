@@ -480,11 +480,18 @@ downgrade, or uninstall that copy. Read the
 
 ## Update and remove
 
-Portable copies update manually: download the new portable ZIP from the
-canonical GitHub release, verify it, and extract it into a new folder. Do not
-overwrite a running folder. Existing copies installed by an older supported
-release may continue to consume the verified full NUPKG and update feed through
-SessionDock's in-app update control; a NUPKG is not a file users open manually.
+Portable copies update manually. The **Update** button opens the canonical
+latest GitHub release; verify its portable ZIP and extract it into a new folder.
+Do not overwrite a running folder.
+
+An older installed copy that reports an official full update package as unsafe
+cannot replace its own obsolete verifier. Keep its local data and move to the
+verified portable ZIP in a new folder as the same Windows user. Do not unpack
+the NUPKG or copy its files over the installation. Beginning with SessionDock
+3.1.3, compatible installed copies that can reach the new verifier bind the
+downloaded package's measured size and SHA-256 to the signed descriptor and
+validate its bounded archive structure without relying on a fragile fixed list
+of ordinary runtime DLLs.
 
 To remove a portable copy safely:
 

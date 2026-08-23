@@ -266,9 +266,9 @@ jobs:
           RELEASE_VERSION: ${{ needs.validate-and-build.outputs.version }}
         run: |
           New-Item -ItemType Directory release-output -Force | Out-Null
-          # Do not pass Velopack --icon while strict legacy updaters remain
-          # supported: Velopack 1.2 adds setup.ico to the full nupkg, which
-          # those released clients correctly reject as an unexpected entry.
+          # Do not pass Velopack --icon. SessionDock publishes no installer,
+          # and setup.ico would be an update-only file outside the reviewed
+          # transparent application inventory shared with the portable ZIP.
           # Velopack 1.2 otherwise omits createdump.exe. The verified input
           # allowlist makes disabling its built-in exclusions safe.
           & ./release-input/vpk-tool/vpk.exe pack `

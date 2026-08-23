@@ -21,7 +21,9 @@ internal sealed class SessionDockUpdateService : IDisposable
     private const string PublicKeyResourceName =
         "SessionDock.Embedded.ReleasePublicKey.pem";
     private const int MaximumManifestRedirects = 3;
+    private const int MaximumNuspecMetadataElements = 128;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
+    private static readonly ProcessLifetimePackageLease ApplyPackageLease = new();
     private readonly UpdateManager _manager;
     private readonly HttpClient _httpClient;
 
@@ -86,8 +88,13 @@ internal sealed class SessionDockUpdateService : IDisposable
         VelopackAsset pending,
         CancellationToken cancellationToken)
     {
+        var localIdentity = await CreateLocalPackageIdentityAsync(
+            pending,
+            VelopackLocator.Current.PackagesDir,
+            cancellationToken);
         var verified = await FetchAndVerifyDescriptorAsync(
             pending,
+            localIdentity,
             cancellationToken);
         await VerifyPreparedPackageAsync(pending, verified, cancellationToken);
         return verified;
@@ -110,13 +117,24 @@ internal sealed class SessionDockUpdateService : IDisposable
             cancellationToken);
     }
 
-    public void ApplyAfterExit(VelopackAsset asset)
+    public async Task ApplyAfterExitAsync(
+        VelopackAsset asset,
+        VerifiedReleaseDescriptor release,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(asset);
-        _manager.WaitExitThenApplyUpdates(
+        ArgumentNullException.ThrowIfNull(release);
+        var lease = await OpenVerifiedPackageLeaseAsync(
             asset,
-            silent: false,
-            restart: true);
+            release,
+            VelopackLocator.Current.PackagesDir,
+            cancellationToken);
+        ApplyPackageLease.Schedule(
+            lease,
+            () => _manager.WaitExitThenApplyUpdates(
+                asset,
+                silent: false,
+                restart: true));
     }
 
     public void Dispose() => _httpClient.Dispose();
@@ -126,6 +144,30 @@ internal sealed class SessionDockUpdateService : IDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(asset);
+        if (string.IsNullOrWhiteSpace(asset.SHA256))
+        {
+            throw new ReleaseTrustException(
+                "The published update is missing its SHA-256 hash.");
+        }
+
+        var identity = new ReleaseAssetIdentity(
+            asset.Version.ToString(),
+            asset.FileName,
+            asset.Size,
+            asset.SHA256);
+        return await FetchAndVerifyDescriptorAsync(
+            asset,
+            identity,
+            cancellationToken);
+    }
+
+    private async Task<VerifiedReleaseDescriptor> FetchAndVerifyDescriptorAsync(
+        VelopackAsset asset,
+        ReleaseAssetIdentity identity,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        ArgumentNullException.ThrowIfNull(identity);
         var version = asset.Version.ToString();
         var tag = $"v{version}";
         var descriptorUrl = new Uri(
@@ -148,11 +190,6 @@ internal sealed class SessionDockUpdateService : IDisposable
         }
 
         var json = await ReadBoundedUtf8Async(response, cancellationToken);
-        var identity = new ReleaseAssetIdentity(
-            version,
-            asset.FileName,
-            asset.Size,
-            asset.SHA256 ?? string.Empty);
         return ReleaseDescriptorPolicy.Verify(
             json,
             identity,
@@ -271,32 +308,11 @@ internal sealed class SessionDockUpdateService : IDisposable
         VerifiedReleaseDescriptor release,
         CancellationToken cancellationToken)
     {
-        var locator = VelopackLocator.Current;
-        if (string.IsNullOrWhiteSpace(locator.PackagesDir))
-        {
-            throw new ReleaseTrustException(
-                "The installed update package directory is unavailable.");
-        }
-
-        var packagesRoot = Path.GetFullPath(locator.PackagesDir)
-            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
-            Path.DirectorySeparatorChar;
-        var packagePath = Path.GetFullPath(
-            Path.Combine(locator.PackagesDir, asset.FileName));
-        if (!packagePath.StartsWith(
-                packagesRoot,
-                StringComparison.OrdinalIgnoreCase) ||
-            !File.Exists(packagePath))
-        {
-            throw new ReleaseTrustException(
-                "The downloaded update package could not be located safely.");
-        }
+        var packagePath = LocatePackage(
+            VelopackLocator.Current.PackagesDir,
+            asset.FileName);
 
         var descriptor = release.Descriptor;
-        var packageInfo = new FileInfo(packagePath);
-        if (packageInfo.Length != descriptor.PackageSize)
-            throw new ReleaseTrustException("The downloaded package size changed.");
-
         await using var packageStream = new FileStream(
             packagePath,
             FileMode.Open,
@@ -304,6 +320,9 @@ internal sealed class SessionDockUpdateService : IDisposable
             FileShare.Read,
             bufferSize: 128 * 1024,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
+        if (packageStream.Length != descriptor.PackageSize)
+            throw new ReleaseTrustException("The downloaded package size changed.");
+
         var actualHash = await SHA256.HashDataAsync(
             packageStream,
             cancellationToken);
@@ -327,7 +346,8 @@ internal sealed class SessionDockUpdateService : IDisposable
                 new ReleasePackageEntryIdentity(
                     entry.FullName,
                     entry.Length,
-                    entry.CompressedLength)),
+                    entry.CompressedLength,
+                    entry.ExternalAttributes)),
             useCurrentLayout);
         ValidatePackageMetadata(archive, release, useCurrentLayout);
 
@@ -394,6 +414,128 @@ internal sealed class SessionDockUpdateService : IDisposable
         }
     }
 
+    internal static async Task<ReleaseAssetIdentity> CreateLocalPackageIdentityAsync(
+        VelopackAsset asset,
+        string? packagesDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        var packagePath = LocatePackage(packagesDirectory, asset.FileName);
+        await using var packageStream = new FileStream(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var actualHash = await SHA256.HashDataAsync(
+            packageStream,
+            cancellationToken);
+        return new ReleaseAssetIdentity(
+            asset.Version.ToString(),
+            Path.GetFileName(packagePath),
+            packageStream.Length,
+            Convert.ToHexString(actualHash));
+    }
+
+    internal static async Task<FileStream> OpenVerifiedPackageLeaseAsync(
+        VelopackAsset asset,
+        VerifiedReleaseDescriptor release,
+        string? packagesDirectory,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(asset);
+        ArgumentNullException.ThrowIfNull(release);
+        var descriptor = release.Descriptor;
+        if (!asset.Version.ToString().Equals(
+                descriptor.Version,
+                StringComparison.Ordinal) ||
+            !string.Equals(
+                asset.FileName,
+                descriptor.PackageFile,
+                StringComparison.Ordinal))
+        {
+            throw new ReleaseTrustException(
+                "The downloaded package identity changed before installation.");
+        }
+
+        var packagePath = LocatePackage(packagesDirectory, asset.FileName);
+        var packageStream = new FileStream(
+            packagePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 128 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
+        try
+        {
+            if (packageStream.Length != descriptor.PackageSize)
+                throw new ReleaseTrustException("The downloaded package size changed.");
+
+            var actualHash = await SHA256.HashDataAsync(
+                packageStream,
+                cancellationToken);
+            if (!CryptographicOperations.FixedTimeEquals(
+                    actualHash,
+                    Convert.FromHexString(descriptor.PackageSha256)))
+            {
+                throw new ReleaseTrustException(
+                    "The downloaded package changed before installation.");
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return packageStream;
+        }
+        catch
+        {
+            await packageStream.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static string LocatePackage(
+        string? packagesDirectory,
+        string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(packagesDirectory))
+        {
+            throw new ReleaseTrustException(
+                "The installed update package directory is unavailable.");
+        }
+
+        try
+        {
+            var packagesRoot = Path.GetFullPath(packagesDirectory)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                Path.DirectorySeparatorChar;
+            var packagePath = Path.GetFullPath(
+                Path.Combine(packagesDirectory, fileName));
+            if (!packagePath.StartsWith(
+                    packagesRoot,
+                    StringComparison.OrdinalIgnoreCase) ||
+                !Path.GetFileName(packagePath).Equals(
+                    fileName,
+                    StringComparison.Ordinal) ||
+                !File.Exists(packagePath) ||
+                (File.GetAttributes(packagePath) &
+                 (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+            {
+                throw new ReleaseTrustException(
+                    "The downloaded update package could not be located safely.");
+            }
+
+            return packagePath;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException or NotSupportedException or
+                PathTooLongException)
+        {
+            throw new ReleaseTrustException(
+                "The downloaded update package could not be located safely.",
+                exception);
+        }
+    }
+
     private static void ValidatePortableExecutable(string path)
     {
         using var stream = new FileStream(
@@ -432,7 +574,7 @@ internal sealed class SessionDockUpdateService : IDisposable
         }
     }
 
-    private static void ValidatePackageMetadata(
+    internal static void ValidatePackageMetadata(
         ZipArchive archive,
         VerifiedReleaseDescriptor release,
         bool useCurrentLayout)
@@ -470,41 +612,34 @@ internal sealed class SessionDockUpdateService : IDisposable
 
         var root = document.Root;
         var metadataElements = root?.Elements().Where(element =>
-            element.Name.LocalName.Equals("metadata", StringComparison.Ordinal)).ToArray() ?? [];
+            element.Name.LocalName.Equals(
+                "metadata",
+                StringComparison.Ordinal)).ToArray() ?? [];
         var metadata = metadataElements.Length == 1 ? metadataElements[0] : null;
         if (root is null ||
             !root.Name.LocalName.Equals("package", StringComparison.Ordinal) ||
-            metadata is null)
+            !IsAllowedNuspecNamespace(root.Name.NamespaceName) ||
+            metadata is null ||
+            metadata.Name.Namespace != root.Name.Namespace)
         {
             throw new ReleaseTrustException(
                 "The downloaded package metadata is incomplete.");
         }
 
         var elements = metadata.Elements().ToArray();
-        var expectedNames = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "id", "title", "description", "authors", "version", "channel",
-            "mainExe", "os", "rid", "shortcutLocations", "shortcutAumid",
-            "releaseNotes", "releaseNotesHtml", "machineArchitecture"
-        };
-        if (elements.Length != expectedNames.Count ||
-            elements.Any(element =>
-                element.Name.Namespace != metadata.Name.Namespace ||
-                !expectedNames.Remove(element.Name.LocalName)) ||
-            expectedNames.Count != 0)
+        if (elements.Length > MaximumNuspecMetadataElements ||
+            document.Descendants().Any(element =>
+                element.Name.Namespace != root.Name.Namespace))
         {
             throw new ReleaseTrustException(
-                "The downloaded package metadata contains unsupported fields.");
+                "The downloaded package metadata has an invalid namespace or too many fields.");
         }
 
-        var expectedValues = new Dictionary<string, string>(StringComparer.Ordinal)
+        var requiredValues = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["id"] = useCurrentLayout
                 ? ReleaseDescriptorPolicy.VelopackPackageId
                 : ReleaseDescriptorPolicy.LegacyVelopackPackageId,
-            ["title"] = useCurrentLayout ? "SessionDock" : "Roblox One",
-            ["description"] = useCurrentLayout ? "SessionDock" : "Roblox One",
-            ["authors"] = "Makmatoe",
             ["version"] = release.Descriptor.Version,
             ["channel"] = useCurrentLayout
                 ? ReleaseDescriptorPolicy.Channel
@@ -512,48 +647,105 @@ internal sealed class SessionDockUpdateService : IDisposable
             ["mainExe"] = useCurrentLayout ? "SessionDock.exe" : "RobloxOne.exe",
             ["os"] = "win",
             ["rid"] = "win-x64",
-            ["shortcutLocations"] = "Desktop,StartMenuRoot",
-            ["shortcutAumid"] = useCurrentLayout
-                ? "velopack.SessionDockApp"
-                : "velopack.RobloxOne",
             ["machineArchitecture"] = "x64"
         };
-        foreach (var expected in expectedValues)
+        foreach (var required in requiredValues)
         {
-            var value = elements.Single(element =>
-                element.Name.LocalName.Equals(expected.Key, StringComparison.Ordinal)).Value;
-            if (!value.Equals(expected.Value, StringComparison.Ordinal))
+            var matches = elements.Where(element =>
+                element.Name.LocalName.Equals(
+                    required.Key,
+                    StringComparison.Ordinal)).ToArray();
+            if (matches.Length != 1 ||
+                matches[0].HasElements ||
+                !matches[0].Value.Equals(required.Value, StringComparison.Ordinal))
             {
                 throw new ReleaseTrustException(
                     "The downloaded package metadata does not match the signed release.");
             }
         }
 
-        var releaseNotes = elements.Single(element =>
-                element.Name.LocalName.Equals("releaseNotes", StringComparison.Ordinal))
-            .Value
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
-            .Trim();
-        if (!releaseNotes.Equals(
-                release.Descriptor.ReleaseNotes,
-                StringComparison.Ordinal))
+        var releaseNotesElements = elements.Where(element =>
+            element.Name.LocalName.Equals(
+                "releaseNotes",
+                StringComparison.Ordinal)).ToArray();
+        if (releaseNotesElements.Length > 1 ||
+            (releaseNotesElements.Length == 1 && releaseNotesElements[0].HasElements))
         {
             throw new ReleaseTrustException(
-                "The downloaded package release notes do not match the signed release.");
+                "The downloaded package metadata contains duplicate or malformed release notes.");
         }
 
-        var releaseNotesHtml = elements.Single(element =>
-            element.Name.LocalName.Equals("releaseNotesHtml", StringComparison.Ordinal)).Value;
-        if (releaseNotesHtml.Length > ReleaseDescriptorPolicy.MaximumReleaseNotesLength * 2 ||
-            releaseNotesHtml.Contains("<script", StringComparison.OrdinalIgnoreCase) ||
-            releaseNotesHtml.Contains("javascript:", StringComparison.OrdinalIgnoreCase) ||
-            releaseNotesHtml.Any(character =>
-                char.IsControl(character) && character is not ('\r' or '\n' or '\t')))
+        if (releaseNotesElements.Length == 1)
+        {
+            var releaseNotes = releaseNotesElements[0]
+                .Value
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Trim();
+            if (!releaseNotes.Equals(
+                    release.Descriptor.ReleaseNotes,
+                    StringComparison.Ordinal))
+            {
+                throw new ReleaseTrustException(
+                    "The downloaded package release notes do not match the signed release.");
+            }
+        }
+
+        var releaseNotesHtmlElements = elements.Where(element =>
+            element.Name.LocalName.Equals(
+                "releaseNotesHtml",
+                StringComparison.Ordinal)).ToArray();
+        if (releaseNotesHtmlElements.Length > 1 ||
+            (releaseNotesHtmlElements.Length == 1 &&
+             releaseNotesHtmlElements[0].HasElements))
         {
             throw new ReleaseTrustException(
-                "The downloaded package contains unsafe rendered release notes.");
+                "The downloaded package metadata contains duplicate or malformed rendered release notes.");
         }
+
+        if (releaseNotesHtmlElements.Length == 1)
+        {
+            var releaseNotesHtml = releaseNotesHtmlElements[0].Value;
+            if (releaseNotesHtml.Length >
+                    ReleaseDescriptorPolicy.MaximumReleaseNotesLength * 2 ||
+                releaseNotesHtml.Contains(
+                    "<script",
+                    StringComparison.OrdinalIgnoreCase) ||
+                releaseNotesHtml.Contains(
+                    "javascript:",
+                    StringComparison.OrdinalIgnoreCase) ||
+                releaseNotesHtml.Any(character =>
+                    char.IsControl(character) &&
+                    character is not ('\r' or '\n' or '\t')))
+            {
+                throw new ReleaseTrustException(
+                    "The downloaded package contains unsafe rendered release notes.");
+            }
+        }
+    }
+
+    private static bool IsAllowedNuspecNamespace(string value)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) ||
+            (!uri.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.Ordinal) &&
+             !uri.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.Ordinal)) ||
+            !uri.IsDefaultPort ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment) ||
+            !uri.Host.Equals(
+                "schemas.microsoft.com",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return uri.AbsolutePath.StartsWith(
+                   "/packaging/",
+                   StringComparison.Ordinal) &&
+               uri.AbsolutePath.EndsWith(
+                   "/nuspec.xsd",
+                   StringComparison.Ordinal);
     }
 
     private static byte[] ReadArchiveEntry(ZipArchive archive, string name)
@@ -571,3 +763,45 @@ internal sealed class SessionDockUpdateService : IDisposable
 internal sealed record AvailableSessionDockUpdate(
     UpdateInfo UpdateInfo,
     VerifiedReleaseDescriptor Release);
+
+internal sealed class ProcessLifetimePackageLease : IDisposable
+{
+    private FileStream? _lease;
+
+    public void Schedule(FileStream lease, Action scheduleApply)
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        ArgumentNullException.ThrowIfNull(scheduleApply);
+        if (Interlocked.CompareExchange(
+                ref _lease,
+                lease,
+                comparand: null) is not null)
+        {
+            lease.Dispose();
+            throw new InvalidOperationException(
+                "An update is already scheduled for installation.");
+        }
+
+        try
+        {
+            scheduleApply();
+        }
+        catch
+        {
+            if (ReferenceEquals(
+                    Interlocked.CompareExchange(
+                        ref _lease,
+                        value: null,
+                        comparand: lease),
+                    lease))
+            {
+                lease.Dispose();
+            }
+
+            throw;
+        }
+    }
+
+    public void Dispose() =>
+        Interlocked.Exchange(ref _lease, value: null)?.Dispose();
+}

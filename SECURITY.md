@@ -60,9 +60,14 @@ SessionDock is designed around these boundaries:
   logged or persisted.
 - Only trusted Roblox installation paths and Roblox-signed Player executables
   may be launched or closed.
-- Application updates come only from this repository and require a valid
+- Starting with SessionDock 3.1.3, application updates come only from this
+  repository and require a valid
   descriptor signed by the release key pinned in the app, an exact package
-  hash, bounded metadata, and an exact package-content allowlist.
+  hash, bounded safe archive structure, operationally required package metadata
+  and launch files, and matching version and channel. Runtime update
+  verification does not use a fragile fixed allowlist of transitive runtime DLLs;
+  the protected release workflow separately proves the exact candidate inventory
+  and its equality with the portable ZIP.
 - The optional generic launch hook requires a Windows-trusted HTTPS certificate
   for a numeric loopback address and a valid bearer token. Plain HTTP generic
   hooks are rejected.
@@ -174,7 +179,8 @@ documented reviewed-release procedure explicitly lifts it.
 
 SessionDock's permanent public format is a transparent, unsigned portable ZIP;
 there is no Setup executable or application Authenticode stage. A release also
-publishes the verified full NUPKG and feed for existing installed copies, a
+publishes the verified full NUPKG and feed for the bounded installed-copy
+compatibility path, a
 signed release descriptor and HandleScope catalog, `SHA256SUMS.txt`, an SPDX
 SBOM, dependency notices inside the verified application inventories, GitHub
 artifact attestations, and release notes in the GitHub release body. Optional
@@ -200,11 +206,20 @@ NUPKG manually. Verification pins `Squirrel.exe` exactly and pins the generated
 execution stub's Velopack vendor code sections and version.
 
 Every expected runtime PE outside those six application PEs and two recognized
-NUPKG-only helpers must have a valid Microsoft signature. The verifier rejects
-any unexpected executable, installation script, reparse point, package file,
-component payload, or mismatch between the portable ZIP and the NUPKG's shared
-application inventory. Integrated HandleScope and ExactWheel remain reviewed
-DLLs inside that inventory, never separate downloads.
+NUPKG-only helpers must have a valid Microsoft signature. The protected release
+verifier rejects any unexpected executable, installation script, reparse point,
+package file, component payload, or mismatch between the portable ZIP and the
+NUPKG's shared application inventory. The installed-copy runtime verifier
+introduced for SessionDock 3.1.3 binds
+the complete local NUPKG to the exact signed hash, then rejects unsafe or
+duplicate paths, reparse points, devices and other nonregular types,
+noncanonical directories, missing operationally required metadata or launch
+files, wrong package identity, version or channel, excessive archive bounds,
+and invalid executable format. Safe package metadata and canonical empty directory
+entries are allowed. It intentionally does not duplicate the release
+workflow's generated list of ordinary transitive DLLs. Integrated HandleScope
+and ExactWheel remain reviewed DLLs inside the release inventory, never
+separate downloads.
 
 Because the application PEs are unsigned, Windows may show **Unknown
 publisher** or a reputation warning. That is not the same as a named malware

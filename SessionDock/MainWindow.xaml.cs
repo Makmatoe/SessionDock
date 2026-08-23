@@ -286,7 +286,7 @@ public partial class MainWindow : Window
         InitializeMacroSessionUi();
         app.LocalizationService.ApplyPreference(_settings.Language);
         app.ThemeService.ApplyPreference(_settings.UseLightTheme);
-        UpdateUpdateTooltip();
+        UpdateUpdatePresentation();
         UpdateThemeTogglePresentation();
         app.ThemeService.ThemeChanged += ThemeService_ThemeChanged;
         app.LocalizationService.LanguageChanged +=
@@ -3387,6 +3387,10 @@ public partial class MainWindow : Window
         HomeSaveTemplateButton.IsEnabled = auxiliaryActionsEnabled;
         HomeDestinationsButton.IsEnabled = auxiliaryActionsEnabled;
         HomeManageAccountsButton.IsEnabled = auxiliaryActionsEnabled;
+        NamedDestinationsList.IsEnabled = auxiliaryActionsEnabled;
+        DestinationNameBox.IsEnabled = auxiliaryActionsEnabled;
+        DestinationValueBox.IsEnabled = auxiliaryActionsEnabled;
+        DestinationAccountAssignmentsList.IsEnabled = auxiliaryActionsEnabled;
         NewDestinationButton.IsEnabled = auxiliaryActionsEnabled;
         SaveDestinationButton.IsEnabled = auxiliaryActionsEnabled;
         DeleteDestinationButton.IsEnabled = auxiliaryActionsEnabled &&

@@ -38,6 +38,8 @@
     <sys:String x:Key="Main.UpdateName">Rechercher des mises à jour vérifiées</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">Rechercher sur GitHub une mise à jour vérifiée de SessionDock</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Rechercher des mises à jour vérifiées (version actuelle : {0})</sys:String>
+    <sys:String x:Key="Main.PortableUpdateName">Ouvrir la dernière version portable</sys:String>
+    <sys:String x:Key="Main.PortableUpdateTooltipVersion">Ouvrir la dernière version portable officielle sur GitHub (version actuelle : {0})</sys:String>
     <sys:String x:Key="Main.Local">DONNÉES LOCALES</sys:String>
     <sys:String x:Key="Main.Account">COMPTE</sys:String>
     <sys:String x:Key="Main.DragToReorder">Faire glisser pour réorganiser</sys:String>
@@ -944,9 +946,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">Cette copie de SessionDock ne contient aucune note valide pour sa version installée.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">NOTES INDISPONIBLES</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Cette copie se met à jour manuellement</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Cette copie de développement ou portable ne peut pas se remplacer elle-même. Fermez SessionDock, téléchargez l’archive ZIP portable officielle depuis les versions GitHub, extrayez-la dans un nouveau dossier, puis lancez la nouvelle copie.</sys:String>
-    <sys:String x:Key="Main.UpdatesUnavailableBadge">MISES À JOUR INDISPONIBLES</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedTitle">Page officielle de la version ouverte</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedDetail">Téléchargez SessionDock-win-x64-Portable.zip et SHA256SUMS.txt depuis cette version. Vérifiez l’archive ZIP, fermez SessionDock, extrayez-la dans un nouveau dossier, puis lancez SessionDock.exe. Vos données SessionDock enregistrées restent en place.</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedTitle">Impossible d’ouvrir la page de la version</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedDetail">Ouvrez {0} dans votre navigateur. Aucun fichier n’a été téléchargé ni modifié.</sys:String>
+    <sys:String x:Key="Main.ManualUpdateBadge">MISE À JOUR MANUELLE</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Mise à jour prête pour le redémarrage</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingDetail">Vérification des métadonnées de la version et du paquet téléchargé avant le redémarrage…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">VÉRIFICATION</sys:String>
@@ -1299,6 +1303,8 @@
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesDetail">Consultez le flux de versions vérifié et examinez une mise à jour avant de l’installer.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesDetail">Ouvrez la version officielle sur GitHub. Les copies portables se mettent à jour à partir d’une archive ZIP vérifiée dans un nouveau dossier ; les données SessionDock enregistrées restent en dehors du dossier de l’application.</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesAction">Ouvrir la dernière version</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedAction">Open advanced workspace</sys:String>
