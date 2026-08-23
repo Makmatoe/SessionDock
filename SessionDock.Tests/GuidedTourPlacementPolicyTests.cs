@@ -431,8 +431,12 @@ public sealed class GuidedTourPlacementPolicyTests
             overlay.ActualWidth,
             overlay.ActualHeight);
         Assert.False(Rect.Intersect(targetBounds, viewport).IsEmpty);
+        const double layoutTolerance = 0.01;
         Assert.True(
-            outlineBounds.Contains(targetBounds),
+            outlineBounds.Left <= targetBounds.Left + layoutTolerance &&
+            outlineBounds.Top <= targetBounds.Top + layoutTolerance &&
+            outlineBounds.Right >= targetBounds.Right - layoutTolerance &&
+            outlineBounds.Bottom >= targetBounds.Bottom - layoutTolerance,
             $"The spotlight must contain its target. " +
             $"Spotlight: {outlineBounds}; target: {targetBounds}.");
     }

@@ -286,7 +286,7 @@ public partial class MainWindow : Window
         InitializeMacroSessionUi();
         app.LocalizationService.ApplyPreference(_settings.Language);
         app.ThemeService.ApplyPreference(_settings.UseLightTheme);
-        UpdateUpdateTooltip();
+        UpdateUpdatePresentation();
         UpdateThemeTogglePresentation();
         app.ThemeService.ThemeChanged += ThemeService_ThemeChanged;
         app.LocalizationService.LanguageChanged +=

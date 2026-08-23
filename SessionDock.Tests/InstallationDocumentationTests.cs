@@ -214,6 +214,8 @@ public sealed class InstallationDocumentationTests
         var root = FindRepositoryRoot();
         var rootReadme = Read(root, "README.md");
         var updates = Read(root, "docs", "UPDATES.md");
+        var releasing = Read(root, "docs", "RELEASING.md");
+        var security = Read(root, "SECURITY.md");
         var detectionResponse = Read(
             root,
             "docs",
@@ -237,9 +239,45 @@ public sealed class InstallationDocumentationTests
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains("update manually", updates,
             StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("**Update**", updates, StringComparison.Ordinal);
+        Assert.Contains("canonical latest release", updates,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains("existing installed", updates,
             StringComparison.OrdinalIgnoreCase);
         Assert.Contains("NUPKG", updates, StringComparison.Ordinal);
+        Assert.Contains("cannot repair", updates,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Do not unpack the NUPKG", updates,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("measured size and SHA-256", rootReadme,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("signed descriptor", rootReadme,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("transitive runtime DLLs", security,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("transitive runtime DLLs", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("canonical empty directory", updates,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("canonical empty directory", security,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("canonical empty directory", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("protected release verifier", updates,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("other nonregular", security,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("pending-restart", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("obsolete fixed-entry check", releasing,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("older supported release may continue",
+            rootReadme,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(
+            "older SessionDock installations that already",
+            updates,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Discord", updates, StringComparison.Ordinal);
         Assert.Contains("never download a SessionDock", updates,
             StringComparison.OrdinalIgnoreCase);

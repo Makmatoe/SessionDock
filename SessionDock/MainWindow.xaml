@@ -1303,7 +1303,8 @@
                   <TextBlock Text="{DynamicResource SettingsHub.UpdatesTitle}"
                              Foreground="{DynamicResource TextBrush}"
                              FontSize="15" FontWeight="SemiBold"/>
-                  <TextBlock Text="{DynamicResource SettingsHub.UpdatesDetail}"
+                  <TextBlock x:Name="SettingsUpdatesDetailText"
+                             Text="{DynamicResource SettingsHub.UpdatesDetail}"
                              Foreground="{DynamicResource MutedBrush}"
                              FontSize="11" Margin="0,4,0,0"
                              TextWrapping="Wrap"/>

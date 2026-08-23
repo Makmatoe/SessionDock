@@ -37,6 +37,8 @@
     <sys:String x:Key="Main.UpdateName">Nach verifizierten Updates suchen</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">Auf GitHub nach einem verifizierten SessionDock-Update suchen</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Auf verifizierte Updates prüfen (aktuell {0})</sys:String>
+    <sys:String x:Key="Main.PortableUpdateName">Neueste portable Version öffnen</sys:String>
+    <sys:String x:Key="Main.PortableUpdateTooltipVersion">Die offizielle neueste portable Version auf GitHub öffnen (aktuell {0})</sys:String>
     <sys:String x:Key="Main.Local">LOKALE DATEN</sys:String>
     <sys:String x:Key="Main.Account">KONTO</sys:String>
     <sys:String x:Key="Main.DragToReorder">Zum Neuanordnen ziehen</sys:String>
@@ -921,9 +923,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableTitle">Versionshinweise sind nicht verfügbar</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">Diese Kopie von SessionDock enthält keine gültigen Hinweise für die installierte Version.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">HINWEISE NICHT VERFÜGBAR</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Diese Version wird manuell aktualisiert</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Diese Entwicklungs- oder portable Version kann sich nicht selbst ersetzen. Schließen Sie SessionDock, laden Sie das offizielle portable ZIP-Archiv von GitHub Releases herunter, entpacken Sie es in einen neuen Ordner und starten Sie die neue Version.</sys:String>
-    <sys:String x:Key="Main.UpdatesUnavailableBadge">UPDATES NICHT VERFÜGBAR</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedTitle">Offizielle Release-Seite geöffnet</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedDetail">Laden Sie SessionDock-win-x64-Portable.zip und SHA256SUMS.txt aus dieser Version herunter. Überprüfen Sie das ZIP-Archiv, schließen Sie SessionDock, entpacken Sie es in einen neuen Ordner und starten Sie SessionDock.exe. Ihre gespeicherten SessionDock-Daten bleiben erhalten.</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedTitle">Release-Seite konnte nicht geöffnet werden</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedDetail">Öffnen Sie {0} in Ihrem Browser. Es wurden keine Dateien heruntergeladen oder geändert.</sys:String>
+    <sys:String x:Key="Main.ManualUpdateBadge">MANUELLES UPDATE</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Update zum Neustart bereit</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingDetail">Die Release-Metadaten und das heruntergeladene Paket werden vor dem Neustart geprüft…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">UPDATE WIRD ÜBERPRÜFT</sys:String>
@@ -1263,6 +1267,8 @@
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesDetail">Prüfen Sie den verifizierten Release-Feed und kontrollieren Sie ein Update vor der Installation.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesDetail">Öffnen Sie die offizielle GitHub-Version. Portable Exemplare werden mit einem überprüften ZIP-Archiv in einem neuen Ordner aktualisiert; gespeicherte SessionDock-Daten bleiben außerhalb des Programmordners.</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesAction">Neueste Version öffnen</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedAction">Open advanced workspace</sys:String>

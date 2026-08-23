@@ -38,6 +38,8 @@
     <sys:String x:Key="Main.UpdateName">Check for verified updates</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">Check GitHub for a verified SessionDock update</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Check for verified updates (current {0})</sys:String>
+    <sys:String x:Key="Main.PortableUpdateName">Open latest portable release</sys:String>
+    <sys:String x:Key="Main.PortableUpdateTooltipVersion">Open the official latest portable release on GitHub (current {0})</sys:String>
     <sys:String x:Key="Main.Local">LOCAL DATA</sys:String>
     <sys:String x:Key="Main.Account">ACCOUNT</sys:String>
     <sys:String x:Key="Main.DragToReorder">Drag to reorder</sys:String>
@@ -944,9 +946,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">This copy of SessionDock does not contain valid notes for its installed version.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">NOTES UNAVAILABLE</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">This copy updates manually</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">This development or portable copy cannot replace itself. Close SessionDock, download the official portable ZIP from GitHub Releases, extract it to a new folder, and start the new copy.</sys:String>
-    <sys:String x:Key="Main.UpdatesUnavailableBadge">UPDATES UNAVAILABLE</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedTitle">Official release page opened</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedDetail">Download SessionDock-win-x64-Portable.zip and SHA256SUMS.txt from that release. Verify the ZIP, close SessionDock, extract it to a new folder, and run SessionDock.exe. Your saved SessionDock data stays in place.</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedTitle">Could not open the release page</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedDetail">Open {0} in your browser. No files were downloaded or changed.</sys:String>
+    <sys:String x:Key="Main.ManualUpdateBadge">MANUAL UPDATE</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Update ready to restart</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingDetail">Verifying the release metadata and downloaded package before restarting…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">VERIFYING UPDATE</sys:String>
@@ -1299,6 +1303,8 @@
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesDetail">Check the verified release feed and review an update before installing it.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesDetail">Open the official GitHub release. Portable copies update from a verified ZIP in a new folder; saved SessionDock data stays outside the app folder.</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesAction">Open latest release</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedAction">Open advanced workspace</sys:String>

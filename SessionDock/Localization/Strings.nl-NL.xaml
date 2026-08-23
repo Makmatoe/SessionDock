@@ -38,6 +38,8 @@
     <sys:String x:Key="Main.UpdateName">Controleren op geverifieerde updates</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">GitHub controleren op een geverifieerde SessionDock-update</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Controleren op geverifieerde updates (huidig {0})</sys:String>
+    <sys:String x:Key="Main.PortableUpdateName">Nieuwste draagbare release openen</sys:String>
+    <sys:String x:Key="Main.PortableUpdateTooltipVersion">De officiële nieuwste draagbare release op GitHub openen (huidig {0})</sys:String>
     <sys:String x:Key="Main.Local">LOKALE DATA</sys:String>
     <sys:String x:Key="Main.Account">ACCOUNT</sys:String>
     <sys:String x:Key="Main.DragToReorder">Sleep om te ordenen</sys:String>
@@ -1242,9 +1244,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">Dit exemplaar van SessionDock bevat geen geldige opmerkingen voor de geïnstalleerde versie.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">OPMERKINGEN NIET BESCHIKBAAR</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Dit exemplaar wordt handmatig bijgewerkt</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Dit ontwikkel- of draagbare exemplaar kan zichzelf niet vervangen. Sluit SessionDock, download het officiële draagbare ZIP-bestand via GitHub Releases, pak het uit in een nieuwe map en start het nieuwe exemplaar.</sys:String>
-    <sys:String x:Key="Main.UpdatesUnavailableBadge">UPDATES NIET BESCHIKBAAR</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedTitle">Officiële releasepagina geopend</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedDetail">Download SessionDock-win-x64-Portable.zip en SHA256SUMS.txt van die release. Controleer het ZIP-bestand, sluit SessionDock, pak het uit in een nieuwe map en start SessionDock.exe. Je opgeslagen SessionDock-gegevens blijven behouden.</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedTitle">De releasepagina kon niet worden geopend</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedDetail">Open {0} in je browser. Er zijn geen bestanden gedownload of gewijzigd.</sys:String>
+    <sys:String x:Key="Main.ManualUpdateBadge">HANDMATIGE UPDATE</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Update gereed voor herstart</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingDetail">De releasemetadata en het gedownloade pakket verifiëren voordat opnieuw wordt gestart…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">UPDATE VERIFIËREN</sys:String>
@@ -1294,6 +1298,8 @@
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesDetail">Controleer de geverifieerde releasefeed en bekijk een update voordat je die installeert.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesDetail">Open de officiële GitHub-release. Draagbare exemplaren worden bijgewerkt met een gecontroleerd ZIP-bestand in een nieuwe map; opgeslagen SessionDock-gegevens blijven buiten de programmamap.</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesAction">Nieuwste release openen</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedAction">Open advanced workspace</sys:String>

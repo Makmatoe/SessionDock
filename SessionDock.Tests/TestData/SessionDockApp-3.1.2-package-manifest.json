@@ -1,0 +1,55 @@
+{
+  "source": "public GitHub release v3.1.2",
+  "packageFile": "SessionDockApp-3.1.2-win-x64-sessiondock-full.nupkg",
+  "packageSize": 81267441,
+  "packageSha256": "19918D00E234E32EF9265050FD54165DE6DB1C7F5D933CB504F3BA99A5AFBB11",
+  "entryCount": 561,
+  "totalUncompressedBytes": 182889866,
+  "totalCompressedBytes": 81177835,
+  "maximumEntryNameLength": 70,
+  "externalAttributes": [0],
+  "operationalEntries": [
+    {
+      "fullName": "[Content_Types].xml",
+      "length": 673,
+      "compressedLength": 214,
+      "externalAttributes": 0
+    },
+    {
+      "fullName": "_rels/.rels",
+      "length": 262,
+      "compressedLength": 182,
+      "externalAttributes": 0
+    },
+    {
+      "fullName": "SessionDockApp.nuspec",
+      "length": 8947,
+      "compressedLength": 2416,
+      "externalAttributes": 0
+    },
+    {
+      "fullName": "lib/app/SessionDock.exe",
+      "length": 187904,
+      "compressedLength": 98674,
+      "externalAttributes": 0
+    },
+    {
+      "fullName": "lib/app/SessionDock_ExecutionStub.exe",
+      "length": 417280,
+      "compressedLength": 242098,
+      "externalAttributes": 0
+    },
+    {
+      "fullName": "lib/app/Squirrel.exe",
+      "length": 3866112,
+      "compressedLength": 1808464,
+      "externalAttributes": 0
+    },
+    {
+      "fullName": "lib/app/sq.version",
+      "length": 8947,
+      "compressedLength": 2416,
+      "externalAttributes": 0
+    }
+  ]
+}

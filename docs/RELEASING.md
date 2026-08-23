@@ -255,11 +255,32 @@ new tag, and complete gate.
 Portable copies update manually by downloading and extracting the next portable
 ZIP into a new folder. They do not invoke Velopack update installation.
 
-Compatible existing installed copies may continue to use SessionDock's in-app
-update control and the full NUPKG/feed. Verify upgrade from the latest supported
-installed version, cancellation, rollback/failure behavior, preservation of
-`%LOCALAPPDATA%\SessionDock`, and byte equality with the portable inventory.
-The NUPKG is not a manual beginner download.
+The in-app update control and full NUPKG/feed remain only for a compatible
+installed copy whose running verifier can accept the current package contract.
+Do not claim that a release can repair an older verifier through the same
+package that verifier rejects. SessionDock 3.1.2's obsolete fixed-entry check
+rejects the complete transparent NUPKG, so its supported recovery path to 3.1.3
+is the verified portable ZIP in a new folder, not a special bridge package,
+manual NUPKG extraction, or an old Setup program.
+
+For 3.1.3 and later verifier changes, test both update stages separately. The
+pre-download feed identity must contain a SHA-256 and match the signed
+descriptor. A pending-restart object may omit that copied field, so post-download
+verification must measure and hash the local package again before matching the
+same descriptor. Verify cancellation, rollback and failure behavior,
+preservation of `%LOCALAPPDATA%\SessionDock`, and byte equality with the
+portable inventory.
+
+Runtime verification should enforce security boundaries that remain meaningful
+for every transparent self-contained publish: exact signed package bytes,
+identity, version and channel; bounded archive structure; safe and unique paths;
+safe package metadata and canonical empty directory entries; operationally
+required metadata and launch files; and executable format. Reparse points,
+devices, and other nonregular types remain invalid. Do not restore the fragile
+fixed count or fixed allowlist of transitive runtime DLLs. The protected release
+verifier separately rejects unexpected executable or installation payloads and
+proves the exact candidate inventory, Microsoft signatures, SBOM coverage, and
+portable/NUPKG byte equality. The NUPKG is not a manual beginner download.
 
 The custom update-descriptor signature authorizes only the exact feed metadata
 and package identity accepted by SessionDock. It is not Authenticode, Windows

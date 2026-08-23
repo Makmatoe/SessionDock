@@ -85,20 +85,37 @@ does not cancel that verdict.
 
 Update behavior depends on how the existing copy was obtained:
 
-- **Existing installed copies:** older SessionDock installations that already
-  have the Velopack update machinery may continue to consume the verified full
-  NUPKG and release feed through SessionDock's in-app update control. Review the
-  release notes and confirm the update only after SessionDock verifies the
-  descriptor, package hash, version, and package inventory.
-- **Portable copies:** portable SessionDock does not update itself. Close it,
-  download the new portable ZIP from GitHub Releases, verify it, extract it to
-  a new folder, and run the new folder's `SessionDock.exe`. After testing the
-  new copy, the old application folder can be deleted.
+- **Portable copies:** portable copies update manually through GitHub Releases.
+  Select **Update** to open the canonical latest release. Close SessionDock,
+  download and verify the new portable ZIP, extract it to a new folder, and run
+  that folder's `SessionDock.exe`. The button does not silently download,
+  extract, or overwrite application files. After testing the new copy, the old
+  application folder can be deleted.
+- **Compatible installed copies:** beginning with SessionDock 3.1.3, an
+  installed copy that can reach the current verifier may use the in-app update
+  control and full NUPKG feed. Before confirmation, SessionDock binds the
+  downloaded file's measured size and SHA-256 to the descriptor signed by the
+  pinned release key. It then verifies package identity, version, channel,
+  required metadata and launch files, executable format, safe normalized paths,
+  safe package metadata and canonical empty directory entries, unique Windows
+  names, and bounded entry and expansion counts. It rejects reparse points,
+  devices, and other nonregular entry types. It does not reject a valid release
+  merely because Velopack omitted a hash from its pending-restart object or
+  because the transparent payload has more ordinary runtime DLLs than an old
+  release. The protected release verifier separately rejects unexpected
+  executable or installation payloads and proves the exact candidate inventory.
 
-Do not manually download or open the NUPKG. It exists for already-installed
-copies and the update feed, not as a beginner installation format. Do not copy
-new binaries over an old portable directory: using a new folder prevents stale
-or mixed-version files.
+An installed build whose older verifier already calls the official full NUPKG
+unsafe cannot repair that verifier through the rejected package. Keep
+`%LOCALAPPDATA%\SessionDock`, download the verified portable ZIP from the
+canonical release, extract it into a new folder, and run it as the same Windows
+user. Do not unpack the NUPKG, copy files over the installed directory, rerun an
+old Setup program, or weaken a security policy.
+
+Do not manually download, open, or unpack the NUPKG. It exists for the bounded
+installed-copy compatibility path and release verification, not as a beginner
+installation format. Do not copy new binaries over an old portable directory:
+using a new folder prevents stale or mixed-version files.
 
 SessionDock user data lives under `%LOCALAPPDATA%\SessionDock`, outside the
 portable application folder. A normal update or replacement of the portable
@@ -147,7 +164,8 @@ copy. SessionDock does not automatically trust or merge those siblings.
 The public release contract includes:
 
 - `SessionDock-win-x64-Portable.zip` for new and portable users;
-- the full Velopack NUPKG and feed metadata for existing installed copies;
+- the full Velopack NUPKG and feed metadata for the bounded installed-copy
+  compatibility path;
 - a signed SessionDock update descriptor;
 - `SHA256SUMS.txt` covering every published asset except itself;
 - an SPDX SBOM and complete dependency notices; and
@@ -180,11 +198,14 @@ identity; they do not bypass Windows malware detection.
   and expected hash.
 - **Named malware detection:** do not retry, restore, allow, or run the file.
   Follow the Defender response guide.
-- **Portable update does not appear in-app:** this is expected. Portable copies
-  update manually with a newly downloaded and extracted ZIP.
-- **An existing installed update fails verification:** leave the current
-  version closed or unchanged, keep its data, and report the exact error. Do
-  not substitute an asset from Discord or manually unpack the NUPKG.
+- **Portable copy cannot install an update in place:** this is expected. Use its
+  **Update** button to open GitHub, then verify and extract a newly downloaded
+  ZIP into a new folder.
+- **An existing installed update reports the official package as unsafe:** the
+  old verifier cannot repair itself through a package it rejects. Leave that
+  installation unchanged, keep its data, and use the verified portable ZIP in
+  a new folder. Report the exact error. Do not substitute an asset from Discord
+  or manually unpack the NUPKG.
 
 To remove a portable copy, close SessionDock and delete only its extracted
 application folder. Remove `%LOCALAPPDATA%\SessionDock` separately only when

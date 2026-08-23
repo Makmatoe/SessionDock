@@ -38,6 +38,8 @@
     <sys:String x:Key="Main.UpdateName">Buscar actualizaciones verificadas</sys:String>
     <sys:String x:Key="Main.UpdateTooltip">Buscar en GitHub una actualización verificada de SessionDock</sys:String>
     <sys:String x:Key="Main.UpdateTooltipVersion">Buscar actualizaciones verificadas (versión actual: {0})</sys:String>
+    <sys:String x:Key="Main.PortableUpdateName">Abrir la última versión portátil</sys:String>
+    <sys:String x:Key="Main.PortableUpdateTooltipVersion">Abrir la última versión portátil oficial en GitHub (versión actual: {0})</sys:String>
     <sys:String x:Key="Main.Local">DATOS LOCALES</sys:String>
     <sys:String x:Key="Main.Account">CUENTA</sys:String>
     <sys:String x:Key="Main.DragToReorder">Arrastrar para reordenar</sys:String>
@@ -944,9 +946,11 @@
     <sys:String x:Key="Main.ReleaseNotesUnavailableDetail">Esta copia de SessionDock no contiene notas válidas para la versión instalada.</sys:String>
     <sys:String x:Key="Main.ReleaseNotesUnavailableBadge">NOTAS NO DISPONIBLES</sys:String>
 
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredTitle">Esta copia se actualiza manualmente</sys:String>
-    <sys:String x:Key="Main.UpdateInstalledAppRequiredDetail">Esta copia de desarrollo o portátil no puede sustituirse a sí misma. Cierra SessionDock, descarga el ZIP portátil oficial desde las versiones de GitHub, extráelo en una carpeta nueva e inicia la copia nueva.</sys:String>
-    <sys:String x:Key="Main.UpdatesUnavailableBadge">ACTUALIZACIONES NO DISPONIBLES</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedTitle">Página oficial de la versión abierta</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenedDetail">Descarga SessionDock-win-x64-Portable.zip y SHA256SUMS.txt de esa versión. Comprueba el ZIP, cierra SessionDock, extráelo en una carpeta nueva y ejecuta SessionDock.exe. Los datos guardados de SessionDock permanecen en su sitio.</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedTitle">No se pudo abrir la página de la versión</sys:String>
+    <sys:String x:Key="Main.PortableUpdateOpenFailedDetail">Abre {0} en el navegador. No se descargó ni modificó ningún archivo.</sys:String>
+    <sys:String x:Key="Main.ManualUpdateBadge">ACTUALIZACIÓN MANUAL</sys:String>
     <sys:String x:Key="Main.UpdateReadyToRestartTitle">Actualización lista para reiniciar</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingDetail">Verificando los metadatos de la versión y el paquete descargado antes de reiniciar…</sys:String>
     <sys:String x:Key="Main.UpdateVerifyingBadge">VERIFICANDO ACTUALIZACIÓN</sys:String>
@@ -1299,6 +1303,8 @@
     <sys:String x:Key="SettingsHub.UpdatesTitle">Updates</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesDetail">Consulta el canal de versiones verificado y revisa una actualización antes de instalarla.</sys:String>
     <sys:String x:Key="SettingsHub.UpdatesAction">Check for updates</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesDetail">Abre la versión oficial en GitHub. Las copias portátiles se actualizan con un ZIP verificado en una carpeta nueva; los datos guardados de SessionDock permanecen fuera de la carpeta de la aplicación.</sys:String>
+    <sys:String x:Key="SettingsHub.PortableUpdatesAction">Abrir la última versión</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedTitle">Advanced workspace</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedDetail">Open full account management, launch tools, history, and operational controls.</sys:String>
     <sys:String x:Key="SettingsHub.AdvancedAction">Open advanced workspace</sys:String>

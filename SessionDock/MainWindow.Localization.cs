@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Automation;
 using SessionDock.Services;
 
 namespace SessionDock;
@@ -137,7 +138,7 @@ public partial class MainWindow
         object? sender,
         EventArgs e)
     {
-        UpdateUpdateTooltip();
+        UpdateUpdatePresentation();
         UpdateThemeTogglePresentation();
         UpdateDestinationModePresentation();
         RenderAccountList();
@@ -157,8 +158,33 @@ public partial class MainWindow
         }
     }
 
-    private void UpdateUpdateTooltip() =>
-        InstallUpdateButton.ToolTip = Localize(
-            "Main.UpdateTooltipVersion",
+    private void UpdateUpdatePresentation()
+    {
+        var canSelfUpdate = _updateService.CanSelfUpdate;
+        var updateName = Localize(
+            canSelfUpdate
+                ? "Main.UpdateName"
+                : "Main.PortableUpdateName");
+        var updateHelp = Localize(
+            canSelfUpdate
+                ? "Main.UpdateTooltipVersion"
+                : "Main.PortableUpdateTooltipVersion",
             _updateService.CurrentVersion);
+        var settingsDetail = Localize(
+            canSelfUpdate
+                ? "SettingsHub.UpdatesDetail"
+                : "SettingsHub.PortableUpdatesDetail");
+        var settingsAction = Localize(
+            canSelfUpdate
+                ? "SettingsHub.UpdatesAction"
+                : "SettingsHub.PortableUpdatesAction");
+
+        AutomationProperties.SetName(InstallUpdateButton, updateName);
+        AutomationProperties.SetHelpText(InstallUpdateButton, updateHelp);
+        InstallUpdateButton.ToolTip = updateHelp;
+        SettingsUpdatesDetailText.Text = settingsDetail;
+        SettingsUpdateButton.Content = settingsAction;
+        AutomationProperties.SetName(SettingsUpdateButton, settingsAction);
+        AutomationProperties.SetHelpText(SettingsUpdateButton, settingsDetail);
+    }
 }

@@ -608,10 +608,14 @@ try {
     $compatibilityBootstrap = Get-Content -LiteralPath `
         (Join-Path $root 'SessionDock/Resources/handlescope-compatibility-bootstrap.json') `
         -Raw | ConvertFrom-Json
-    if ([long] $compatibilityBootstrap.sequence -ne 3 -or
-        $compatibilityBootstrap.sessionDockVersion -cne '3.1.2' -or
+    if ([long] $compatibilityBootstrap.sequence -ne 4 -or
+        $compatibilityBootstrap.generatedAt -cne
+            '2026-08-23T10:00:00.0000000+00:00' -or
+        $compatibilityBootstrap.expiresAt -cne
+            '2027-08-23T10:00:00.0000000+00:00' -or
+        $compatibilityBootstrap.sessionDockVersion -cne $version -or
         $compatibilityBootstrap.recommendedVersion -cne '0.3.0') {
-        throw 'The 3.1.2 compatibility bootstrap must retain sequence 3 and the external HandleScope 0.3.0 recommendation.'
+        throw "The $version compatibility bootstrap must retain sequence 4, its reviewed validity window, and the external HandleScope 0.3.0 recommendation."
     }
     $applicationIcons = @($applicationProject.SelectNodes(
             '/Project/PropertyGroup/ApplicationIcon') |
@@ -1452,11 +1456,11 @@ jobs:
     if ($releaseWorkflowContents -match '(?m)^\s*--icon(?:\s|$)' -or
         $releaseWorkflowContents -match
             'artifacts/release-input/(?:app/)?SessionDock\.ico') {
-        throw 'Velopack --icon would add setup.ico and break strict legacy updater compatibility.'
+        throw 'Velopack --icon would add setup.ico outside the reviewed transparent application inventory even though SessionDock publishes no installer.'
     }
     if ($publishContents -match "'--framework'\s+'webview2'" -or
         $releaseWorkflowContents -match '--framework\s+webview2') {
-        throw 'The update package must remain readable by the strict 2.4.0 updater; WebView2 recovery belongs in the application until every supported updater accepts runtimeDependencies metadata.'
+        throw 'The transparent application already carries its pinned WebView2 dependency; Velopack framework bootstrap metadata is outside the reviewed package contract.'
     }
 
     $ciBuildJob = Get-WorkflowJobBlock -Contents $ciWorkflowContents -Name 'build-and-test'

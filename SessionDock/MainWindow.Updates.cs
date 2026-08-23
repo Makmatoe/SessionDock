@@ -24,11 +24,24 @@ public partial class MainWindow
         {
             if (!_updateService.CanSelfUpdate)
             {
-                SetStatus(
-                    Localize("Main.UpdateInstalledAppRequiredTitle"),
-                    Localize("Main.UpdateInstalledAppRequiredDetail"),
-                    Localize("Main.UpdatesUnavailableBadge"),
-                    StatusTone.Warning);
+                if (PortableUpdatePageLauncher.TryOpen())
+                {
+                    SetStatus(
+                        Localize("Main.PortableUpdateOpenedTitle"),
+                        Localize("Main.PortableUpdateOpenedDetail"),
+                        Localize("Main.ManualUpdateBadge"),
+                        StatusTone.Success);
+                }
+                else
+                {
+                    SetStatus(
+                        Localize("Main.PortableUpdateOpenFailedTitle"),
+                        Localize(
+                            "Main.PortableUpdateOpenFailedDetail",
+                            PortableUpdatePageLauncher.LatestReleaseUrl),
+                        Localize("Main.ManualUpdateBadge"),
+                        StatusTone.Error);
+                }
                 return;
             }
 
@@ -54,7 +67,10 @@ public partial class MainWindow
                     return;
                 }
 
-                _updateService.ApplyAfterExit(pending);
+                await _updateService.ApplyAfterExitAsync(
+                    pending,
+                    verifiedPending,
+                    cancellationToken);
                 applyingUpdate = true;
                 _ = Dispatcher.BeginInvoke(() => Close());
                 return;
@@ -114,7 +130,10 @@ public partial class MainWindow
                 Localize("Main.UpdateDownloadedDetail"),
                 Localize("Main.UpdateRestartingBadge"),
                 StatusTone.Success);
-            _updateService.ApplyAfterExit(available.UpdateInfo.TargetFullRelease);
+            await _updateService.ApplyAfterExitAsync(
+                available.UpdateInfo.TargetFullRelease,
+                available.Release,
+                cancellationToken);
             applyingUpdate = true;
             _ = Dispatcher.BeginInvoke(() => Close());
         }

@@ -26,4 +26,9 @@
     <ProjectReference Include="..\SessionDock\SessionDock.csproj"
                       AdditionalProperties="EnableRuntimeSmokeHarness=true" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="TestData\SessionDockApp-3.1.2-package-manifest.json"
+                      LogicalName="SessionDock.Tests.TestData.SessionDockApp.3.1.2.PackageManifest.json" />
+  </ItemGroup>
 </Project>
