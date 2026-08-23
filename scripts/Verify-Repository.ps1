@@ -2512,9 +2512,12 @@ jobs:
         @([regex]::Matches($releaseAutomationContents, 'method:\s*"POST"')).Count -ne 1 -or
         @([regex]::Matches($releaseAutomationContents, 'method:\s*"PATCH"')).Count -ne 1 -or
         $releaseAutomationContents -match 'method:\s*"(?:PUT|DELETE)"' -or
+        $releaseAutomationContents -notmatch 'const MESSAGE_FLAG_CROSSPOSTED = 1 << 0' -or
         $releaseAutomationContents -notmatch 'const MESSAGE_FLAG_SUPPRESS_EMBEDS = 1 << 2' -or
+        $releaseAutomationContents -notmatch 'const MESSAGE_FLAG_HAS_THREAD = 1 << 5' -or
         $releaseAutomationContents -notmatch 'const MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS = 1 << 12' -or
-        $releaseAutomationContents -notmatch 'const NORMAL_MESSAGE_FLAGS = \[0, MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS\]' -or
+        $releaseAutomationContents -notmatch 'const NORMAL_MESSAGE_FLAGS = \[' -or
+        $releaseAutomationContents -notmatch 'MESSAGE_FLAG_CROSSPOSTED \| MESSAGE_FLAG_HAS_THREAD \| MESSAGE_FLAG_SUPPRESS_NOTIFICATIONS' -or
         $releaseAutomationContents -notmatch 'const MIGRATION_SOURCE_MESSAGE_FLAGS = \[' -or
         $releaseAutomationContents -notmatch 'const MIGRATION_RECEIPT_KIND = "sessiondock\.discord-release-migration-receipt"' -or
         $releaseAutomationContents -notmatch 'const APPROVED_MIGRATION = Object\.freeze\(' -or
