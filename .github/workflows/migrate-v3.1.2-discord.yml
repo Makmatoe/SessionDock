@@ -129,7 +129,7 @@ jobs:
           ' <<<"$release_metadata" >/dev/null
 
       - name: Download the exact v3.1.2 announcement artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: discord-release-announcement-0e257dd53b1c729bbf109185a10d470a1dd6483d-4
           path: migration/source-announcement
@@ -163,7 +163,7 @@ jobs:
             --expected-commit 0e257dd53b1c729bbf109185a10d470a1dd6483d
 
       - name: Download the exact prior diagnostic evidence
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: discord-v3.1.2-sanitized-diagnostic-775b8503d1c81bc1fad7cf754db46d988ea4f82d
           path: migration/prior-diagnostic
