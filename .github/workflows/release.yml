@@ -159,7 +159,7 @@ jobs:
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: Upload verified release input
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-input-${{ github.sha }}
           path: artifacts/release-input
@@ -759,7 +759,7 @@ jobs:
 
       - name: Preserve the guarded publication intent
         if: steps.verify-release.outputs.state == 'draft'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-publication-intent-${{ github.sha }}-${{ github.run_attempt }}
           path: guarded-publication-intent/intent.json
@@ -1082,7 +1082,7 @@ jobs:
           --expected-commit "$SOURCE_COMMIT"
 
       - name: Upload the deterministic announcement artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: discord-release-announcement-${{ github.sha }}-${{ github.run_attempt }}
           path: release-input/discord-announcement
@@ -1116,7 +1116,7 @@ jobs:
 
       - name: Upload the verified delivery receipt
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: discord-release-receipt-${{ github.sha }}-${{ github.run_attempt }}
           path: discord-release-receipt/receipt.json
