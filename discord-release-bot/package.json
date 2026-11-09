@@ -15,7 +15,7 @@
     "check": "node --check src/config.js && node --check src/deploy-commands.js && node --check src/index.js && node --check src/invite.js && node --check src/pending-releases.js && node --check src/release.js && node --check src/release-automation.js"
   },
   "dependencies": {
-    "discord.js": "14.27.0",
-    "dotenv": "17.4.2"
+    "discord.js": "14.28.1",
+    "dotenv": "18.0.9"
   }
 }
